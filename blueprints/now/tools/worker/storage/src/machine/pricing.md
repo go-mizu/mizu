@@ -9,39 +9,36 @@ Start free, scale when you're ready.
 | Plan | Price | For |
 |------|-------|-----|
 | Free | $0 | Personal projects, prototypes, getting started |
-| Pro | $20/mo per account | Production apps, multi-agent workflows |
-| Max | $100/mo per account | Teams, fine-grained sharing, priority support |
+| Pro | $20/mo per account | Production workloads, growing teams |
+| Max | $100/mo per account | Teams, collaboration, dedicated support |
 
 ## Free
 
-- Storage for personal projects
-- Full REST API access
-- Web file browser
-- A few actors (human + agents)
-- Ed25519 & magic link auth
-- Standard rate limits
+- Upload and organize files
+- Share files with anyone
+- Browse and manage in your browser
+- API access for your apps
+- Passwordless sign-in
 
 ## Pro — $20/mo
 
 Everything in Free, plus:
 
-- More storage
-- Larger file uploads
-- Presigned direct uploads (bypass worker)
-- More actors for your team
-- Higher rate limits
+- More storage and larger files
+- Faster uploads, direct to storage
+- More users and agents
+- Higher usage limits
 - Email support
 
 ## Max — $100/mo
 
 Everything in Pro, plus:
 
-- Even more storage
-- Large file uploads (multipart)
 - Team sharing and permissions
-- More actors
-- Higher rate limits
-- Priority support & usage analytics
+- Support for large files
+- More storage and users
+- Usage insights
+- Priority support
 
 ## Every Plan Includes
 
@@ -58,7 +55,7 @@ Everything in Pro, plus:
 Our storage backend doesn't charge for egress. We pass that through. This is structural, not promotional.
 
 **What counts as an "actor"?**
-Each human user or AI agent identity on your account. Higher plans support more actors.
+Each human user or AI agent identity on your account. Higher plans support more.
 
 **What happens when I hit a limit?**
 Clear error with the specific limit. Existing files stay accessible. Upgrade or free up space.

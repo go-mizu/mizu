@@ -30,6 +30,7 @@ export function pricingPage(): string {
       <a href="/developers">developers</a>
       <a href="/api">api</a>
       <a href="/cli">cli</a>
+      <a href="/architecture">architecture</a>
       <a href="/pricing" class="active">pricing</a>
     </div>
     <div class="nav-right">
@@ -59,61 +60,60 @@ export function pricingPage(): string {
 
       <!-- FREE -->
       <div class="tier">
+        <div class="tier-badge"></div>
         <div class="tier-head">
           <div class="tier-name">Free</div>
           <div class="tier-price">$0</div>
           <div class="tier-period">no credit card</div>
         </div>
-        <p class="tier-desc">Try the API, build a prototype, or let your agents store files.</p>
+        <p class="tier-desc">For personal projects and getting started.</p>
         <a href="/" class="tier-cta">Get started</a>
         <div class="tier-list">
-          <div class="tier-item tier-item--key">Storage for personal projects</div>
-          <div class="tier-item tier-item--key">Full REST API access</div>
-          <div class="tier-item">Web file browser</div>
-          <div class="tier-item">A few actors (human + agents)</div>
-          <div class="tier-item">Ed25519 &amp; magic link auth</div>
-          <div class="tier-item">Standard rate limits</div>
+          <div class="tier-item">Upload and organize files</div>
+          <div class="tier-item">Share files with anyone</div>
+          <div class="tier-item">Browse and manage in your browser</div>
+          <div class="tier-item">API access for your apps</div>
+          <div class="tier-item">Passwordless sign-in</div>
         </div>
       </div>
 
       <!-- PRO -->
       <div class="tier tier--pro">
-        <div class="tier-popular">Most popular</div>
+        <div class="tier-badge tier-popular">Most popular</div>
         <div class="tier-head">
           <div class="tier-name">Pro</div>
           <div class="tier-price">$20<span class="tier-price-unit">/mo</span></div>
           <div class="tier-period">per account</div>
         </div>
-        <p class="tier-desc">For production apps, multi-agent workflows, and growing teams.</p>
-        <a href="/" class="tier-cta tier-cta--primary">Start free trial</a>
+        <p class="tier-desc">For production workloads and growing teams.</p>
+        <a href="/" class="tier-cta tier-cta--primary">Get started</a>
         <div class="tier-includes">Everything in Free, plus:</div>
         <div class="tier-list">
-          <div class="tier-item tier-item--key">More storage</div>
-          <div class="tier-item tier-item--key">Larger file uploads</div>
-          <div class="tier-item tier-item--key">Presigned direct uploads</div>
-          <div class="tier-item">More actors for your team</div>
-          <div class="tier-item">Higher rate limits</div>
+          <div class="tier-item tier-item--key">More storage and larger files</div>
+          <div class="tier-item tier-item--key">Faster uploads, direct to storage</div>
+          <div class="tier-item">More users and agents</div>
+          <div class="tier-item">Higher usage limits</div>
           <div class="tier-item">Email support</div>
         </div>
       </div>
 
       <!-- MAX -->
       <div class="tier">
+        <div class="tier-badge"></div>
         <div class="tier-head">
           <div class="tier-name">Max</div>
           <div class="tier-price">$100<span class="tier-price-unit">/mo</span></div>
           <div class="tier-period">per account</div>
         </div>
-        <p class="tier-desc">For teams that need more capacity, fine-grained sharing, and priority support.</p>
+        <p class="tier-desc">For teams that need collaboration and support.</p>
         <a href="/" class="tier-cta">Get started</a>
         <div class="tier-includes">Everything in Pro, plus:</div>
         <div class="tier-list">
-          <div class="tier-item tier-item--key">Even more storage</div>
-          <div class="tier-item tier-item--key">Large file uploads (multipart)</div>
           <div class="tier-item tier-item--key">Team sharing &amp; permissions</div>
-          <div class="tier-item">More actors</div>
-          <div class="tier-item">Higher rate limits</div>
-          <div class="tier-item">Priority support &amp; usage analytics</div>
+          <div class="tier-item tier-item--key">Support for large files</div>
+          <div class="tier-item">More storage and users</div>
+          <div class="tier-item">Usage insights</div>
+          <div class="tier-item">Priority support</div>
         </div>
       </div>
 

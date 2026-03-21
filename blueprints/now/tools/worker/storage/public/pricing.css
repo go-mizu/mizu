@@ -1,6 +1,7 @@
 /* ══════════════════════════════════════════════════════════════════════
    storage.now — Pricing
-   Console aesthetic: monochrome, sharp edges.
+   Console aesthetic: monochrome, sharp edges, no rounded corners.
+   Inspired by claude.com/pricing layout balance.
    Requires base.css loaded first.
    ══════════════════════════════════════════════════════════════════════ */
 
@@ -19,47 +20,51 @@
 
 /* ── Tier cards ──────────────────────────────────────────────────────── */
 .section--tiers{padding:48px 0 96px}
-.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
-  border:1px solid var(--border);overflow:hidden}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 
-.tier{padding:48px;display:flex;flex-direction:column;
-  border-right:1px solid var(--border);position:relative;background:var(--bg)}
-.tier:last-child{border-right:none}
+.tier{padding:40px;display:flex;flex-direction:column;
+  border:1px solid var(--border);position:relative;background:var(--bg)}
 
-.tier--pro{background:var(--surface-alt)}
+.tier--pro{background:var(--surface-alt);border-color:var(--text-3)}
 
-.tier-popular{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;
-  text-transform:uppercase;color:var(--text);margin-bottom:20px;font-weight:500}
+/* Badge row: fixed height so all cards align regardless of badge presence */
+.tier-badge{height:32px}
+.tier-popular{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--text);font-weight:600;
+  padding:6px 12px;border:1px solid var(--border);display:inline-block;
+  line-height:1}
 
 /* Head: name, price, period */
-.tier-head{margin-bottom:20px}
-.tier-name{font-size:20px;font-weight:500;letter-spacing:-0.3px;margin-bottom:12px}
-.tier-price{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1}
+.tier-head{margin-bottom:24px}
+.tier-name{font-size:22px;font-weight:600;letter-spacing:-0.3px;margin-bottom:16px}
+.tier-price{font-size:44px;font-weight:700;letter-spacing:-1.5px;line-height:1}
 .tier-price-unit{font-size:16px;font-weight:500;color:var(--text-2);letter-spacing:0}
-.tier-period{font-size:13px;color:var(--text-3);margin-top:6px}
+.tier-period{font-size:13px;color:var(--text-3);margin-top:8px}
 
 /* Description */
-.tier-desc{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:24px;min-height:48px}
+.tier-desc{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:28px;min-height:48px}
 
 /* CTA */
 .tier-cta{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.3px;
-  text-align:center;padding:14px 24px;border:1px solid var(--border);
-  color:var(--text-2);transition:all .15s;display:block}
+  text-align:center;padding:0 24px;height:48px;line-height:48px;border:1px solid var(--border);
+  color:var(--text-2);transition:all .15s;display:block;font-weight:500}
 .tier-cta:hover{border-color:var(--text-3);color:var(--text)}
-.tier-cta--primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:500}
+.tier-cta--primary{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .tier-cta--primary:hover{opacity:0.85;color:var(--bg)}
 
 /* "Everything in X, plus:" */
-.tier-includes{font-size:13px;color:var(--text-3);margin-top:32px;margin-bottom:8px;
-  padding-bottom:8px;border-bottom:1px solid var(--border);
-  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.3px}
+.tier-includes{font-size:14px;color:var(--text-2);font-weight:600;
+  margin-top:32px;margin-bottom:4px;padding-bottom:16px;border-bottom:1px solid var(--border)}
 
 /* Feature list */
-.tier-list{margin-top:16px;display:flex;flex-direction:column;gap:0}
-.tier-item{font-size:14px;color:var(--text-2);padding:9px 0;
-  border-bottom:1px solid var(--border);line-height:1.5}
-.tier-item:last-child{border-bottom:none}
+.tier-list{margin-top:20px;display:flex;flex-direction:column;gap:0}
+.tier-item{font-size:14px;color:var(--text-2);padding:10px 0 10px 24px;
+  line-height:1.5;position:relative}
+.tier-item::before{content:'';position:absolute;left:0;top:14px;
+  width:12px;height:6px;border-left:1.5px solid var(--text-3);
+  border-bottom:1.5px solid var(--text-3);transform:rotate(-45deg)}
 .tier-item--key{color:var(--text);font-weight:500}
+.tier-item--key::before{border-color:var(--text)}
 
 /* ── Every plan includes ─────────────────────────────────────────────── */
 .section--included{padding:96px 0;margin-top:1px}
@@ -67,7 +72,7 @@
   text-align:center}
 .inc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
   border:1px solid var(--border);background:var(--border);overflow:hidden}
-.inc{background:var(--bg);padding:24px}
+.inc{background:var(--bg);padding:28px}
 .inc-icon{color:var(--text-3);margin-bottom:16px}
 .inc-name{font-size:15px;font-weight:500;margin-bottom:8px;letter-spacing:-0.2px}
 .inc-desc{font-size:13px;color:var(--text-2);line-height:1.7}
@@ -90,11 +95,8 @@
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media(max-width:900px){
-  .tiers{grid-template-columns:1fr}
-  .tier{border-right:none;border-bottom:1px solid var(--border)}
-  .tier:last-child{border-bottom:none}
+  .tiers{grid-template-columns:1fr;max-width:480px;margin:0 auto}
   .tier--pro{order:-1}
-  .inc-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:768px){
   .hero-title{font-size:30px;letter-spacing:-1px}
@@ -102,6 +104,7 @@
   .section--faq{padding:64px 0}
   .faq-q{font-size:14px}
   .faq-a{font-size:13px}
+  .inc-grid{grid-template-columns:1fr 1fr}
 }
 @media(max-width:640px){
   .section-inner{padding:0 20px}
@@ -109,10 +112,10 @@
   .hero-title{font-size:28px;letter-spacing:-1px}
   .hero-sub{font-size:15px}
   .section--tiers{padding:24px 0 48px}
-  .tier{padding:24px 20px}
+  .tier{padding:28px 24px}
   .tier-price{font-size:36px}
   .tier-desc{min-height:auto}
-  .tier-cta{min-height:44px;display:flex;align-items:center;justify-content:center}
+  .tier-cta{height:44px;line-height:44px}
   .inc-grid{grid-template-columns:1fr}
   .inc{padding:20px}
   .inc-title{font-size:22px}
@@ -124,8 +127,10 @@
 }
 @media(max-width:480px){
   .hero-title{font-size:24px;letter-spacing:-.8px}
-  .tier-name{font-size:18px}
+  .tier{padding:24px 20px}
+  .tier-name{font-size:20px}
   .tier-price{font-size:32px}
-  .tier-item{font-size:13px;padding:8px 0}
-  .tier-includes{font-size:10px}
+  .tier-item{font-size:13px;padding:8px 0 8px 22px}
+  .tier-item::before{top:12px;width:10px;height:5px}
+  .tier-includes{font-size:13px}
 }
