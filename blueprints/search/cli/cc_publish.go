@@ -968,8 +968,15 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		totalMDStr      = "79.2 MB"
 		pctMDToPQStr    = "64.7"
 		endToEndPctStr  = "96.5"
+		// Projected 100k values (computed from per-shard averages)
+		projRawWARCStr  = "~81 TB"
+		projHTMLStr     = "~232 TB"
+		projPackStr     = "~4.1 TB"
+		projParquetStr  = "~2.8 TB"
 		// Timing table defaults (shown only when we have timing data)
 		timingSection = ""
+		// Progress/ETA line (shown when we have throughput data)
+		progressLine = ""
 	)
 
 	if totals != nil && totals.Shards > 0 {
@@ -1005,6 +1012,32 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		if rawWARCBytes > totals.ParquetBytes {
 			pct := float64(rawWARCBytes-totals.ParquetBytes) / float64(rawWARCBytes) * 100
 			endToEndPctStr = fmt.Sprintf("%.1f", pct)
+		}
+
+		// Projected 100k values: scale per-shard averages to 100,000 files.
+		const projFiles = 100_000
+		projScale := float64(projFiles) / float64(totals.Shards)
+		projRawWARCStr = "~" + ccFmtBytes(int64(float64(rawWARCBytes)*projScale))
+		projHTMLStr = "~" + ccFmtBytes(int64(float64(totals.HTMLBytes)*projScale))
+		projPackStr = "~" + ccFmtBytes(int64(float64(packBytes)*projScale))
+		projParquetStr = "~" + ccFmtBytes(int64(float64(totals.ParquetBytes)*projScale))
+
+		// Progress/ETA — computed from stats.csv timestamps.
+		if totals.ShardsPerHour > 0 {
+			remaining := projFiles - totals.Shards
+			if remaining > 0 {
+				etaHours := float64(remaining) / totals.ShardsPerHour
+				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				if etaHours >= 24 {
+					progressLine = fmt.Sprintf(
+						"\nProcessing at **%.1f shards/hour** — estimated completion of all 100,000 shards: **%s** (~%.0f days).",
+						totals.ShardsPerHour, etaDone.Format("January 2, 2006"), etaHours/24)
+				} else {
+					progressLine = fmt.Sprintf(
+						"\nProcessing at **%.1f shards/hour** — estimated completion of all 100,000 shards: **%s** (~%.1f hours).",
+						totals.ShardsPerHour, etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
+				}
+			}
 		}
 
 		// Timing section — only shown when at least one shard has timing data.
@@ -1044,7 +1077,7 @@ task_categories:
 - feature-extraction
 language:
 - en
-pretty_name: Open Index
+pretty_name: Open Markdown
 size_categories:
 - 1M<n<10M
 tags:
@@ -1063,17 +1096,18 @@ configs:
     path: data/%[1]s/*
 ---
 
-# Open Index
+# **Open Markdown**
 
 > Clean markdown from the web, ready for training and retrieval
 
 ## What is it?
 
-Open Index is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown using [trafilatura](https://github.com/adbar/trafilatura), and packages the result into Parquet files with full WARC metadata preserved.
+**Open Markdown** is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Common Crawl is a non-profit that crawls the web and freely provides its archives and datasets to the public — see [their latest crawl announcement](https://commoncrawl.org/blog/march-2026-crawl-archive-now-available) for details on the source data. Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown, and packages the result into Parquet files with useful WARC metadata for traceability.
 
 The dataset currently includes crawl **%[1]s** with **%[7]s**. We plan to add more snapshots over time.
+%[24]s
 
-Open Index is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
+**Open Markdown** is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
 
 ## What is being released?
 
@@ -1087,9 +1121,9 @@ data/
     ...
 %[2]s
 
-Every row in a Parquet file is one web page. Along with the markdown body, we preserve the original WARC headers as a JSON column so you can always trace a document back to its source record.
+Every row in a Parquet file is one web page. Each row includes the %[3]swarc_record_id%[3]s and %[3]swarc_refers_to%[3]s fields parsed from the original WARC headers, so you can trace any document back to its source record. We also store %[3]shtml_length%[3]s and %[3]smarkdown_length%[3]s to measure the compression from raw HTML to clean markdown.
 
-## How to download and use Open Index
+## How to download and use Open Markdown
 
 ### Using %[3]sdatasets%[3]s
 
@@ -1133,7 +1167,7 @@ WHERE host = 'en.wikipedia.org'
 LIMIT 10;
 %[2]s
 
-# Dataset card for Open Index
+# Dataset card for Open Markdown
 
 ## Dataset Description
 
@@ -1183,7 +1217,7 @@ The default subset includes all available data across all crawl snapshots. You c
 
 ### Curation Rationale
 
-Most open web datasets either release raw text without structure or keep the HTML and leave parsing to the user. Open Index sits in between: it converts every page to Markdown so the content is immediately usable for training, while preserving the full WARC headers so you can always go back to the source if you need to.
+Most open web datasets either release raw text without structure or keep the HTML and leave parsing to the user. **Open Markdown** sits in between: it converts every page to Markdown so the content is immediately usable for training, while preserving key WARC identifiers (%[3]swarc_record_id%[3]s, %[3]swarc_refers_to%[3]s) so you can always trace back to the source record.
 
 ### Source Data
 
@@ -1207,10 +1241,10 @@ Numbers below are actual measurements summed across all %[8]s files of %[1]s (%[
 
 | Stage | %[8]s files (measured) | 100,000 files (projected) | Reduction |
 |---|---|---|---|
-| Raw WARC (.warc.gz, downloaded) | %[10]s | ~83 TB | — |
-| HTML extracted (uncompressed) | %[11]s | ~295 TB | — |
-| Packed markdown WARC (.md.warc.gz) | %[12]s | ~3.7 TB | **-%[13]s%%** vs HTML |
-| Final Parquet (Zstd level 19) | %[14]s | ~2.9 TB | **-%[15]s%%** vs packed WARC |
+| Raw WARC (.warc.gz, downloaded) | %[10]s | %[20]s | — |
+| HTML extracted (uncompressed) | %[11]s | %[21]s | — |
+| Packed markdown WARC (.md.warc.gz) | %[12]s | %[22]s | **-%[13]s%%** vs HTML |
+| Final Parquet (Zstd level 19) | %[14]s | %[23]s | **-%[15]s%%** vs packed WARC |
 
 The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further %[17]s%%.
 
@@ -1224,15 +1258,15 @@ No additional PII filtering is applied beyond what Common Crawl provides. As the
 
 ### Social Impact
 
-By releasing both the dataset and the full processing pipeline, we aim to lower the barrier to training and evaluating language models on high quality web data. Researchers and practitioners who cannot afford to run their own Common Crawl processing pipelines can use Open Index directly.
+By releasing both the dataset and the full processing pipeline, we aim to lower the barrier to training and evaluating language models on high quality web data. Researchers and practitioners who cannot afford to run their own Common Crawl processing pipelines can use **Open Markdown** directly.
 
 ### Discussion of Biases
 
-Open Index inherits the biases present in Common Crawl and the public web at large. The trafilatura extraction step favors article-like pages and may underrepresent content from forums, social media, and non-standard page layouts. We have not applied any machine-learning-based quality or toxicity filters, as such filters have been shown to disproportionately remove content from certain dialects and communities.
+**Open Markdown** inherits the biases present in Common Crawl and the public web at large. The trafilatura extraction step favors article-like pages and may underrepresent content from forums, social media, and non-standard page layouts. We have not applied any machine-learning-based quality or toxicity filters, as such filters have been shown to disproportionately remove content from certain dialects and communities.
 
 ### Known Limitations
 
-Code-heavy pages may not convert well to Markdown. If you are training a model that needs strong code performance, consider supplementing Open Index with a dedicated code dataset such as [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2). Similarly, highly structured pages like Wikipedia may have better formatting in dedicated Wikipedia dumps than in their Common Crawl versions.
+Code-heavy pages may not convert well to Markdown. If you are training a model that needs strong code performance, consider supplementing **Open Markdown** with a dedicated code dataset such as [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2). Similarly, highly structured pages like Wikipedia may have better formatting in dedicated Wikipedia dumps than in their Common Crawl versions.
 
 ## Additional Information
 
@@ -1263,6 +1297,11 @@ Please open a discussion on the [Community tab](https://huggingface.co/datasets/
 		pctMDToPQStr,    // [17] markdown → parquet compression %
 		endToEndPctStr,  // [18] raw WARC → parquet end-to-end %
 		timingSection,   // [19] optional processing times table
+		projRawWARCStr,  // [20] projected raw WARC for 100k files
+		projHTMLStr,     // [21] projected HTML for 100k files
+		projPackStr,     // [22] projected packed WARC for 100k files
+		projParquetStr,  // [23] projected parquet for 100k files
+		progressLine,    // [24] progress/ETA line
 	)
 }
 
@@ -1274,7 +1313,7 @@ Full text: https://opendatacommons.org/licenses/by/1-0/
 You are free to copy, distribute, use, modify, transform, and build upon
 this database, as long as you attribute the source.
 
-Attribution: "Open Index, derived from Common Crawl (https://commoncrawl.org)"
+Attribution: "Open Markdown, derived from Common Crawl (https://commoncrawl.org)"
 
 Note: This dataset contains data derived from Common Crawl, which archives
 third-party web content. The original content remains subject to the rights
