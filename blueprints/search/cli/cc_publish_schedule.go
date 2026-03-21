@@ -571,6 +571,15 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	// Resource tracker for adaptive throughput/bottleneck detection.
 	tracker := &ccResourceTracker{}
 
+	// Throughput tracking for shards/hour and ETA.
+	// Bootstrap from stats.csv timestamps, then blend with live session data.
+	allStats, _ := ccReadStatsCSV(statsCSV)
+	csvTotals := ccComputeTotals(allStats, cfg.CrawlID)
+	csvShardsPerHour := csvTotals.ShardsPerHour // initial rate from historical data
+
+	schedStart := time.Now()
+	startCommitted := len(committed)
+
 	round := 0
 	for {
 		round++
@@ -582,8 +591,11 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 
 		// Re-detect hardware for dynamic scaling (available RAM, disk change over time).
+		// Recompute budget ceiling so it can scale UP when resources free up.
 		if autoMode {
 			hw = arctic.DetectHardware(cfg.RepoRoot)
+			budget = computeCCBudget(hw)
+			initialMax = budget.MaxSessions
 		}
 
 		// Read committed set.
@@ -673,6 +685,47 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			logLine(fmt.Sprintf("         | budget: %s, effective: %d (%s)",
 				budget, effectiveMax, reason))
 			logLine(fmt.Sprintf("         | %s", throughputInfo))
+		}
+
+		// Shards/hour and ETA to 100k.
+		const totalTarget = 100_000
+		elapsed := time.Since(schedStart)
+		newShards := totalCommitted - startCommitted
+
+		// Compute live rate from this scheduler session.
+		// Once we have live commits, use live rate — it reflects current conditions
+		// (hardware, concurrency, network) better than historical CSV data.
+		// CSV rate is only a fallback before the first live commit arrives.
+		var shardsPerHour float64
+		rateSource := ""
+		if elapsed.Seconds() > 60 && newShards > 0 {
+			shardsPerHour = float64(newShards) / elapsed.Hours()
+			rateSource = "live"
+		} else if csvShardsPerHour > 0 {
+			shardsPerHour = csvShardsPerHour
+			rateSource = "csv"
+		}
+
+		if shardsPerHour > 0 {
+			remaining := totalTarget - totalCommitted
+			if remaining > 0 {
+				etaHours := float64(remaining) / shardsPerHour
+				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				etaDays := etaHours / 24
+				logLine(fmt.Sprintf("         | throughput: %.1f shards/hour [%s] (%d new in %s) | %d/%d (%.2f%%)",
+					shardsPerHour, rateSource, newShards, elapsed.Round(time.Second), totalCommitted, totalTarget,
+					float64(totalCommitted)/float64(totalTarget)*100))
+				if etaDays >= 1 {
+					logLine(fmt.Sprintf("         | ETA: %.1f days — finish ~%s",
+						etaDays, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+				} else {
+					logLine(fmt.Sprintf("         | ETA: %.1f hours — finish ~%s",
+						etaHours, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+				}
+			} else {
+				logLine(fmt.Sprintf("         | throughput: %.1f shards/hour | %d/%d — COMPLETE",
+					shardsPerHour, totalCommitted, totalTarget))
+			}
 		}
 
 		logLine(fmt.Sprintf("Round %d | committed=%d | done=%d/%d chunks | running=%d | todo=%d | slots=%d",

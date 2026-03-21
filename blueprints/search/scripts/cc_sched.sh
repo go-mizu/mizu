@@ -73,7 +73,7 @@ while true; do
     ATTEMPT=$(( ATTEMPT + 1 ))
     log "  [sched] attempt $ATTEMPT — launching scheduler for ${CRAWL} ${START}–${END}"
 
-    "$SEARCH" cc publish --gaps --schedule \
+    "$SEARCH" cc publish --schedule \
         --crawl "$CRAWL" \
         --start "$START" --end "$END" \
         $SESS_FLAGS \
