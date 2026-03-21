@@ -35,6 +35,7 @@ export function aiPage(): string {
       <a href="/api">api</a>
       <a href="/cli">cli</a>
       <a href="/ai" class="active">ai</a>
+      <a href="/architecture">architecture</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">

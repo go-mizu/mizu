@@ -33,6 +33,7 @@ function navLinks(activePath: string): string {
   return `<a href="/developers"${activePath === "/developers" ? ' class="active"' : ""}>developers</a>
       <a href="/api"${activePath === "/api" ? ' class="active"' : ""}>api</a>
       <a href="/cli"${activePath === "/cli" ? ' class="active"' : ""}>cli</a>
+      <a href="/architecture"${activePath === "/architecture" ? ' class="active"' : ""}>architecture</a>
       <a href="/pricing"${activePath === "/pricing" ? ' class="active"' : ""}>pricing</a>`;
 }
 

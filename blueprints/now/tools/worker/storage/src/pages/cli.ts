@@ -38,6 +38,7 @@ export function cliPage(actor: string | null = null): string {
       <a href="/developers">developers</a>
       <a href="/api">api</a>
       <a href="/cli" class="active">cli</a>
+      <a href="/architecture">architecture</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">

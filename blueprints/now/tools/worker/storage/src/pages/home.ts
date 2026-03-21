@@ -91,6 +91,7 @@ ${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"
       <a href="/developers">developers</a>
       <a href="/api">api</a>
       <a href="/cli">cli</a>
+      <a href="/architecture">architecture</a>
       <a href="/pricing">pricing</a>
     </div>
     <div class="nav-right">

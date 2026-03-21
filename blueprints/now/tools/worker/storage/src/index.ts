@@ -17,12 +17,14 @@ import { pricingPage } from "./pages/pricing";
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
 import { privacyPage } from "./pages/privacy";
+import { architecturePage } from "./pages/architecture";
 import { dashboardPage } from "./pages/dashboard";
 import homeMd from "./machine/home.md";
 import developersMd from "./machine/developers.md";
 import cliMd from "./machine/cli.md";
 import aiMd from "./machine/ai.md";
 import pricingMd from "./machine/pricing.md";
+import architectureMd from "./machine/architecture.md";
 import { D1Engine } from "./storage/d1_driver";
 import { DOEngine, StorageDO } from "./storage/do_driver";
 import { D1V2Engine } from "./storage/d1_v2_driver";
@@ -91,6 +93,10 @@ app.get("/pricing", (c) => {
 app.get("/ai", (c) => {
   if (wantsMd(c)) return md(c, aiMd);
   return c.redirect("/", 302);
+});
+app.get("/architecture", (c) => {
+  if (wantsMd(c)) return md(c, architectureMd);
+  return c.html(architecturePage());
 });
 app.get("/privacy", (c) => c.html(privacyPage()));
 app.get("/cli", async (c) => {
