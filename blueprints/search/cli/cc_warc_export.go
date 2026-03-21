@@ -180,7 +180,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, progressFn exportProgres
 	}
 
 	pw := parquet.NewGenericWriter[ccWARCExportRow](out,
-		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBestCompression}),
+		parquet.Compression(&zstd.Codec{Level: zstd.SpeedDefault}),
 		parquet.MaxRowsPerRowGroup(100_000),
 		parquet.PageBufferSize(2*1024*1024), // 2 MB: saves ~54 MB vs 8 MB (9 cols × 6 MB)
 	)
@@ -364,8 +364,10 @@ func packDirectToParquet(ctx context.Context, packCfg warcmd.PackConfig, parquet
 		os.Remove(tmpPath) // cleanup on error; no-op after successful rename
 	}()
 
+	// zstd.SpeedDefault (~3): 3× faster than SpeedBestCompression with only
+	// ~5-10% larger output. Profile showed zstd at 30% of CPU with BestCompression.
 	pw := parquet.NewGenericWriter[ccWARCExportRow](out,
-		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBestCompression}),
+		parquet.Compression(&zstd.Codec{Level: zstd.SpeedDefault}),
 		parquet.MaxRowsPerRowGroup(100_000),
 		parquet.PageBufferSize(2*1024*1024),
 	)
