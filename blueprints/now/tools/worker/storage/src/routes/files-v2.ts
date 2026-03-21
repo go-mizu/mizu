@@ -344,6 +344,7 @@ async function downloadFile(c: C) {
       url,
       size: meta.size,
       type: meta.type,
+      content_hash: meta.content_hash || undefined,
       tx: meta.tx,
       time: meta.tx_time,
       expires_in: 3600,
@@ -366,11 +367,13 @@ async function headFile(c: C) {
   const meta = await engine(c).head(actor, path);
   if (!meta) return c.body(null, 404);
 
-  return c.body(null, 200, {
+  const headers: Record<string, string> = {
     "Content-Type": meta.type || "application/octet-stream",
     "Content-Length": meta.size.toString(),
     "X-Tx": String(meta.tx),
-  });
+  };
+  if (meta.content_hash) headers["X-Content-Hash"] = meta.content_hash;
+  return c.body(null, 200, headers);
 }
 
 // ── DELETE /files/{path} — delete file or folder ────────────────────

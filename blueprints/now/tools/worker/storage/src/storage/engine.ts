@@ -20,6 +20,7 @@ export interface FileMeta {
   type: string;
   tx: number;
   tx_time: number;
+  content_hash?: string;
 }
 
 export interface WriteResult {

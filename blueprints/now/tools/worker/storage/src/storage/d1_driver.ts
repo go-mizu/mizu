@@ -612,12 +612,12 @@ export class D1Engine implements StorageEngine {
     const s = await this.ensureShard(actor);
 
     const file = await this.db
-      .prepare(`SELECT path, name, size, type, tx, tx_time FROM f_${s} WHERE path = ?`)
+      .prepare(`SELECT path, name, size, type, addr, tx, tx_time FROM f_${s} WHERE path = ?`)
       .bind(path)
-      .first<{ path: string; name: string; size: number; type: string; tx: number; tx_time: number }>();
+      .first<{ path: string; name: string; size: number; type: string; addr: string | null; tx: number; tx_time: number }>();
 
     if (!file) return null;
-    return { path: file.path, name: file.name, size: file.size, type: file.type, tx: file.tx || 0, tx_time: file.tx_time || 0 };
+    return { path: file.path, name: file.name, size: file.size, type: file.type, tx: file.tx || 0, tx_time: file.tx_time || 0, content_hash: file.addr || undefined };
   }
 
   // ── list ─────────────────────────────────────────────────────────
