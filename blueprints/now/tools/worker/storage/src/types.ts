@@ -20,7 +20,9 @@ export interface Env {
   HYPERDRIVE?: Hyperdrive; // Cloudflare Hyperdrive binding (PostgreSQL proxy)
   POSTGRES_DSN?: string; // Direct PostgreSQL connection string (for Neon driver)
   POSTGRES_EC1_DSN?: string; // Neon EU (eu-central-1) connection string
-  DEV_MODE?: string; // "1" to return magic link in response (for testing)
+  DEV_MODE?: string; // "1" to enable benchmark endpoint
+  TURNSTILE_SECRET_KEY?: string; // Cloudflare Turnstile server-side secret
+  TURNSTILE_SITE_KEY?: string; // Cloudflare Turnstile public site key
 }
 
 export interface Variables {

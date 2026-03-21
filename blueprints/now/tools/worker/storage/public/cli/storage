@@ -370,33 +370,10 @@ cmd_login() {
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$email\"}")
 
-  local magic_link
-  magic_link=$(json_val "$resp" "magic_link")
-
-  if [[ -n "$magic_link" ]]; then
-    # Direct magic link (dev mode) — follow it to get session
-    local session_resp
-    session_resp=$(curl -s -S -w '\n%{http_code}' -D - "$ENDPOINT$magic_link" 2>&1)
-
-    # Extract session token from Set-Cookie header
-    local session_token
-    session_token=$(echo "$session_resp" | grep -i 'set-cookie:.*session=' | sed 's/.*session=\([^;]*\).*/\1/' | head -1)
-
-    if [[ -n "$session_token" ]]; then
-      mkdir -p "$CONFIG_DIR"
-      echo "$session_token" > "$TOKEN_FILE"
-      chmod 600 "$TOKEN_FILE"
-      info "Authenticated" "Token saved to $TOKEN_FILE"
-    else
-      info "Check inbox" "Click the magic link to complete login, then run:"
-      echo "  storage login:callback" >&2
-    fi
-  else
-    info "Check inbox" "Magic link sent to $email"
-    echo "" >&2
-    echo "  After clicking the link, copy the token and run:" >&2
-    echo "  ${_bold}storage token <your-token>${_reset}" >&2
-  fi
+  info "Check inbox" "Magic link sent to $email"
+  echo "" >&2
+  echo "  After clicking the link, copy the token and run:" >&2
+  echo "  ${_bold}storage token <your-token>${_reset}" >&2
 }
 
 cmd_token() {

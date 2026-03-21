@@ -13,7 +13,7 @@ const ICON_FILE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 const MOCKUP_CHROME = (url: string) =>
   `<div class="mockup-chrome"><div class="mockup-dots"><span></span><span></span><span></span></div><div class="mockup-url">${url}</div></div>`;
 
-export function homePage(actor: string | null = null): string {
+export function homePage(actor: string | null = null, siteKey?: string): string {
   const isSignedIn = actor !== null;
   const displayName = actor ? esc(actor.slice(2)) : "";
 
@@ -46,17 +46,18 @@ export function homePage(actor: string | null = null): string {
   <div class="register-modal-bg" onclick="closeRegister()"></div>
   <div class="register-modal-box">
     <button class="register-modal-close" onclick="closeRegister()">&times;</button>
-    <div class="register-modal-title">Welcome to Storage</div>
-    <p class="register-modal-sub">Enter your email and we'll send you a link to sign in. No password, no fuss.</p>
+    <div class="register-modal-title">Sign in</div>
+    <p class="register-modal-sub">Enter your email to receive a sign-in link.</p>
     <div class="prompt-form" id="signin-form">
-      <input type="email" id="email-input" placeholder="you@company.com" autocomplete="email" spellcheck="false">
+      <input type="email" id="email-input" placeholder="you@example.com" autocomplete="email" spellcheck="false">
+      ${siteKey ? `<div id="turnstile-container" class="cf-turnstile" data-sitekey="${siteKey}" data-theme="dark" data-action="magic-link" style="margin:8px 0"></div>` : ''}
       <button id="signin-btn" onclick="signIn()">
-        <span id="signin-text">Send link</span>
+        <span id="signin-text">Continue</span>
         <span id="signin-loading" style="display:none"><span class="spinner"></span></span>
       </button>
     </div>
     <div class="prompt-error" id="signin-error"></div>
-    <div class="register-modal-note">We'll email you a magic link. It expires in 15 minutes.</div>
+    <div class="register-modal-note">Link expires in 15 minutes. New here? We'll create your account automatically.</div>
   </div>
 </div>`;
 
@@ -72,6 +73,7 @@ export function homePage(actor: string | null = null): string {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/base.css">
 <link rel="stylesheet" href="/home.css">
+${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ''}
 </head>
 <body>
 
@@ -489,10 +491,12 @@ async function signIn(){
   document.getElementById('signin-text').style.display='none';
   document.getElementById('signin-loading').style.display='inline-flex';
   try{
-    const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const payload={email};
+    const tsInput=document.querySelector('[name="cf-turnstile-response"]');
+    if(tsInput&&tsInput.value)payload['cf-turnstile-response']=tsInput.value;
+    const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await res.json();
     if(!res.ok) throw new Error(data.message||'Something went wrong. Please try again.');
-    if(data.link){window.location.href=data.link;return}
     document.getElementById('signin-form').innerHTML='<div class="prompt-success">Check your inbox! We sent you a sign-in link.</div>'
   }catch(err){
     errEl.textContent=err.message;btn.disabled=false;input.disabled=false;

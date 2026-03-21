@@ -1,6 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import type { App } from "../types";
 import { magicToken, sessionToken } from "../lib/id";
+import { validateTurnstile } from "../lib/turnstile";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "../middleware/rate-limit";
+import { botGuard } from "../middleware/bot-guard";
 
 const SITE_NAME = "Storage";
 const MAGIC_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -22,6 +25,7 @@ const requestMagicLinkRoute = createRoute({
         "application/json": {
           schema: z.object({
             email: z.string().email().openapi({ example: "you@email.com" }),
+            "cf-turnstile-response": z.string().optional().openapi({ description: "Turnstile token (browser clients)" }),
           }),
         },
       },
@@ -38,6 +42,10 @@ const requestMagicLinkRoute = createRoute({
     },
     400: {
       description: "Bad request",
+      content: { "application/json": { schema: errSchema } },
+    },
+    403: {
+      description: "Bot check failed",
       content: { "application/json": { schema: errSchema } },
     },
     409: {
@@ -58,13 +66,32 @@ const requestMagicLinkRoute = createRoute({
 // ── Handlers ─────────────────────────────────────────────────────────
 
 export function register(app: App) {
+  // Bot guard on magic link endpoint
+  app.use("/auth/magic-link", botGuard);
+
   // POST /auth/magic-link — request a magic sign-in link
   app.openapi(requestMagicLinkRoute, async (c) => {
-    const { email: rawEmail } = c.req.valid("json");
+    const body = c.req.valid("json");
+    const rawEmail = body.email;
+    const turnstileToken = body["cf-turnstile-response"];
     const email = rawEmail.trim().toLowerCase();
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return c.json({ error: "invalid_request", message: "Invalid email format" }, 400);
+    }
+
+    // Turnstile validation (skipped if not configured)
+    const ip = getClientIp(c);
+    const tsResult = await validateTurnstile(turnstileToken, c.env.TURNSTILE_SECRET_KEY, ip);
+    if (!tsResult.success) {
+      return c.json({ error: "bot_check_failed", message: "Verification failed. Please try again." }, 403);
+    }
+
+    // IP rate limit: 10 magic link requests per 15 minutes per IP
+    const rl = await checkRateLimit(c.env.DB, { endpoint: "auth/magic-link", limit: 10, windowMs: 900_000 }, ip);
+    if (!rl.allowed) {
+      // Return generic message to prevent enumeration
+      return c.json({ message: "If that email is valid, you'll receive a sign-in link shortly." }, 200);
     }
 
     // Require Resend to be configured — no dev fallback
@@ -136,8 +163,9 @@ export function register(app: App) {
     const link = `${origin}/auth/magic/${token}`;
 
     // Send email via Resend
-    const html = magicLinkEmail(link, actor.slice(2), origin);
-    console.log("[magic] Sending magic link to:", email, "actor:", actor, "link:", link);
+    const isNewUser = !existing;
+    const html = magicLinkEmail(link, actor.slice(2), origin, isNewUser);
+    console.log("[magic] Sending magic link to:", email, "actor:", actor);
     try {
       const payload = {
         from: `${SITE_NAME} <noreply@liteio.dev>`,
@@ -168,11 +196,6 @@ export function register(app: App) {
       console.error("[magic] Failed to send email:", e);
       await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
       return c.json({ error: "email_failed", message: "Could not send email. Please try again." }, 500);
-    }
-
-    // In dev mode, return the link directly for testing
-    if (c.env.DEV_MODE === "1") {
-      return c.json({ message: "Magic link sent.", link }, 200);
     }
 
     // Always return the same generic message (prevents user enumeration)
@@ -262,7 +285,10 @@ async function handleLogout(c: any) {
 
 // ── Email template ───────────────────────────────────────────────────
 
-function magicLinkEmail(link: string, username: string, origin: string): string {
+function magicLinkEmail(link: string, username: string, origin: string, isNewUser = false): string {
+  const greeting = isNewUser
+    ? `Welcome, ${username}`
+    : `Hey ${username}, welcome back`;
   return `<!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
@@ -316,7 +342,7 @@ function magicLinkEmail(link: string, username: string, origin: string): string 
         <!-- Content -->
         <tr>
           <td style="padding:28px 40px 0">
-            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111;line-height:1.3">Hey ${username}, welcome back</h1>
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111;line-height:1.3">${greeting}</h1>
             <p style="margin:0 0 28px;font-size:14px;color:#71717a;line-height:1.6">
               Tap the button below to sign in. This link is just for you and expires in 15 minutes.
             </p>
