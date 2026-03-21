@@ -13,7 +13,14 @@ export async function dashboardPage(
   const actor = await getSessionActor(c);
   if (!actor) return c.redirect("/", 302);
 
-  const displayName = esc(actor.slice(2));
+  // Fetch actor details for onboarding check
+  const actorRow = await c.env.DB.prepare(
+    "SELECT public_key, username, display_name, email FROM actors WHERE actor = ?",
+  ).bind(actor).first<{ public_key: string | null; username: string | null; display_name: string | null; email: string | null }>();
+
+  const needsOnboarding = actorRow?.public_key === "placeholder-email-user";
+  const displayName = esc(actorRow?.display_name || actorRow?.username || actor.slice(2));
+  const email = esc(actorRow?.email || "");
 
   return c.html(`<!DOCTYPE html>
 <html lang="en">
@@ -89,7 +96,7 @@ ${FONT_LINK}
 </div>
 
 <script>
-window.__DASH_CONFIG = { actor: '${actor}', displayName: '${displayName}' };
+window.__DASH_CONFIG = { actor: '${actor}', displayName: '${displayName}', needsOnboarding: ${needsOnboarding}, email: '${email}' };
 </script>
 <script>
 function toggleTheme(){

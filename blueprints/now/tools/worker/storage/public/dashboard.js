@@ -943,7 +943,7 @@ window.fbNewFolder = function() {
 window.fbUploadClick = function() {
   var bg = document.createElement('div');
   bg.className = 'modal-bg';
-  bg.innerHTML = '<div class="modal-box" style="max-width:560px">' +
+  bg.innerHTML = '<div class="modal-box upload-modal-box">' +
     '<div class="modal-title">Upload</div>' +
     '<div class="upload-modal-body">' +
       '<div class="upload-url-row">' +
@@ -1284,7 +1284,7 @@ function renderPreview() {
     else if (ft === 'sheet') { body = csvToTable(c); }
     else { body = '<pre class="preview-text">' + h(c) + '</pre>'; }
   } else if (ft === 'doc' && (item.name || '').toLowerCase().endsWith('.pdf')) {
-    body = '<iframe class="preview-pdf" id="pv-pdf" src="" style="width:100%;height:80vh;border:1px solid var(--border)"></iframe>';
+    body = '<iframe class="preview-pdf" id="pv-pdf" src="" style="width:100%;height:min(80vh,600px);min-height:300px;border:1px solid var(--border)"></iframe>';
     setTimeout(function() {
       var iframe = $('pv-pdf');
       if (iframe) resolveFileUrl(item._fullPath).then(function(url) { iframe.src = url; });
@@ -2013,3 +2013,103 @@ document.addEventListener('touchend', function() { clearTimeout(touchTimer); tou
    ══════════════════════════════════════════════════════════════════════ */
 var initSection = parseHash();
 go(initSection);
+
+/* ══════════════════════════════════════════════════════════════════════
+   ONBOARDING MODAL
+   ══════════════════════════════════════════════════════════════════════ */
+function showOnboardingModal() {
+  var emailPrefix = (CFG.email || '').split('@')[0].replace(/[^a-z0-9-]/gi, '').toLowerCase().slice(0, 20) || '';
+  var html = '<div class="modal-bg" id="onboard-modal" style="z-index:600">' +
+    '<div class="modal-box onboard-modal-box">' +
+    '<div style="font-size:18px;font-weight:700;margin-bottom:4px">Welcome to Storage</div>' +
+    '<div style="font-size:13px;color:var(--text-2);margin-bottom:24px;line-height:1.6">Choose a username and display name to get started.</div>' +
+    '<div class="onboard-field">' +
+      '<label class="onboard-label">USERNAME</label>' +
+      '<div class="onboard-input-wrap">' +
+        '<span class="onboard-prefix">u/</span>' +
+        '<input type="text" id="onboard-username" class="onboard-input" placeholder="your-username" maxlength="20" autocomplete="off" spellcheck="false">' +
+      '</div>' +
+      '<div class="onboard-hint" id="onboard-username-hint">3\u201320 characters. Lowercase, numbers, hyphens. Permanent.</div>' +
+    '</div>' +
+    '<div class="onboard-field">' +
+      '<label class="onboard-label">DISPLAY NAME</label>' +
+      '<input type="text" id="onboard-displayname" class="modal-input" style="margin-bottom:4px" placeholder="Your Name" maxlength="50" value="' + h(emailPrefix) + '">' +
+      '<div class="onboard-hint">Shown in the UI. Can be changed later.</div>' +
+    '</div>' +
+    '<div class="onboard-error" id="onboard-error"></div>' +
+    '<div class="modal-actions" style="margin-top:20px">' +
+      '<button class="modal-confirm--primary" id="onboard-btn" onclick="submitOnboarding()">Continue</button>' +
+    '</div>' +
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  var inp = document.getElementById('onboard-username');
+  if (inp) {
+    inp.addEventListener('input', function() {
+      var v = this.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      this.value = v;
+      validateOnboardUsername(v);
+    });
+    inp.focus();
+  }
+  var dn = document.getElementById('onboard-displayname');
+  if (dn) dn.addEventListener('keydown', function(e) { if (e.key === 'Enter') submitOnboarding(); });
+  if (inp) inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') document.getElementById('onboard-displayname').focus(); });
+}
+
+function validateOnboardUsername(v) {
+  var hint = document.getElementById('onboard-username-hint');
+  var inp = document.getElementById('onboard-username');
+  if (!v) { hint.textContent = '3\u201320 characters. Lowercase, numbers, hyphens. Permanent.'; hint.style.color = ''; inp.style.borderColor = ''; return false; }
+  if (v.length < 3) { hint.textContent = 'At least 3 characters'; hint.style.color = 'var(--red)'; inp.style.borderColor = 'var(--red)'; return false; }
+  if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(v) && v.length > 2) { hint.textContent = 'Cannot start or end with a hyphen'; hint.style.color = 'var(--red)'; inp.style.borderColor = 'var(--red)'; return false; }
+  if (/--/.test(v)) { hint.textContent = 'No consecutive hyphens'; hint.style.color = 'var(--red)'; inp.style.borderColor = 'var(--red)'; return false; }
+  hint.textContent = 'Looks good'; hint.style.color = 'var(--green,#22c55e)'; inp.style.borderColor = 'var(--green,#22c55e)';
+  return true;
+}
+
+function submitOnboarding() {
+  var username = (document.getElementById('onboard-username').value || '').trim().toLowerCase();
+  var displayName = (document.getElementById('onboard-displayname').value || '').trim();
+  var errEl = document.getElementById('onboard-error');
+  var btn = document.getElementById('onboard-btn');
+
+  if (!validateOnboardUsername(username)) { errEl.textContent = 'Please enter a valid username'; return; }
+  if (!displayName) { errEl.textContent = 'Please enter a display name'; return; }
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Setting up...';
+
+  fetch('/dashboard/profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username, display_name: displayName })
+  })
+  .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, data: d }; }); })
+  .then(function(r) {
+    if (!r.ok) {
+      errEl.textContent = r.data.message || 'Something went wrong';
+      btn.disabled = false;
+      btn.textContent = 'Continue';
+      return;
+    }
+    // Success — update config and UI
+    CFG.displayName = displayName;
+    CFG.needsOnboarding = false;
+    var navUser = document.querySelector('.nav-user');
+    if (navUser) navUser.textContent = displayName;
+    var modal = document.getElementById('onboard-modal');
+    if (modal) modal.remove();
+    toast('Welcome, ' + displayName + '!', 'ok');
+  })
+  .catch(function() {
+    errEl.textContent = 'Network error — please try again';
+    btn.disabled = false;
+    btn.textContent = 'Continue';
+  });
+}
+
+if (CFG.needsOnboarding) {
+  showOnboardingModal();
+}

@@ -105,3 +105,11 @@ CREATE TABLE IF NOT EXISTS oauth_codes (
   expires_at             INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_codes(expires_at);
+
+-- Rate limiting (bot protection)
+CREATE TABLE IF NOT EXISTS rate_limits (
+  endpoint TEXT NOT NULL,
+  key      TEXT NOT NULL,
+  ts       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rl_lookup ON rate_limits(endpoint, key, ts);
