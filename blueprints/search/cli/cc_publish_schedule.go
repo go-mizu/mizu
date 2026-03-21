@@ -799,10 +799,12 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		logLine(fmt.Sprintf("Round %d | sessions: %d/%d running, %d queued%s | load %.1f/%d cores | RAM %.1f/%.1fGB",
 			round, nRunning, effectiveMax, nTodo, scalingNote, loadAvg, hw.CPUCores, hw.RAMAvailGB, hw.RAMTotalGB))
 
-		// Line 2: throughput rates.
+		// Line 2: throughput rates (always shown).
 		if packRate > 0 || commitRate > 0 {
 			logLine(fmt.Sprintf("  rate   | pack: %.0f shards/hr (+%d) | commit: %.0f shards/hr [%s] (+%d)",
 				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted))
+		} else {
+			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds)", len(rateHistory)-1, 5))
 		}
 
 		// Line 3: progress counters.
@@ -810,21 +812,25 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			totalCommitted, pending, curPacked, remaining, totalTarget,
 			float64(totalCommitted)/float64(totalTarget)*100))
 
-		// Line 4: ETA based on commit rate.
-		etaRate := commitRate
-		if etaRate <= 0 {
-			etaRate = packRate
-		}
-		if etaRate > 0 && remaining > 0 {
-			etaHours := float64(remaining) / etaRate
-			etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
-			if etaHours >= 24 {
-				logLine(fmt.Sprintf("  ETA    | %.1f days — ~%s", etaHours/24, etaDone.Format("Mon, 02 Jan 2006 15:04")))
-			} else {
-				logLine(fmt.Sprintf("  ETA    | %.1f hours — ~%s", etaHours, etaDone.Format("Mon, 02 Jan 2006 15:04")))
-			}
-		} else if remaining <= 0 {
+		// Line 4: ETA based on commit rate, falls back to pack rate.
+		if remaining <= 0 {
 			logLine(fmt.Sprintf("  DONE   | %d/%d shards committed", totalCommitted, totalTarget))
+		} else {
+			etaRate := commitRate
+			if etaRate <= 0 {
+				etaRate = packRate
+			}
+			if etaRate > 0 {
+				etaHours := float64(remaining) / etaRate
+				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				if etaHours >= 24 {
+					logLine(fmt.Sprintf("  ETA    | %.1f days — ~%s", etaHours/24, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+				} else {
+					logLine(fmt.Sprintf("  ETA    | %.1f hours — ~%s", etaHours, etaDone.Format("Mon, 02 Jan 2026 15:04")))
+				}
+			} else {
+				logLine("  ETA    | calculating...")
+			}
 		}
 
 		// Line 5: latest HF commit from watcher.
