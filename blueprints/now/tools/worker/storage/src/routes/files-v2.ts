@@ -9,6 +9,7 @@ import { mimeFromName } from "../lib/mime";
 import { audit } from "../lib/audit";
 import { shareToken } from "../lib/id";
 import { invalidateCache, getCachedNames } from "./find";
+import { checkRateLimit, rateLimitResponse } from "../middleware/rate-limit";
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -118,6 +119,11 @@ const DEFAULT_TTL = 3600;
 const MAX_TTL = 30 * 86400;
 
 async function shareFile(c: C) {
+  // Rate limit: 50 share links per hour per actor
+  const actor = c.get("actor");
+  const rl = await checkRateLimit(c.env.DB, { endpoint: "files/share", limit: 50, windowMs: 3600_000 }, actor);
+  if (!rl.allowed) return rateLimitResponse(c);
+
   const body = await c.req.json<{ path?: string; ttl?: number; expires_in?: number }>();
   const path = body.path || "";
 
@@ -127,7 +133,6 @@ async function shareFile(c: C) {
   const pfxErr = checkPrefix(c, path);
   if (pfxErr) return pfxErr;
 
-  const actor = c.get("actor");
   const meta = await engine(c).head(actor, path);
   if (!meta) return err(c, "not_found", "File not found");
 
@@ -169,6 +174,11 @@ async function mkdirHandler(c: C) {
 const UPLOAD_EXPIRES = 3600;
 
 async function initiateUpload(c: C) {
+  // Rate limit: 200 uploads per hour per actor
+  const actor = c.get("actor");
+  const rl = await checkRateLimit(c.env.DB, { endpoint: "files/uploads", limit: 200, windowMs: 3600_000 }, actor);
+  if (!rl.allowed) return rateLimitResponse(c);
+
   const body = await c.req.json<{ path?: string; content_type?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
@@ -177,7 +187,6 @@ async function initiateUpload(c: C) {
   const pfxErr = checkPrefix(c, path);
   if (pfxErr) return pfxErr;
 
-  const actor = c.get("actor");
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
 
@@ -214,6 +223,11 @@ async function completeUpload(c: C) {
 
 // ── POST /files/uploads/multipart ───────────────────────────────────
 async function initiateMultipart(c: C) {
+  // Rate limit: 50 multipart uploads per hour per actor
+  const actor = c.get("actor");
+  const rl = await checkRateLimit(c.env.DB, { endpoint: "files/uploads/multipart", limit: 50, windowMs: 3600_000 }, actor);
+  if (!rl.allowed) return rateLimitResponse(c);
+
   const body = await c.req.json<{ path?: string; content_type?: string; part_count?: number }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
@@ -222,7 +236,6 @@ async function initiateMultipart(c: C) {
   const pfxErr = checkPrefix(c, path);
   if (pfxErr) return pfxErr;
 
-  const actor = c.get("actor");
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
   const partCount = Math.min(body.part_count || 1, 10000);

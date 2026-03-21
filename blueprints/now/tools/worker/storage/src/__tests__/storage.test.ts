@@ -112,7 +112,7 @@ describe("Storage API", () => {
       `CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, actor TEXT NOT NULL, nonce TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, actor TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_sessions_actor ON sessions(actor, expires_at)`,
-      `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, actor TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', prefix TEXT NOT NULL DEFAULT '', expires_at INTEGER, created_at INTEGER NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, actor TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', prefix TEXT NOT NULL DEFAULT '', expires_at INTEGER, created_at INTEGER NOT NULL, last_accessed INTEGER)`,
       `CREATE INDEX IF NOT EXISTS idx_api_keys_actor ON api_keys(actor)`,
       // Storage — legacy shared tables (used for migration into per-actor shards)
       `CREATE TABLE IF NOT EXISTS files (owner TEXT NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL DEFAULT 'application/octet-stream', addr TEXT, tx INTEGER, tx_time INTEGER, updated_at INTEGER NOT NULL, PRIMARY KEY (owner, path))`,
@@ -133,6 +133,13 @@ describe("Storage API", () => {
       `CREATE TABLE IF NOT EXISTS oauth_clients (client_id TEXT PRIMARY KEY, redirect_uris TEXT NOT NULL DEFAULT '[]', client_name TEXT NOT NULL DEFAULT '', token_endpoint_auth_method TEXT NOT NULL DEFAULT 'none', created_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS oauth_codes (code TEXT PRIMARY KEY, actor TEXT NOT NULL, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, scope TEXT NOT NULL DEFAULT '*', code_challenge TEXT NOT NULL, code_challenge_method TEXT NOT NULL DEFAULT 'S256', expires_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_codes(expires_at)`,
+      // Rate limiting (bot protection)
+      `CREATE TABLE IF NOT EXISTS rate_limits (endpoint TEXT NOT NULL, key TEXT NOT NULL, ts INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_rl_lookup ON rate_limits(endpoint, key, ts)`,
+      // Magic link tokens
+      `CREATE TABLE IF NOT EXISTS magic_tokens (token TEXT PRIMARY KEY, email TEXT NOT NULL, actor TEXT, expires_at INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_magic_tokens_email ON magic_tokens(email)`,
+      `CREATE INDEX IF NOT EXISTS idx_magic_tokens_expires ON magic_tokens(expires_at)`,
     ];
     for (const sql of stmts) await db.exec(sql);
 

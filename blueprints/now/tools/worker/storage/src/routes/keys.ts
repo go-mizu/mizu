@@ -5,6 +5,7 @@ import { apiKeyId, apiKeyToken } from "../lib/id";
 import { sha256 } from "../middleware/auth";
 import { audit } from "../lib/audit";
 import { errRes } from "../schema";
+import { checkRateLimit, rateLimitResponse } from "../middleware/rate-limit";
 
 const createKeyRoute = createRoute({
   method: "post",
@@ -49,6 +50,7 @@ const createKeyRoute = createRoute({
         },
       },
     },
+    429: errRes("Rate limited"),
   },
 });
 
@@ -108,6 +110,11 @@ export function register(app: App) {
 
   app.openapi(createKeyRoute, async (c) => {
     const actor = c.get("actor");
+
+    // Rate limit: 10 key creations per hour per actor
+    const rl = await checkRateLimit(c.env.DB, { endpoint: "auth/keys", limit: 10, windowMs: 3600_000 }, actor);
+    if (!rl.allowed) return rateLimitResponse(c);
+
     const body = c.req.valid("json");
 
     const id = apiKeyId();

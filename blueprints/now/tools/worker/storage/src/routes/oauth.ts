@@ -3,6 +3,9 @@ import type { App, Env, Variables } from "../types";
 import { apiKeyId, apiKeyToken, magicToken, sessionToken } from "../lib/id";
 import { sha256 } from "../middleware/auth";
 import { esc } from "../pages/layout";
+import { validateTurnstile } from "../lib/turnstile";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "../middleware/rate-limit";
+import { botGuard } from "../middleware/bot-guard";
 
 type C = Context<{ Bindings: Env; Variables: Variables }>;
 
@@ -54,6 +57,11 @@ function authorizationServerMetadata(c: C) {
 // ── Dynamic Client Registration (RFC 7591) ────────────────────────────
 
 async function registerClient(c: C) {
+  // Rate limit: 5 client registrations per hour per IP
+  const ip = getClientIp(c);
+  const rl = await checkRateLimit(c.env.DB, { endpoint: "oauth/register", limit: 5, windowMs: 3600_000 }, ip);
+  if (!rl.allowed) return rateLimitResponse(c);
+
   let body: any;
   try {
     body = await c.req.json();
@@ -124,7 +132,7 @@ async function authorizeEndpoint(c: C) {
   if (actor) {
     return c.html(consentPage(actor, displayName, scope, oauthParams));
   }
-  return c.html(loginPage(displayName, oauthParams));
+  return c.html(loginPage(displayName, oauthParams, c.env.TURNSTILE_SITE_KEY));
 }
 
 // POST /oauth/authorize — handle consent or login
@@ -140,9 +148,23 @@ async function authorizeSubmit(c: C) {
 async function handleLoginSubmit(c: C, form: FormData) {
   const email = (form.get("email") as string || "").trim().toLowerCase();
   const oauthParams = form.get("oauth_params") as string || "";
+  const turnstileToken = form.get("cf-turnstile-response") as string || "";
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return c.html(errorPage("Invalid email", "Please enter a valid email address"), 400);
+  }
+
+  // Turnstile validation (skipped if not configured)
+  const ip = getClientIp(c);
+  const tsResult = await validateTurnstile(turnstileToken, c.env.TURNSTILE_SECRET_KEY, ip);
+  if (!tsResult.success) {
+    return c.html(errorPage("Verification failed", "Bot check failed. Please try again."), 403);
+  }
+
+  // IP rate limit: 10 OAuth login attempts per 15 minutes
+  const rl = await checkRateLimit(c.env.DB, { endpoint: "oauth/authorize", limit: 10, windowMs: 900_000 }, ip);
+  if (!rl.allowed) {
+    return c.html(errorPage("Too many attempts", "Please wait a few minutes before trying again."), 429);
   }
 
   if (!c.env.RESEND_API_KEY) {
@@ -399,10 +421,16 @@ if(localStorage.getItem('theme')==='dark'||(!localStorage.getItem('theme')&&wind
 }
 </script>`;
 
-function loginPage(clientName: string, oauthParams: string): string {
+function loginPage(clientName: string, oauthParams: string, siteKey?: string): string {
+  const turnstileScript = siteKey
+    ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`
+    : "";
+  const turnstileWidget = siteKey
+    ? `<div class="cf-turnstile" data-sitekey="${esc(siteKey)}" data-theme="auto" data-action="oauth-login" style="margin-bottom:1rem"></div>`
+    : "";
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in — Storage</title>${PAGE_STYLE}</head><body>
+<title>Sign in — Storage</title>${PAGE_STYLE}${turnstileScript}</head><body>
 <div class="card">
   <div class="brand">Storage</div>
   <h1>Sign in to continue</h1>
@@ -412,6 +440,7 @@ function loginPage(clientName: string, oauthParams: string): string {
     <input type="hidden" name="oauth_params" value="${esc(oauthParams)}">
     <label for="email">Email</label>
     <input type="email" id="email" name="email" placeholder="you@email.com" required autofocus>
+    ${turnstileWidget}
     <button type="submit">Continue with email</button>
   </form>
 </div></body></html>`;
@@ -510,6 +539,8 @@ function errorPage(title: string, message: string): string {
 export function register(app: App) {
   app.get("/.well-known/oauth-protected-resource", protectedResourceMetadata);
   app.get("/.well-known/oauth-authorization-server", authorizationServerMetadata);
+  // Bot guard on OAuth client registration
+  app.use("/oauth/register", botGuard);
   app.post("/oauth/register", registerClient);
   app.get("/oauth/authorize", authorizeEndpoint);
   app.post("/oauth/authorize", authorizeSubmit);

@@ -28,6 +28,7 @@ bucket_name = "storage-files"
 [[hyperdrive]]
 binding = "HYPERDRIVE"
 id = "91035394dca3474bb2d2a27a661eda4a"
+localConnectionString = "postgresql://user:pass@localhost:5432/db"
 
 # ── Durable Objects (per-actor SQLite, opt-in via STORAGE_DRIVER=do|dov2) ──
 [[durable_objects.bindings]]

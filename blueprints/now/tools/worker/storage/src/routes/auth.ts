@@ -3,6 +3,8 @@ import type { App } from "../types";
 import { challengeId, nonce, sessionToken } from "../lib/id";
 import { audit } from "../lib/audit";
 import { errRes } from "../schema";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "../middleware/rate-limit";
+import { botGuard } from "../middleware/bot-guard";
 
 // ── Route definitions (single source of truth) ─────────────────────
 
@@ -43,6 +45,7 @@ const registerRoute = createRoute({
     },
     400: errRes("Bad request"),
     409: errRes("Actor already exists"),
+    429: errRes("Rate limited"),
   },
 });
 
@@ -77,6 +80,7 @@ const challengeRoute = createRoute({
     },
     400: errRes("Bad request"),
     404: errRes("Actor not found"),
+    429: errRes("Rate limited"),
   },
 });
 
@@ -116,6 +120,7 @@ const verifyRoute = createRoute({
     400: errRes("Bad request"),
     401: errRes("Invalid signature"),
     404: errRes("Challenge not found"),
+    429: errRes("Rate limited"),
   },
 });
 
@@ -139,7 +144,15 @@ const logoutRoute = createRoute({
 // ── Handlers ────────────────────────────────────────────────────────
 
 export function register(app: App) {
+  // Bot guard on registration endpoint
+  app.use("/auth/register", botGuard);
+
   app.openapi(registerRoute, async (c) => {
+    // Rate limit: 5 registrations per hour per IP
+    const ip = getClientIp(c);
+    const rl = await checkRateLimit(c.env.DB, { endpoint: "auth/register", limit: 5, windowMs: 3600_000 }, ip);
+    if (!rl.allowed) return rateLimitResponse(c);
+
     const { actor: name, type, public_key } = c.req.valid("json");
 
     const existing = await c.env.DB.prepare("SELECT 1 FROM actors WHERE actor = ?")
@@ -159,6 +172,11 @@ export function register(app: App) {
   });
 
   app.openapi(challengeRoute, async (c) => {
+    // Rate limit: 30 challenges per hour per IP
+    const ip = getClientIp(c);
+    const rl = await checkRateLimit(c.env.DB, { endpoint: "auth/challenge", limit: 30, windowMs: 3600_000 }, ip);
+    if (!rl.allowed) return rateLimitResponse(c);
+
     const { actor: name } = c.req.valid("json");
 
     const row = await c.env.DB.prepare("SELECT 1 FROM actors WHERE actor = ?")
@@ -186,6 +204,11 @@ export function register(app: App) {
   });
 
   app.openapi(verifyRoute, async (c) => {
+    // Rate limit: 20 verify attempts per hour per IP
+    const ip = getClientIp(c);
+    const rl = await checkRateLimit(c.env.DB, { endpoint: "auth/verify", limit: 20, windowMs: 3600_000 }, ip);
+    if (!rl.allowed) return rateLimitResponse(c);
+
     const { challenge_id, actor: name, signature } = c.req.valid("json");
 
     const ch = await c.env.DB.prepare(

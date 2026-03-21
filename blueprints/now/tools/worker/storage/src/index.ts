@@ -63,7 +63,7 @@ app.use("*", async (c, next) => {
 app.get("/", async (c) => {
   const actor = await getSessionActor(c);
   if (actor) return c.redirect("/dashboard", 302);
-  return c.html(homePage(null));
+  return c.html(homePage(null, c.env.TURNSTILE_SITE_KEY));
 });
 app.get("/developers", async (c) => {
   const actor = await getSessionActor(c);
