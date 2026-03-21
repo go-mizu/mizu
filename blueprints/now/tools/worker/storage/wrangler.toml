@@ -29,11 +29,19 @@ bucket_name = "storage-files"
 binding = "HYPERDRIVE"
 id = "91035394dca3474bb2d2a27a661eda4a"
 
-# ── Durable Objects (per-actor SQLite, opt-in via STORAGE_DRIVER=do) ──
+# ── Durable Objects (per-actor SQLite, opt-in via STORAGE_DRIVER=do|dov2) ──
 [[durable_objects.bindings]]
 name = "STORAGE_DO"
 class_name = "StorageDO"
 
+[[durable_objects.bindings]]
+name = "STORAGE_DO_V2"
+class_name = "StorageDOv2"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["StorageDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["StorageDOv2"]

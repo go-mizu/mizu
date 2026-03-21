@@ -27,6 +27,9 @@ export default defineConfig({
       miniflare: {
         d1Databases: ["DB"],
         r2Buckets: ["BUCKET"],
+        hyperdrives: {
+          HYPERDRIVE: localEnv.POSTGRES_DSN || "postgresql://user:pass@localhost:5432/db",
+        },
         bindings: {
           R2_ENDPOINT: "https://test.r2.cloudflarestorage.com",
           R2_ACCESS_KEY_ID: "test-key-id",

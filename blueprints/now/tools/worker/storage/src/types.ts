@@ -1,6 +1,7 @@
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import type { StorageEngine } from "./storage/engine";
 import type { StorageDO } from "./storage/do_driver";
+import type { StorageDOv2 } from "./storage/do_v2_driver";
 
 export interface Env {
   DB: D1Database;
@@ -14,7 +15,8 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string; // defaults to "storage-files"
   STORAGE_DO?: DurableObjectNamespace<StorageDO>;
-  STORAGE_DRIVER?: string; // "d1" (default) | "do" | "hyperdrive" | "neon"
+  STORAGE_DO_V2?: DurableObjectNamespace<StorageDOv2>;
+  STORAGE_DRIVER?: string; // "d1" | "d1v2" | "do" | "dov2" | "hyperdrive" | "neon"
   HYPERDRIVE?: Hyperdrive; // Cloudflare Hyperdrive binding (PostgreSQL proxy)
   POSTGRES_DSN?: string; // Direct PostgreSQL connection string (for Neon driver)
   POSTGRES_EC1_DSN?: string; // Neon EU (eu-central-1) connection string

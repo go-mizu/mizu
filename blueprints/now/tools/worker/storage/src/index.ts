@@ -21,11 +21,13 @@ import { privacyPage } from "./pages/privacy";
 import { dashboardPage } from "./pages/dashboard";
 import { D1Engine } from "./storage/d1_driver";
 import { DOEngine, StorageDO } from "./storage/do_driver";
+import { D1V2Engine } from "./storage/d1_v2_driver";
+import { DOV2Engine, StorageDOv2 } from "./storage/do_v2_driver";
 import { HyperdriveEngine } from "./storage/hyperdrive_driver";
 import { NeonEngine } from "./storage/neon_driver";
 import type { Env, Variables } from "./types";
 
-export { StorageDO };
+export { StorageDO, StorageDOv2 };
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
@@ -42,13 +44,17 @@ app.use("*", async (c, next) => {
   };
   const driver = c.env.STORAGE_DRIVER;
   const engine =
-    driver === "do" && c.env.STORAGE_DO
-      ? new DOEngine({ ns: c.env.STORAGE_DO!, ...r2Config })
-      : driver === "hyperdrive" && c.env.HYPERDRIVE
-        ? new HyperdriveEngine({ connectionString: c.env.HYPERDRIVE.connectionString, ...r2Config })
-        : driver === "neon" && c.env.POSTGRES_DSN
-          ? new NeonEngine({ connectionString: c.env.POSTGRES_DSN, ...r2Config })
-          : new D1Engine({ db: c.env.DB, ...r2Config });
+    driver === "dov2" && c.env.STORAGE_DO_V2
+      ? new DOV2Engine({ ns: c.env.STORAGE_DO_V2!, ...r2Config })
+      : driver === "d1v2"
+        ? new D1V2Engine({ db: c.env.DB, ...r2Config })
+        : driver === "do" && c.env.STORAGE_DO
+          ? new DOEngine({ ns: c.env.STORAGE_DO!, ...r2Config })
+          : driver === "hyperdrive" && c.env.HYPERDRIVE
+            ? new HyperdriveEngine({ connectionString: c.env.HYPERDRIVE.connectionString, ...r2Config })
+            : driver === "neon" && c.env.POSTGRES_DSN
+              ? new NeonEngine({ connectionString: c.env.POSTGRES_DSN, ...r2Config })
+              : new D1Engine({ db: c.env.DB, ...r2Config });
   c.set("engine", engine);
   await next();
 });

@@ -73,6 +73,16 @@ export interface LogOptions {
   limit?: number;
 }
 
+// ── v2 inode types ──────────────────────────────────────────────────
+
+export interface FileVersion {
+  version: number;
+  content_hash: string;
+  size: number;
+  content_type: string | null;
+  created_tx: number;
+}
+
 // ── Abstract engine ──────────────────────────────────────────────────
 
 export interface StorageEngine {
