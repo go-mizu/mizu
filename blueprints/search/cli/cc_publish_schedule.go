@@ -592,33 +592,35 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 	}
 
-	// Pack rate tracking: total packed = committed + pending parquets on disk.
-	// Parquets are deleted after HF commit, so we can't just count files — we
-	// need committed (from stats.csv) + pending (files not yet committed).
+	// File counting for rate tracking.
 	dataDir := filepath.Join(cfg.RepoRoot, "data", cfg.CrawlID)
-	countPendingParquets := func() int {
-		entries, err := os.ReadDir(dataDir)
+	homeDir, _ := os.UserHomeDir()
+	warcDir := filepath.Join(homeDir, "data", "common-crawl", cfg.CrawlID, "warc")
+	countFiles := func(dir, suffix string) int {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return 0
 		}
 		n := 0
 		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".parquet") {
+			if strings.HasSuffix(e.Name(), suffix) {
 				n++
 			}
 		}
 		return n
 	}
-	totalPacked := func() int { return len(committed) + countPendingParquets() }
+	countPendingParquets := func() int { return countFiles(dataDir, ".parquet") }
+	countDownloading := func() int { return countFiles(warcDir, ".warc.gz") }
 
 	// Rate tracking via sliding window of per-round deltas.
-	// Tracks shards committed to HF during THIS scheduler session only.
-	// We watch watcher_status.json CommitNumber changes — each new commit
-	// adds ShardsInCommit to our running total. This prevents inflated rates
-	// from historical TotalCommitted values.
+	// All counters are session-local to avoid inflation from stats.csv merge.
+	// Pack rate uses sessionCommitted + pending (not totalPacked from stats.csv).
+	// When watcher commits N shards: sessionCommitted+N, pending-N → net 0.
+	// When pipeline creates a new parquet: pending+1 → net +1.
 	type rateSnapshot struct {
-		packed          int
+		sessionPacked   int // sessionCommitted + pending parquets (session-local)
 		sessionCommits  int // shards committed to HF since scheduler start
+		downloading     int // raw .warc.gz files on disk
 		time            time.Time
 	}
 	var rateHistory []rateSnapshot
@@ -627,8 +629,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	if ws, ok := ccReadWatcherStatus(cfg.RepoRoot); ok {
 		lastSeenHFCommit = ws.CommitNumber // baseline: don't count old commits
 	}
+	initPending := countPendingParquets()
 	rateHistory = append(rateHistory, rateSnapshot{
-		packed: totalPacked(), sessionCommits: 0, time: time.Now(),
+		sessionPacked: initPending, sessionCommits: 0,
+		downloading: countDownloading(), time: time.Now(),
 	})
 
 	round := 0
@@ -734,9 +738,8 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		// ── Round summary ────────────────────────────────────────────────────
 		const totalTarget = 100_000
 
-		// Pack rate: total packed (committed + pending parquets on disk).
-		curPacked := totalPacked()
 		pending := countPendingParquets()
+		downloading := countDownloading()
 
 		// Detect new HF commits: if CommitNumber increased, add ShardsInCommit.
 		if hasWatcherStatus && watcherStatus.CommitNumber > lastSeenHFCommit {
@@ -744,9 +747,16 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			lastSeenHFCommit = watcherStatus.CommitNumber
 		}
 
+		// Session-local packed: sessionCommitted + pending parquets.
+		// When watcher commits N: sessionCommitted+N, pending-N → net zero.
+		// When pipeline creates 1 new parquet: pending+1 → net +1.
+		// So delta of sessionPacked = actual new parquets produced.
+		sessionPacked := sessionCommitted + pending
+
 		// Record this round's snapshot for sliding-window rate calculation.
 		rateHistory = append(rateHistory, rateSnapshot{
-			packed: curPacked, sessionCommits: sessionCommitted, time: time.Now(),
+			sessionPacked: sessionPacked, sessionCommits: sessionCommitted,
+			downloading: downloading, time: time.Now(),
 		})
 		// Keep last 20 rounds (~15 min at 45s/round) for stable window.
 		if len(rateHistory) > 20 {
@@ -762,7 +772,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		windowDur := windowEnd.time.Sub(windowStart.time)
 
 		if len(rateHistory) >= 5 && windowDur.Seconds() > 60 {
-			newPacked := windowEnd.packed - windowStart.packed
+			newPacked := windowEnd.sessionPacked - windowStart.sessionPacked
 			if newPacked < 0 {
 				newPacked = 0
 			}
@@ -775,15 +785,14 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 				rateSource = "hf"
 			}
 		}
-		// No csv fallback — commit rate is only from actual HF pushes.
-		// Before the first HF commit, rate is 0 and ETA uses pack rate.
 
 		// Delta since last round (for display).
-		var lastRoundPacked, lastRoundCommitted int
+		var lastRoundPacked, lastRoundCommitted, lastRoundDownload int
 		if len(rateHistory) >= 2 {
 			prev := rateHistory[len(rateHistory)-2]
-			lastRoundPacked = windowEnd.packed - prev.packed
+			lastRoundPacked = windowEnd.sessionPacked - prev.sessionPacked
 			lastRoundCommitted = windowEnd.sessionCommits - prev.sessionCommits
+			lastRoundDownload = windowEnd.downloading - prev.downloading
 			if lastRoundPacked < 0 {
 				lastRoundPacked = 0
 			}
@@ -801,15 +810,17 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		// Line 2: throughput rates (always shown).
 		if packRate > 0 || commitRate > 0 {
-			logLine(fmt.Sprintf("  rate   | pack: %.0f shards/hr (+%d) | commit: %.0f shards/hr [%s] (+%d)",
-				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted))
+			logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (+%d)",
+				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted,
+				downloading, lastRoundDownload))
 		} else {
-			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds)", len(rateHistory)-1, 5))
+			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (+%d)",
+				len(rateHistory)-1, 5, downloading, lastRoundDownload))
 		}
 
 		// Line 3: progress counters.
-		logLine(fmt.Sprintf("  done   | %d committed + %d pending = %d packed | %d remaining of %d (%.1f%%)",
-			totalCommitted, pending, curPacked, remaining, totalTarget,
+		logLine(fmt.Sprintf("  done   | %d committed + %d pending = %d total | %d remaining of %d (%.1f%%)",
+			totalCommitted, pending, totalCommitted+pending, remaining, totalTarget,
 			float64(totalCommitted)/float64(totalTarget)*100))
 
 		// Line 4: ETA based on commit rate, falls back to pack rate.
