@@ -69,6 +69,7 @@ export interface ListOptions {
 export interface LogOptions {
   path?: string;
   since_tx?: number;
+  before_tx?: number;
   limit?: number;
 }
 

@@ -605,6 +605,11 @@ export abstract class PgEngineBase implements StorageEngine {
       params.push(opts.since_tx);
       idx++;
     }
+    if (opts?.before_tx) {
+      sql += ` AND tx < $${idx}`;
+      params.push(opts.before_tx);
+      idx++;
+    }
 
     sql += ` ORDER BY tx DESC, id DESC LIMIT $${idx}`;
     params.push(limit);

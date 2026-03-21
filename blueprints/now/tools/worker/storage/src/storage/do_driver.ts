@@ -392,6 +392,10 @@ export class StorageDO extends DurableObject<DOEnv> {
       q += " AND tx > ?";
       binds.push(opts.since_tx);
     }
+    if (opts?.before_tx) {
+      q += " AND tx < ?";
+      binds.push(opts.before_tx);
+    }
 
     q += " ORDER BY tx DESC, id DESC LIMIT ?";
     binds.push(limit);

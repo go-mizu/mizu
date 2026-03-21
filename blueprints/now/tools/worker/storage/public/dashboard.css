@@ -138,7 +138,6 @@
 .fb-list{border:1px solid var(--border);border-bottom:none}
 .fb-header{
   display:flex;align-items:center;gap:12px;padding:8px 14px;
-  border-bottom:1px solid var(--border);
   font-family:'JetBrains Mono',monospace;font-size:10px;
   letter-spacing:1px;text-transform:uppercase;color:var(--text-3);
   background:var(--surface-alt);font-weight:500;
@@ -595,6 +594,13 @@
   color:var(--red);cursor:pointer;transition:all .15s;font-weight:600;
 }
 .modal-confirm:hover{background:color-mix(in srgb,var(--red) 8%,transparent)}
+.modal-confirm--primary{
+  padding:8px 16px;border:1px solid var(--text);background:var(--text);
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--bg);cursor:pointer;transition:opacity .15s;font-weight:600;
+}
+.modal-confirm--primary:hover{opacity:.85}
+.modal-confirm:disabled,.modal-confirm--primary:disabled,.key-create-btn:disabled{opacity:.4;pointer-events:none}
 .modal-input{
   width:100%;padding:8px 12px;border:1px solid var(--border);background:none;
   font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);

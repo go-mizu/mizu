@@ -115,7 +115,7 @@ async function moveFile(c: C) {
 
 // ── POST /files/share ───────────────────────────────────────────────
 const DEFAULT_TTL = 3600;
-const MAX_TTL = 7 * 86400;
+const MAX_TTL = 30 * 86400;
 
 async function shareFile(c: C) {
   const body = await c.req.json<{ path?: string; ttl?: number; expires_in?: number }>();
@@ -355,9 +355,10 @@ async function logHandler(c: C) {
   const actor = c.get("actor");
   const path = c.req.query("path");
   const since_tx = c.req.query("since_tx") ? parseInt(c.req.query("since_tx")!, 10) : undefined;
+  const before_tx = c.req.query("before_tx") ? parseInt(c.req.query("before_tx")!, 10) : undefined;
   const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
 
-  const events = await engine(c).log(actor, { path, since_tx, limit });
+  const events = await engine(c).log(actor, { path, since_tx, before_tx, limit });
   return c.json({ events });
 }
 

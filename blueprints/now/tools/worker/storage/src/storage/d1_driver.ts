@@ -682,6 +682,10 @@ export class D1Engine implements StorageEngine {
       sql += " AND tx > ?";
       binds.push(opts.since_tx);
     }
+    if (opts?.before_tx) {
+      sql += " AND tx < ?";
+      binds.push(opts.before_tx);
+    }
 
     sql += " ORDER BY tx DESC, id DESC LIMIT ?";
     binds.push(limit);

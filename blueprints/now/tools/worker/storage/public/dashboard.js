@@ -130,7 +130,11 @@ function showModal(title, text, confirmLabel, onConfirm) {
       '<button class="modal-confirm" id="modal-ok">' + h(confirmLabel) + '</button>' +
     '</div></div>';
   document.body.appendChild(bg);
-  bg.querySelector('#modal-ok').onclick = function() { bg.remove(); onConfirm(); };
+  bg.querySelector('#modal-ok').onclick = async function() {
+    var btn = bg.querySelector('#modal-ok');
+    btn.disabled = true; btn.textContent = '\u2026';
+    try { await onConfirm(); } finally { bg.remove(); }
+  };
   bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
 }
 
@@ -143,7 +147,7 @@ function showPromptModal(title, text, placeholder, defaultVal, confirmLabel, onC
     '<input class="modal-input" id="modal-input" placeholder="' + h(placeholder) + '" value="' + h(defaultVal) + '">' +
     '<div class="modal-actions">' +
       '<button class="modal-cancel" onclick="this.closest(\'.modal-bg\').remove()">Cancel</button>' +
-      '<button class="modal-confirm" id="modal-ok">' + h(confirmLabel) + '</button>' +
+      '<button class="modal-confirm--primary" id="modal-ok">' + h(confirmLabel) + '</button>' +
     '</div></div>';
   document.body.appendChild(bg);
   var inp = bg.querySelector('#modal-input');
@@ -497,7 +501,14 @@ window.go = go;
 function parseHash() {
   var hash = location.hash.slice(1) || 'overview';
   if (hash.startsWith('files/')) {
-    S.path = hash.slice(6);
+    var fp = hash.slice(6);
+    // If it doesn't end with / and has an extension, it's a file preview
+    if (fp && !fp.endsWith('/') && fp.includes('.')) {
+      S.path = fp.replace(/[^/]+$/, '');
+      S._initPreview = fp;
+    } else {
+      S.path = fp;
+    }
     return 'files';
   }
   if (hash.startsWith('files')) {
@@ -523,18 +534,20 @@ sections.overview = async function() {
     '<div class="dash-header"><div class="dash-title" style="font-size:15px">Recent Activity</div></div>' +
     '<div id="overview-activity"><div class="dash-loading"><span class="spinner"></span></div></div>';
 
-  var [stats, keys, events] = await Promise.all([
+  var [stats, keys, events, shares] = await Promise.all([
     api('/files/stats').catch(function() { return { files: 0, bytes: 0 }; }),
     api('/auth/keys').catch(function() { return { keys: [] }; }),
     api('/files/log?limit=10').catch(function() { return { events: [] }; }),
+    api('/dashboard/shares').catch(function() { return { shares: [] }; }),
   ]);
+  sharesData = shares.shares || [];
 
   var grid = $('stat-grid');
   if (grid) {
     grid.innerHTML =
-      '<div class="stat-card"><div class="stat-label">Files</div><div class="stat-value">' + stats.files + '</div><div class="stat-detail">' + fmtSize(stats.bytes) + ' used</div></div>' +
-      '<div class="stat-card"><div class="stat-label">Storage</div><div class="stat-value">' + fmtSize(stats.bytes) + '</div><div class="stat-detail">' + stats.files + ' files</div></div>' +
-      '<div class="stat-card"><div class="stat-label">API Keys</div><div class="stat-value">' + keys.keys.length + '</div><div class="stat-detail">active</div></div>';
+      '<div class="stat-card" style="cursor:pointer" onclick="go(\'files\')"><div class="stat-label">Files</div><div class="stat-value">' + stats.files + '</div><div class="stat-detail">' + fmtSize(stats.bytes) + ' used</div></div>' +
+      '<div class="stat-card" style="cursor:pointer" onclick="go(\'shares\')"><div class="stat-label">Shares</div><div class="stat-value">' + (sharesData ? sharesData.length : 0) + '</div><div class="stat-detail">active links</div></div>' +
+      '<div class="stat-card" style="cursor:pointer" onclick="go(\'keys\')"><div class="stat-label">API Keys</div><div class="stat-value">' + keys.keys.length + '</div><div class="stat-detail">active</div></div>';
   }
 
   var actEl = $('overview-activity');
@@ -543,15 +556,18 @@ sections.overview = async function() {
     actEl.innerHTML = '<div class="fb-empty">No recent activity</div>';
     return;
   }
-  var html = '<table class="d-table"><thead><tr><th>Action</th><th>Path</th><th>Size</th><th>Time</th></tr></thead><tbody>';
+  var html = '<div class="ev-list">';
   events.events.forEach(function(ev) {
-    html += '<tr style="cursor:pointer" onclick="go(\'events\')">' +
-      '<td>' + actionBadge(ev.action) + '</td>' +
-      '<td title="' + h(ev.path) + '">' + h(truncPath(ev.path)) + '</td>' +
-      '<td>' + fmtSize(ev.size) + '</td>' +
-      '<td>' + fmtRel(ev.ts) + '</td></tr>';
+    var detail = fmtSize(ev.size);
+    if (ev.msg) detail += ' \u00b7 ' + ev.msg;
+    html += '<div class="ev-row" style="cursor:pointer" onclick="go(\'events\')">' +
+      '<span class="ev-tx">#' + ev.tx + '</span>' +
+      '<span class="ev-badge">' + actionBadge(ev.action) + '</span>' +
+      '<span class="ev-path" title="' + h(ev.path) + '">' + h(ev.path) + '</span>' +
+      '<span class="ev-detail"><span class="ev-msg" title="' + h(detail) + '">' + h(detail) + '</span></span>' +
+      '<span class="ev-time">' + fmtRel(ev.ts) + '</span></div>';
   });
-  html += '</tbody></table>';
+  html += '</div>';
   actEl.innerHTML = html;
 };
 
@@ -560,6 +576,12 @@ sections.overview = async function() {
    ══════════════════════════════════════════════════════════════════════ */
 sections.files = function() {
   if (S.previewItem) { renderPreview(); return; }
+  if (S._initPreview) {
+    var fp = S._initPreview;
+    delete S._initPreview;
+    renderFiles().then(function() { openPreview(fp); });
+    return;
+  }
   renderFiles();
 };
 
@@ -614,9 +636,15 @@ function bindFileSearch() {
   });
 }
 
-async function loadFiles() {
+var filesTruncated = false;
+var filesOffset = 0;
+var filesSortCol = 'name';
+var filesSortAsc = true;
+
+async function loadFiles(append) {
   var listEl = $('fb-list');
   if (!listEl) return;
+  if (!append) { S.items = []; filesOffset = 0; filesTruncated = false; }
   try {
     var data;
     if (S.searchQ) {
@@ -625,28 +653,53 @@ async function loadFiles() {
         var isDir = r.path.endsWith('/');
         return { name: r.name || r.path, type: isDir ? 'directory' : 'file', size: 0, updated_at: 0, _fullPath: r.path };
       });
+      filesTruncated = false;
     } else {
-      data = await api('/files?prefix=' + encodeURIComponent(S.path) + '&limit=500');
-      S.items = (data.entries || []).map(function(e) {
+      data = await api('/files?prefix=' + encodeURIComponent(S.path) + '&limit=200&offset=' + filesOffset);
+      var newItems = (data.entries || []).map(function(e) {
         var isDir = e.type === 'directory';
-        var name = e.name.replace(/\/$/, ''); // strip trailing slash from display name
+        var name = e.name.replace(/\/$/, '');
         var fp = S.path + (isDir ? name + '/' : e.name);
         var ts = e.updated_at;
         if (ts && typeof ts === 'string') ts = new Date(ts).getTime();
         return { name: name, type: e.type, size: e.size || 0, updated_at: ts || 0, _fullPath: fp };
       });
+      if (append) S.items = S.items.concat(newItems);
+      else S.items = newItems;
+      filesOffset = S.items.length;
+      filesTruncated = data.truncated || false;
     }
-    // Sort: folders first, then alphabetical
-    S.items.sort(function(a, b) {
-      var aDir = a.type === 'directory' ? 0 : 1;
-      var bDir = b.type === 'directory' ? 0 : 1;
-      if (aDir !== bDir) return aDir - bDir;
-      return a.name.localeCompare(b.name);
-    });
+    sortFiles();
     renderFileList(listEl);
   } catch (e) {
     listEl.innerHTML = '<div class="fb-empty">Failed to load files: ' + h(e.message) + '</div>';
   }
+}
+
+function sortFiles() {
+  S.items.sort(function(a, b) {
+    var aDir = a.type === 'directory' ? 0 : 1;
+    var bDir = b.type === 'directory' ? 0 : 1;
+    if (aDir !== bDir) return aDir - bDir;
+    var cmp = 0;
+    if (filesSortCol === 'name') cmp = a.name.localeCompare(b.name);
+    else if (filesSortCol === 'size') cmp = (a.size || 0) - (b.size || 0);
+    else if (filesSortCol === 'time') cmp = (a.updated_at || 0) - (b.updated_at || 0);
+    return filesSortAsc ? cmp : -cmp;
+  });
+}
+
+window.fbSort = function(col) {
+  if (filesSortCol === col) filesSortAsc = !filesSortAsc;
+  else { filesSortCol = col; filesSortAsc = col === 'name'; }
+  sortFiles();
+  var listEl = $('fb-list');
+  if (listEl) renderFileList(listEl);
+};
+
+function sortArrow(col) {
+  if (filesSortCol !== col) return '';
+  return filesSortAsc ? ' \u2191' : ' \u2193';
 }
 
 function renderFileList(el) {
@@ -657,7 +710,11 @@ function renderFileList(el) {
     return;
   }
   var html = '<div class="fb-list">';
-  html += '<div class="fb-header fb-row"><div class="fb-row-icon"></div><div class="fb-row-name">Name</div><div class="fb-row-size">Size</div><div class="fb-row-time">Modified</div><div class="fb-row-actions"></div></div>';
+  html += '<div class="fb-header fb-row"><div class="fb-row-icon"></div>' +
+    '<div class="fb-row-name" style="cursor:pointer" onclick="fbSort(\'name\')">Name' + sortArrow('name') + '</div>' +
+    '<div class="fb-row-size" style="cursor:pointer" onclick="fbSort(\'size\')">Size' + sortArrow('size') + '</div>' +
+    '<div class="fb-row-time" style="cursor:pointer" onclick="fbSort(\'time\')">Modified' + sortArrow('time') + '</div>' +
+    '<div class="fb-row-actions"></div></div>';
   S.items.forEach(function(f, idx) {
     var isDir = f.type === 'directory';
     var icon = fileIcon(f);
@@ -681,6 +738,9 @@ function renderFileList(el) {
     html += '</div></div>';
   });
   html += '</div>';
+  if (filesTruncated) {
+    html += '<button class="load-more" onclick="loadFiles(true)">Load more files</button>';
+  }
   el.innerHTML = html;
 }
 
@@ -715,32 +775,8 @@ window.fbDownload = function(path) {
   window.open('/files/' + encodePath(path), '_blank');
 };
 
-window.fbShare = async function(path) {
-  try {
-    var data = await api('/files/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path, ttl: 86400 }),
-    });
-    var bg = document.createElement('div');
-    bg.className = 'modal-bg';
-    bg.innerHTML = '<div class="modal-box">' +
-      '<div class="modal-title">Share Link</div>' +
-      '<div class="modal-text">This link expires in 24 hours.</div>' +
-      '<input class="modal-input" id="share-url" value="' + h(data.url) + '" readonly onclick="this.select()">' +
-      '<div class="modal-actions">' +
-        '<button class="modal-cancel" onclick="this.closest(\'.modal-bg\').remove()">Close</button>' +
-        '<button class="key-create-btn" id="share-copy">Copy Link</button>' +
-      '</div></div>';
-    document.body.appendChild(bg);
-    bg.querySelector('#share-copy').onclick = function() {
-      navigator.clipboard.writeText(data.url).then(function() { toast('Link copied', 'ok'); bg.remove(); });
-    };
-    bg.querySelector('#share-url').select();
-    bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
-  } catch (e) {
-    toast('Share failed: ' + e.message, 'err');
-  }
+window.fbShare = function(path) {
+  showShareTTLModal(path);
 };
 
 window.fbRename = function(path, name, isDir) {
@@ -788,20 +824,20 @@ window.fbNewFolder = function() {
 window.fbUploadClick = function() {
   var bg = document.createElement('div');
   bg.className = 'modal-bg';
-  bg.innerHTML = '<div class="modal-box" style="max-width:480px">' +
+  bg.innerHTML = '<div class="modal-box" style="max-width:560px">' +
     '<div class="modal-title">Upload</div>' +
     '<div class="upload-modal-body">' +
-      '<div class="upload-drop" id="upload-drop-area" onclick="$(\'fb-file-input\').click()">' +
-        '<div class="upload-drop-icon">' + IC.upload + '</div>' +
-        '<div class="upload-drop-text">Drop files here or <strong>browse</strong></div>' +
-      '</div>' +
-      '<div class="upload-sep">or</div>' +
       '<div class="upload-url-row">' +
         '<div class="upload-url-field" style="flex:2"><label>URL</label>' +
           '<input id="upload-url" placeholder="https://example.com/file.pdf"></div>' +
         '<div class="upload-url-field" style="flex:1"><label>Save as</label>' +
           '<input id="upload-url-name" placeholder="auto-detect"></div>' +
-        '<button class="key-create-btn" id="upload-url-btn" style="height:35px">' + IC.download + '</button>' +
+        '<button class="key-create-btn" id="upload-url-btn" style="height:35px;display:flex;align-items:center;gap:6px;white-space:nowrap">Fetch</button>' +
+      '</div>' +
+      '<div class="upload-sep">or</div>' +
+      '<div class="upload-drop" id="upload-drop-area" onclick="$(\'fb-file-input\').click()">' +
+        '<div class="upload-drop-icon">' + IC.upload + '</div>' +
+        '<div class="upload-drop-text">Drop files here or <strong>browse</strong></div>' +
       '</div>' +
     '</div>' +
     '<div class="modal-actions" style="margin-top:16px">' +
@@ -1051,14 +1087,14 @@ function openPreview(path, itemOverride) {
   S.previewContent = null;
   S.previewLoading = false;
   S.mdView = 'preview';
+  history.replaceState(null, '', '#files/' + item._fullPath);
 
   var ft = fileType(item);
   if (ft === 'code' || ft === 'text' || ft === 'sheet' || ft === 'markdown') {
-    S.previewLoading = true;
     renderPreview();
     fetchTextContent(item._fullPath).then(function(t) {
-      S.previewContent = t; S.previewLoading = false; renderPreview();
-    }).catch(function() { S.previewLoading = false; renderPreview(); });
+      S.previewContent = t; renderPreview();
+    }).catch(function() { renderPreview(); });
     return;
   }
   renderPreview();
@@ -1117,9 +1153,7 @@ function renderPreview() {
 
   // Build body
   var body = '';
-  if (S.previewLoading) {
-    body = '<div style="padding:60px;text-align:center"><span class="spinner"></span></div>';
-  } else if (S.previewContent !== null) {
+  if (S.previewContent !== null) {
     var c = S.previewContent;
     if (ft === 'markdown') {
       if (S.mdView === 'code') { var lang = langFromName(item.name); body = '<pre class="preview-code">' + highlightCode(c, lang) + '</pre>'; }
@@ -1127,6 +1161,12 @@ function renderPreview() {
     } else if (ft === 'code') { var lang = langFromName(item.name); body = '<pre class="preview-code">' + highlightCode(c, lang) + '</pre>'; }
     else if (ft === 'sheet') { body = csvToTable(c); }
     else { body = '<pre class="preview-text">' + h(c) + '</pre>'; }
+  } else if (ft === 'doc' && (item.name || '').toLowerCase().endsWith('.pdf')) {
+    body = '<iframe class="preview-pdf" id="pv-pdf" src="" style="width:100%;height:80vh;border:1px solid var(--border)"></iframe>';
+    setTimeout(function() {
+      var iframe = $('pv-pdf');
+      if (iframe) resolveFileUrl(item._fullPath).then(function(url) { iframe.src = url; });
+    }, 0);
   } else if (ft === 'image') {
     body = '<img class="preview-img" id="pv-img" src="" alt="' + name + '">';
     setTimeout(function() {
@@ -1187,7 +1227,13 @@ function renderPreview() {
     sibCount +
     '<button class="pv-nav-btn' + (next ? '' : ' pv-nav-btn--disabled') + '"' + (next ? ' onclick="previewNav(1)"' : '') + '>' + IC.arrowR + '</button></div>';
 
+  var copyBtn = '';
+  if (S.previewContent !== null) {
+    copyBtn = '<button class="fb-act" onclick="copyPreview()" title="Copy content"><span>' + IC.copy + '</span></button>';
+  }
+
   var acts = '<div class="pv-actions">' +
+    copyBtn +
     '<button class="fb-act" onclick="fbDownload(\'' + qe(item._fullPath) + '\')" title="Download"><span>' + IC.download + '</span></button>' +
     '<button class="fb-act" onclick="fbShare(\'' + qe(item._fullPath) + '\')" title="Share"><span>' + IC.share + '</span></button>' +
     '</div>';
@@ -1201,6 +1247,12 @@ function renderPreview() {
 }
 
 window.setMdView = function(v) { S.mdView = v; renderPreview(); };
+
+window.copyPreview = function() {
+  if (S.previewContent !== null) {
+    navigator.clipboard.writeText(S.previewContent).then(function() { toast('Copied', 'ok'); });
+  }
+};
 
 window.previewNav = function(dir) {
   var siblings = S.items.filter(function(f) { return f.type !== 'directory'; });
@@ -1262,10 +1314,12 @@ function setupVideo(item) {
    ══════════════════════════════════════════════════════════════════════ */
 var eventsData = [];
 var eventsFilter = '';
+var eventsHasMore = false;
 
 sections.events = function() {
   eventsData = [];
   eventsFilter = '';
+  eventsHasMore = false;
   renderEvents();
 };
 
@@ -1280,12 +1334,27 @@ async function renderEvents() {
     '</div>' +
     '<div id="ev-table"><div class="dash-loading"><span class="spinner"></span></div></div>';
 
+  await loadEvents(true);
+}
+
+async function loadEvents(reset) {
+  if (reset) { eventsData = []; eventsHasMore = false; }
+  var limit = 100;
   try {
-    var data = await api('/files/log?limit=200');
-    eventsData = data.events || [];
+    var url = '/files/log?limit=' + limit;
+    if (!reset && eventsData.length) {
+      var lastTx = eventsData[eventsData.length - 1].tx;
+      url += '&before_tx=' + lastTx;
+    }
+    var data = await api(url);
+    var newEvents = data.events || [];
+    if (reset) eventsData = newEvents;
+    else eventsData = eventsData.concat(newEvents);
+    eventsHasMore = newEvents.length >= limit;
     renderEventsTable();
   } catch (e) {
-    $('ev-table').innerHTML = '<div class="fb-empty">Failed to load events: ' + h(e.message) + '</div>';
+    var el = $('ev-table');
+    if (el) el.innerHTML = '<div class="fb-empty">Failed to load events: ' + h(e.message) + '</div>';
   }
 }
 
@@ -1307,11 +1376,14 @@ function renderEventsTable() {
     html += '<div class="ev-row">' +
       '<span class="ev-tx">#' + ev.tx + '</span>' +
       '<span class="ev-badge">' + actionBadge(ev.action) + '</span>' +
-      '<span class="ev-path" title="' + h(ev.path) + '">' + h(ev.path) + '</span>' +
+      '<span class="ev-path" title="' + h(ev.path) + '" style="cursor:pointer" onclick="evClickPath(\'' + qe(ev.path) + '\')">' + h(ev.path) + '</span>' +
       '<span class="ev-detail"><span class="ev-msg" title="' + h(detail) + '">' + h(detail) + '</span></span>' +
       '<span class="ev-time">' + fmtRel(ev.ts) + '</span></div>';
   });
   html += '</div>';
+  if (eventsHasMore && !eventsFilter) {
+    html += '<button class="load-more" onclick="loadMoreEvents()">Load more</button>';
+  }
   el.innerHTML = html;
 }
 
@@ -1321,6 +1393,17 @@ window.evFilter = function(f) {
     btn.classList.toggle('active', btn.getAttribute('data-ev-filter') === f);
   });
   renderEventsTable();
+};
+
+window.loadMoreEvents = function() { loadEvents(false); };
+
+window.evClickPath = function(path) {
+  if (!path) return;
+  var parent = path.replace(/[^/]+$/, '');
+  S.path = parent;
+  S.searchQ = '';
+  go('files');
+  setTimeout(function() { openPreview(path); }, 200);
 };
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1489,6 +1572,8 @@ window.createKey = async function() {
   if (prefix) body.prefix = prefix;
   if (expiry) body.expires_in = parseInt(expiry, 10);
 
+  var btn = document.querySelector('.key-create-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating\u2026'; }
   try {
     var data = await api('/auth/keys', {
       method: 'POST',
@@ -1504,6 +1589,8 @@ window.createKey = async function() {
     loadKeys();
   } catch (e) {
     toast('Failed: ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Create Key'; }
   }
 };
 
@@ -1581,9 +1668,43 @@ function renderSharesList() {
 }
 
 window.createShareDialog = function() {
-  showPromptModal('Create Share', 'Enter the file path to share.', 'e.g. docs/report.pdf', '', 'Create', function(path) {
-    showShareTTLModal(path);
+  var bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = '<div class="modal-box">' +
+    '<div class="modal-title">Create Share</div>' +
+    '<div class="modal-text">Enter the file path to share.</div>' +
+    '<input class="modal-input" id="share-path-input" placeholder="e.g. docs/report.pdf" autocomplete="off">' +
+    '<div id="share-suggestions" style="max-height:160px;overflow-y:auto;margin:-12px 0 16px"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="modal-cancel" onclick="this.closest(\'.modal-bg\').remove()">Cancel</button>' +
+      '<button class="modal-confirm--primary" id="share-path-ok">Next</button>' +
+    '</div></div>';
+  document.body.appendChild(bg);
+  bg.addEventListener('click', function(e) { if (e.target === bg) bg.remove(); });
+  var inp = bg.querySelector('#share-path-input');
+  inp.focus();
+  var timer;
+  inp.addEventListener('input', function() {
+    clearTimeout(timer);
+    var q = inp.value.trim();
+    timer = setTimeout(function() {
+      if (!q) { bg.querySelector('#share-suggestions').innerHTML = ''; return; }
+      api('/files/search?q=' + encodeURIComponent(q) + '&limit=6').then(function(d) {
+        var sg = bg.querySelector('#share-suggestions');
+        if (!sg) return;
+        sg.innerHTML = (d.results || []).filter(function(r) { return !r.path.endsWith('/'); }).map(function(r) {
+          return '<div style="padding:6px 12px;font-family:JetBrains Mono,monospace;font-size:11px;color:var(--text-2);cursor:pointer;border-bottom:1px solid var(--border)" onclick="this.closest(\'.modal-bg\').querySelector(\'#share-path-input\').value=\'' + qe(r.path) + '\';this.parentNode.innerHTML=\'\'">' + h(r.path) + '</div>';
+        }).join('');
+      }).catch(function() {});
+    }, 200);
   });
+  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') bg.querySelector('#share-path-ok').click(); });
+  bg.querySelector('#share-path-ok').onclick = function() {
+    var path = inp.value.trim();
+    if (!path) return;
+    bg.remove();
+    showShareTTLModal(path);
+  };
 };
 
 function showShareTTLModal(path) {
@@ -1689,6 +1810,7 @@ function showShortcuts() {
     ['g f', 'Go to Files'],
     ['g e', 'Go to Events'],
     ['g a', 'Go to Audit'],
+    ['g h', 'Go to Shares'],
     ['g k', 'Go to Keys'],
     ['g s', 'Go to Settings'],
   ];

@@ -224,19 +224,22 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	// buffers to 16 GB, thrashes memory).
 	cmd.Env = append(os.Environ(),
 		"HF_HUB_VERBOSITY=warning",
-		// Pin upload concurrency to a fixed value suited for ~11 GB servers.
-		// Adaptive concurrency defaults start at 1 and ramp slowly; pinning
-		// at 8 starts at full speed without oversaturating memory.
-		"HF_XET_FIXED_UPLOAD_CONCURRENCY=8",
+		// Pin upload concurrency to a safe value for ~12 GB servers that may
+		// be running other memory-heavy processes (arctic ~5 GB, DuckDB, etc.).
+		// 4 threads avoids the OOM that 8 threads caused: with arctic consuming
+		// 5+ GB, 8 concurrent xet upload threads + 8 GB shard cache = OOM kill.
+		"HF_XET_FIXED_UPLOAD_CONCURRENCY=4",
 		// Increase per-request retry budget so transient failures recover.
 		"HF_XET_CLIENT_RETRY_MAX_ATTEMPTS=7",
 		"HF_XET_CLIENT_RETRY_MAX_DURATION=600s",
 		// Generous read timeout — large shard uploads can take a while.
 		"HF_XET_CLIENT_READ_TIMEOUT=300s",
 		"HF_XET_CLIENT_CONNECT_TIMEOUT=120s",
-		// Increase shard cache so re-uploads after a stall skip already-
-		// uploaded chunks (deduplication).
-		"HF_XET_SHARD_CACHE_SIZE_LIMIT=8000000000",
+		// Keep shard cache small to avoid OOM on 12 GB servers. 1.5 GB leaves
+		// ~4 GB headroom when arctic (~5 GB) and DuckDB (~1 GB) are co-running.
+		// Previously 8 GB caused systematic OOM kills of hf_commit.py, losing
+		// months of arctic submissions and stalling cc_watcher commits.
+		"HF_XET_SHARD_CACHE_SIZE_LIMIT=1500000000",
 		// Xet diagnostics — written to file so they don't pollute stderr.
 		"RUST_LOG=info",
 		"HF_XET_LOG_FILE=/tmp/xet_upload.log",
