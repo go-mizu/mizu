@@ -58,22 +58,32 @@ func newCCPublish() *cobra.Command {
 		Short: "Publish exported Common Crawl parquet shards to Hugging Face",
 		Long: `Publish $HOME/data/common-crawl/{crawl}/export/repo to a Hugging Face dataset repo.
 
-With --pipeline:  download, pack, export shards as .parquet files (no HF push).
-With --watch:     watch the parquet folder and push new files to HF in real-time.
-With --schedule:  manage pipeline screen sessions across a file index range.
-                  Starts/restarts sessions, detects stalls, self-heals on crash.
-Run --watch and --schedule as separate processes; use multiple --pipeline workers.`,
-		Example: `  # Watch-only (one per server):
-  search cc publish --watch
+Pipeline architecture (direct mode):
+  .warc.gz → gzip decompress → HTML filter → Markdown (ultralight) → Parquet (zstd)
+  No intermediate files. Single-pass. Prefetches next shard download in parallel.
 
-  # Scheduler (self-healing, adaptive resource management):
-  search cc publish --schedule --start 0    --end 4999   # server1
-  search cc publish --schedule --start 5000 --end 9999   # server2
+Modes:
+  --pipeline   Download → pack → parquet in one pass (no HF push).
+               Converter: --light (default, tokenizer-based) or --no-light (trafilatura).
+               Compression: zstd (default level, ~3% CPU overhead).
+  --watch      Watch parquet folder, push new files to HF in real-time.
+  --schedule   Manage pipeline screen sessions across a file index range.
+               Auto-detects hardware, self-heals on crash/stall, adaptive resource mgmt.
 
-  # Pipeline-only (multiple per server, no HF push):
-  search cc publish --pipeline --file 68-300 --cleanup --skip-errors
+Run --watch and --schedule as separate long-running processes.
+Use multiple --pipeline workers (or let --schedule manage them).`,
+		Example: `  # Full auto (scheduler + watcher on same server):
+  search cc publish --watch --commit-interval 90 &
+  search cc publish --schedule --start 0 --end 9999
 
-  # Manual one-shot publish (legacy):
+  # Pipeline-only (direct: .warc.gz → parquet, no HF push):
+  search cc publish --pipeline --file 0-49 --cleanup --skip-errors
+
+  # Check progress:
+  search cc publish --list                    # committed shard ranges
+  search cc publish --gaps --start 0 --end 99 # find missing shards
+
+  # Manual one-shot publish:
   search cc publish --file 0 --republish`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
@@ -89,7 +99,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().StringVar(&repoID, "repo", "open-index/open-markdown", "Hugging Face dataset repo ID")
 	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists (manual mode only)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
-	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download, pack, export shards (writes parquets locally; use --watch to push)")
+	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download + pack + parquet (direct, no intermediate WARC; use --watch to push to HF)")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Watch parquet folder and push new files to HuggingFace in real-time")
 	cmd.Flags().BoolVar(&schedule, "schedule", false, "Manage pipeline screen sessions across a file index range (self-healing scheduler)")
 	cmd.Flags().BoolVar(&list, "list", false, "List committed shards as ranges (from stats.csv / HF)")
