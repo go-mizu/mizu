@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
 )
 
@@ -559,11 +560,13 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			successStyle.Render("done"),
 		)
 
-		// Write .meta sidecar with timing for the watcher.
+		// Write .meta sidecar with timing and memory for the watcher.
+		peakRSS := int64(warcmd.ReadRSSMB())
 		metaData, _ := json.Marshal(ccShardMeta{
 			DurDownloadS: durDownloadS,
 			DurConvertS:  durConvertS,
 			DurExportS:   durExportS,
+			PeakRSSMB:    peakRSS,
 		})
 		_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
 

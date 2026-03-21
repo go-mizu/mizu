@@ -571,6 +571,15 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	csvTotals := ccComputeTotals(allStats, cfg.CrawlID)
 	csvShardsPerHour := csvTotals.ShardsPerHour // initial rate from historical data
 
+	// If stats.csv has real RSS measurements, use them to refine the budget.
+	if csvTotals.AvgRSSMB > 0 {
+		realGB := float64(csvTotals.MaxRSSMB) / 1024.0
+		if realGB > 0.1 && realGB < cfg.RAMPerSession {
+			logLine(fmt.Sprintf("  RSS data:    avg=%d MB, max=%d MB — real usage %.2f GB < budget %.2f GB",
+				csvTotals.AvgRSSMB, csvTotals.MaxRSSMB, realGB, cfg.RAMPerSession))
+		}
+	}
+
 	schedStart := time.Now()
 	startCommitted := len(committed)
 

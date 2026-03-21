@@ -18,6 +18,7 @@ type ccShardMeta struct {
 	DurDownloadS int64 `json:"dur_download_s"`
 	DurConvertS  int64 `json:"dur_convert_s"`
 	DurExportS   int64 `json:"dur_export_s"`
+	PeakRSSMB    int64 `json:"peak_rss_mb,omitempty"`
 }
 
 // ccUncommittedParquet holds a parquet file not yet committed to HF.
@@ -200,6 +201,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 			DurDownloadS: meta.DurDownloadS,
 			DurConvertS:  meta.DurConvertS,
 			DurExportS:   meta.DurExportS,
+			PeakRSSMB:    meta.PeakRSSMB,
 		})
 	}
 
