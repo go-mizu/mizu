@@ -43,7 +43,10 @@ func newLsCmd() *cobra.Command {
 				params.Set("offset", strconv.Itoa(offset))
 			}
 
-			apiPath := "/ls/" + prefix
+			if prefix != "" {
+				params.Set("prefix", prefix)
+			}
+			apiPath := "/files"
 			if len(params) > 0 {
 				apiPath += "?" + params.Encode()
 			}

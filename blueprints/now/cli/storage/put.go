@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,46 +65,48 @@ func newPutCmd() *cobra.Command {
 				ct = "application/octet-stream"
 			}
 
-			// Open source
-			var r *os.File
+			// Read source into memory for SHA-256 computation
+			var fileData []byte
 			if file == "-" {
-				r = os.Stdin
+				var err error
+				fileData, err = io.ReadAll(os.Stdin)
+				if err != nil {
+					return &CLIError{Code: ExitError, Msg: "failed to read stdin"}
+				}
 			} else {
 				var err error
-				r, err = os.Open(file)
+				fileData, err = os.ReadFile(file)
 				if err != nil {
 					if os.IsNotExist(err) {
 						return &CLIError{Code: ExitNotFound, Msg: "file not found: " + file}
 					}
 					return err
 				}
-				defer r.Close()
 			}
 
-			data, err := d.Client.Upload("/f/"+dest, r, ct)
+			result, err := d.Client.UploadPresigned(dest, fileData, ct)
 			if err != nil {
 				return err
 			}
 
 			if globalFlags.json {
-				return printJSON(data)
+				jsonData, _ := json.Marshal(result)
+				return printJSON(jsonData)
 			}
-
-			var resp struct {
-				Path string `json:"path"`
-				Size int64  `json:"size"`
-			}
-			json.Unmarshal(data, &resp)
 
 			sizeStr := ""
-			if resp.Size > 0 {
-				sizeStr = " (" + HumanSize(resp.Size) + ")"
+			if result.Size > 0 {
+				sizeStr = " (" + HumanSize(result.Size) + ")"
 			}
-			displayPath := resp.Path
+			displayPath := result.Path
 			if displayPath == "" {
 				displayPath = dest
 			}
-			d.Out.Info("Uploaded", displayPath+sizeStr)
+			action := "Uploaded"
+			if result.Deduplicated {
+				action = "Deduplicated"
+			}
+			d.Out.Info(action, displayPath+sizeStr)
 			return nil
 		}),
 	}

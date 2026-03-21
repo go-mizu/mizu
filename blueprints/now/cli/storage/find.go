@@ -37,7 +37,7 @@ func newFindCmd() *cobra.Command {
 				params.Set("limit", strconv.Itoa(limit))
 			}
 
-			data, err := d.Client.Get("/find?" + params.Encode())
+			data, err := d.Client.Get("/files/search?" + params.Encode())
 			if err != nil {
 				return err
 			}

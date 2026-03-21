@@ -33,7 +33,7 @@ func newGetCmd() *cobra.Command {
 				dest = filepath.Base(src)
 			}
 
-			apiPath := "/f/" + src
+			apiPath := "/files/" + src
 
 			// Write to stdout
 			if dest == "-" {
@@ -88,7 +88,7 @@ func newCatCmd() *cobra.Command {
 			}
 
 			src := strings.TrimPrefix(args[0], "/")
-			return d.Client.Download("/f/"+src, os.Stdout)
+			return d.Client.Download("/files/"+src, os.Stdout)
 		}),
 	}
 }

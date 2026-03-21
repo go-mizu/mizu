@@ -20,7 +20,7 @@ func newStatCmd() *cobra.Command {
 				return err
 			}
 
-			data, err := d.Client.Get("/stat")
+			data, err := d.Client.Get("/files/stats")
 			if err != nil {
 				return err
 			}

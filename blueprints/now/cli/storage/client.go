@@ -2,6 +2,8 @@ package storage
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,11 +125,113 @@ func (c *Client) Delete(path string) ([]byte, error) {
 	return c.do("DELETE", path, nil, nil)
 }
 
-// Upload streams a file to the API.
+// Upload streams a file to the API (legacy — use UploadPresigned for new uploads).
 func (c *Client) Upload(path string, r io.Reader, contentType string) ([]byte, error) {
 	return c.do("PUT", path, r, map[string]string{
 		"Content-Type": contentType,
 	})
+}
+
+// UploadResult contains the result of a presigned upload.
+type UploadResult struct {
+	Path         string `json:"path"`
+	Name         string `json:"name"`
+	Size         int64  `json:"size"`
+	Tx           int64  `json:"tx"`
+	Time         int64  `json:"time"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	Deduplicated bool   `json:"deduplicated,omitempty"`
+}
+
+// SHA256Hex computes the SHA-256 hex digest of data.
+func SHA256Hex(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
+}
+
+// UploadPresigned performs a 3-step presigned upload with content-hash dedup.
+//
+//  1. POST /files/uploads with path, content_type, content_hash
+//     → if deduplicated: true, the blob already exists — done
+//  2. PUT content to the presigned URL returned in step 1
+//  3. POST /files/uploads/complete with path, content_hash
+func (c *Client) UploadPresigned(filePath string, data []byte, contentType string) (*UploadResult, error) {
+	contentHash := SHA256Hex(data)
+
+	// Step 1: Initiate upload
+	initResp, err := c.DoJSON("POST", "/files/uploads", map[string]string{
+		"path":         filePath,
+		"content_type": contentType,
+		"content_hash": contentHash,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if deduplicated (blob already exists, no upload needed)
+	var initBody struct {
+		Deduplicated bool   `json:"deduplicated"`
+		Path         string `json:"path"`
+		Name         string `json:"name"`
+		Size         int64  `json:"size"`
+		Tx           int64  `json:"tx"`
+		Time         int64  `json:"time"`
+		URL          string `json:"url"`
+		ContentType  string `json:"content_type"`
+		ContentHash  string `json:"content_hash"`
+	}
+	if err := json.Unmarshal(initResp, &initBody); err != nil {
+		return nil, &CLIError{Code: ExitError, Msg: "failed to parse upload response"}
+	}
+
+	if initBody.Deduplicated {
+		return &UploadResult{
+			Path:         initBody.Path,
+			Name:         initBody.Name,
+			Size:         initBody.Size,
+			Tx:           initBody.Tx,
+			Time:         initBody.Time,
+			ContentHash:  contentHash,
+			Deduplicated: true,
+		}, nil
+	}
+
+	// Step 2: PUT content to presigned URL
+	if initBody.URL == "" {
+		return nil, &CLIError{Code: ExitError, Msg: "server did not return presigned URL"}
+	}
+
+	putReq, err := http.NewRequest("PUT", initBody.URL, bytes.NewReader(data))
+	if err != nil {
+		return nil, &CLIError{Code: ExitNetwork, Msg: "failed to create upload request"}
+	}
+	putReq.Header.Set("Content-Type", contentType)
+
+	putResp, err := c.HTTPClient.Do(putReq)
+	if err != nil {
+		return nil, &CLIError{Code: ExitNetwork, Msg: "failed to upload to storage", Hint: err.Error()}
+	}
+	defer putResp.Body.Close()
+
+	if putResp.StatusCode < 200 || putResp.StatusCode >= 300 {
+		return nil, &CLIError{Code: ExitError, Msg: fmt.Sprintf("upload failed: HTTP %d", putResp.StatusCode)}
+	}
+
+	// Step 3: Complete upload
+	completeResp, err := c.DoJSON("POST", "/files/uploads/complete", map[string]string{
+		"path":         filePath,
+		"content_hash": contentHash,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result UploadResult
+	if err := json.Unmarshal(completeResp, &result); err != nil {
+		return nil, &CLIError{Code: ExitError, Msg: "failed to parse complete response"}
+	}
+	result.ContentHash = contentHash
+	return &result, nil
 }
 
 // Download streams a file from the API to a writer.

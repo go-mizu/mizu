@@ -33,7 +33,7 @@ func newShareCmd() *cobra.Command {
 				"ttl":  ttl,
 			}
 
-			data, err := d.Client.DoJSON("POST", "/share", body)
+			data, err := d.Client.DoJSON("POST", "/files/share", body)
 			if err != nil {
 				return err
 			}

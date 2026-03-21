@@ -28,7 +28,7 @@ func newMvCmd() *cobra.Command {
 				"to":   to,
 			}
 
-			data, err := d.Client.DoJSON("POST", "/mv", body)
+			data, err := d.Client.DoJSON("POST", "/files/move", body)
 			if err != nil {
 				return err
 			}

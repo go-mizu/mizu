@@ -278,7 +278,7 @@ func errorHTML(title, message string) string {
 body{font-family:system-ui,sans-serif;background:#fafafa;color:#111;
 display:flex;align-items:center;justify-content:center;min-height:100vh}
 @media(prefers-color-scheme:dark){body{background:#111;color:#eee}.card{background:#1a1a1a;border-color:#333}.sub{color:#999}}
-.card{background:#fff;border:1px solid #ddd;padding:2.5rem;width:100%;max-width:420px;text-align:center}
+.card{background:#fff;border:1px solid #ddd;padding:2.5rem;width:100%%;max-width:420px;text-align:center}
 h1{font-size:1.1rem;font-weight:600;margin-bottom:0.5rem}
 .sub{font-size:0.85rem;color:#666;line-height:1.5}
 .brand{font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;color:#999;margin-bottom:1rem}

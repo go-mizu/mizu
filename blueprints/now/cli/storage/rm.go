@@ -52,7 +52,7 @@ func newRmCmd() *cobra.Command {
 					}
 				}
 
-				data, err := d.Client.Delete("/f/" + path)
+				data, err := d.Client.Delete("/files/" + path)
 				if err != nil {
 					return err
 				}
