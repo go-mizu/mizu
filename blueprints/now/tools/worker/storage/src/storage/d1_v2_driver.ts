@@ -503,28 +503,20 @@ export class D1V2Engine implements StorageEngine {
 
   // ── write ────────────────────────────────────────────────────────
 
-  async write(
+  /** Record file metadata in the inode structure. Shared by write() and confirmUpload(). */
+  private async recordWriteMetadata(
     actor: string,
     path: string,
-    body: ArrayBuffer | ReadableStream,
+    addr: string,
+    size: number,
     contentType: string,
     msg?: string,
   ): Promise<WriteResult> {
     const s = await this.ensureShard(actor);
-    const buf = body instanceof ArrayBuffer ? body : await streamToBuffer(body);
-    const addr = await sha256(buf);
-    const size = buf.byteLength;
     const now = Date.now();
     const p = path.replace(/^\/+/, "");
     const { dir, name } = splitPath(p);
     const autoMsg = msg || `write ${p}`;
-
-    // Upload blob to R2 (content-addressed dedup)
-    const key = blobKey(actor, addr);
-    const existing = await this.bucket.head(key);
-    if (!existing) {
-      await this.bucket.put(key, buf, { httpMetadata: { contentType } });
-    }
 
     // Allocate tx
     const tx = await this.nextTx(actor);
@@ -683,6 +675,27 @@ export class D1V2Engine implements StorageEngine {
     await this.db.batch(stmts);
 
     return { tx, time: now, size };
+  }
+
+  async write(
+    actor: string,
+    path: string,
+    body: ArrayBuffer | ReadableStream,
+    contentType: string,
+    msg?: string,
+  ): Promise<WriteResult> {
+    const buf = body instanceof ArrayBuffer ? body : await streamToBuffer(body);
+    const addr = await sha256(buf);
+    const size = buf.byteLength;
+
+    // Upload blob to R2 (content-addressed dedup)
+    const key = blobKey(actor, addr);
+    const existing = await this.bucket.head(key);
+    if (!existing) {
+      await this.bucket.put(key, buf, { httpMetadata: { contentType } });
+    }
+
+    return this.recordWriteMetadata(actor, path, addr, size, contentType, msg);
   }
 
   // ── move ─────────────────────────────────────────────────────────
@@ -1231,11 +1244,13 @@ export class D1V2Engine implements StorageEngine {
     path: string,
     contentType: string,
     expiresIn = 3600,
+    contentHash?: string,
   ): Promise<string> {
-    // Ensure shard exists (creates tables if needed for new actor)
     await this.ensureShard(actor);
 
-    // Presigned uploads go to legacy path — confirmUpload will content-address them
+    if (contentHash) {
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     const key = `${actor}/${path}`;
     return this.presign("PUT", key, expiresIn, { contentType });
   }
@@ -1246,7 +1261,17 @@ export class D1V2Engine implements StorageEngine {
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMetadata(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const legacyKey = `${actor}/${path}`;
     const obj = await this.bucket.get(legacyKey);
     if (!obj) throw new Error("Upload not found in storage");
@@ -1255,13 +1280,15 @@ export class D1V2Engine implements StorageEngine {
     const contentType =
       obj.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
 
-    // Write via the normal path (content-address it)
     const result = await this.write(actor, path, buf, contentType, msg);
-
-    // Clean up the legacy key (the blob is now content-addressed)
     await this.bucket.delete(legacyKey);
 
     return result;
+  }
+
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
   }
 
   // ── multipart ────────────────────────────────────────────────────
@@ -1271,14 +1298,12 @@ export class D1V2Engine implements StorageEngine {
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
-
-    // Ensure shard exists
     await this.ensureShard(actor);
 
-    // Multipart uploads use legacy key — completeMultipart will content-address
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, {
       httpMetadata: { contentType },
     });
@@ -1300,14 +1325,22 @@ export class D1V2Engine implements StorageEngine {
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(
       parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })),
     );
 
-    // Now content-address the assembled object
+    if (contentHash) {
+      // Client provided hash — verify assembled blob via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMetadata(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
 
@@ -1316,8 +1349,6 @@ export class D1V2Engine implements StorageEngine {
       obj.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
 
     const result = await this.write(actor, path, buf, contentType, msg);
-
-    // Clean up legacy key
     await this.bucket.delete(key);
 
     return result;

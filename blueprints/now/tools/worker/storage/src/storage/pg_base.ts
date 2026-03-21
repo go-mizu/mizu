@@ -226,6 +226,76 @@ export abstract class PgEngineBase implements StorageEngine {
     });
   }
 
+  // ── record write metadata (no R2 blob ops) ──────────────────────
+
+  /** Record file metadata without touching R2. Used by confirmUpload/completeMultipart with contentHash. */
+  private async recordWriteMeta(
+    actor: string,
+    path: string,
+    addr: string,
+    size: number,
+    contentType: string,
+    msg?: string,
+  ): Promise<WriteResult> {
+    await this.ensureSchema();
+    const now = Date.now();
+    const name = path.split("/").pop() || path;
+
+    return this.transaction(async (q) => {
+      const oldRows = await q<{ addr: string | null }>(
+        "SELECT addr FROM stg_files WHERE owner = $1 AND path = $2",
+        [actor, path],
+      );
+      const oldAddr = oldRows[0]?.addr ?? null;
+
+      const txRows = await q<{ next_tx: number }>(
+        `INSERT INTO stg_tx (actor, next_tx) VALUES ($1, 1)
+         ON CONFLICT (actor) DO UPDATE SET next_tx = stg_tx.next_tx + 1
+         RETURNING next_tx`,
+        [actor],
+      );
+      const tx = txRows[0].next_tx;
+
+      await q(
+        `INSERT INTO stg_events (tx, actor, action, path, addr, size, type, msg, ts)
+         VALUES ($1, $2, 'write', $3, $4, $5, $6, $7, $8)`,
+        [tx, actor, path, addr, size, contentType, msg || `write ${path}`, now],
+      );
+
+      await q(
+        `INSERT INTO stg_files (owner, path, name, size, type, addr, tx, tx_time, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+         ON CONFLICT (owner, path) DO UPDATE SET
+           name=EXCLUDED.name, size=EXCLUDED.size, type=EXCLUDED.type,
+           addr=EXCLUDED.addr, tx=EXCLUDED.tx, tx_time=EXCLUDED.tx_time,
+           updated_at=EXCLUDED.updated_at`,
+        [actor, path, name, size, contentType, addr, tx, now],
+      );
+
+      await q(
+        `INSERT INTO stg_blobs (addr, actor, size, ref_count, created_at)
+         VALUES ($1, $2, $3, 1, $4)
+         ON CONFLICT (addr, actor) DO UPDATE SET ref_count = stg_blobs.ref_count + 1`,
+        [addr, actor, size, now],
+      );
+
+      if (oldAddr && oldAddr !== addr) {
+        await q(
+          "UPDATE stg_blobs SET ref_count = GREATEST(ref_count - 1, 0) WHERE addr = $1 AND actor = $2",
+          [oldAddr, actor],
+        );
+      }
+      if (oldAddr && oldAddr === addr) {
+        await q(
+          "UPDATE stg_blobs SET ref_count = GREATEST(ref_count - 1, 0) WHERE addr = $1 AND actor = $2",
+          [addr, actor],
+        );
+      }
+
+      return { tx, time: now, size };
+    });
+  }
+
   // ── write ─────────────────────────────────────────────────────────
 
   async write(
@@ -657,8 +727,12 @@ export abstract class PgEngineBase implements StorageEngine {
     path: string,
     contentType: string,
     expiresIn = 3600,
+    contentHash?: string,
   ): Promise<string> {
     await this.ensureSchema();
+    if (contentHash) {
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     const key = `${actor}/${path}`;
     return this.presign("PUT", key, expiresIn, { contentType });
   }
@@ -669,7 +743,17 @@ export abstract class PgEngineBase implements StorageEngine {
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const legacyKey = `${actor}/${path}`;
     const obj = await this.bucket.get(legacyKey);
     if (!obj) throw new Error("Upload not found in storage");
@@ -681,6 +765,11 @@ export abstract class PgEngineBase implements StorageEngine {
     return result;
   }
 
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
+  }
+
   // ── multipart ────────────────────────────────────────────────────
 
   async initiateMultipart(
@@ -688,11 +777,12 @@ export abstract class PgEngineBase implements StorageEngine {
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
     await this.ensureSchema();
 
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, { httpMetadata: { contentType } });
 
     const partUrls: string[] = [];
@@ -712,11 +802,20 @@ export abstract class PgEngineBase implements StorageEngine {
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })));
 
+    if (contentHash) {
+      // Client provided hash — verify assembled blob via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
 

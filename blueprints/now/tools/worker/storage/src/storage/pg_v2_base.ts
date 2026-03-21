@@ -405,6 +405,132 @@ export abstract class PgV2EngineBase implements StorageEngine {
     return result;
   }
 
+  // ── record write metadata (no R2 blob ops) ──────────────────────
+
+  /** Record file metadata without touching R2. Used by confirmUpload/completeMultipart with contentHash. */
+  private async recordWriteMeta(
+    actor: string,
+    path: string,
+    addr: string,
+    size: number,
+    contentType: string,
+    msg?: string,
+  ): Promise<WriteResult> {
+    await this.ensureSchema();
+    const now = Date.now();
+    const p = path.replace(/^\/+/, "");
+    const { dir, name } = splitPath(p);
+    const autoMsg = msg || `write ${p}`;
+
+    return this.transaction(async (q) => {
+      const tx = await this.nextTx(actor, q);
+
+      await q(
+        "UPDATE stg_transactions SET msg = $1 WHERE owner = $2 AND tx = $3",
+        [autoMsg, actor, tx],
+      );
+
+      await q(
+        `INSERT INTO stg_nodes (owner, node_id, kind, created_at) VALUES ($1, 'root', 'dir', $2)
+         ON CONFLICT (owner, node_id) DO NOTHING`,
+        [actor, now],
+      );
+
+      const parentId = await this.ensureDirChain(actor, dir, tx, now, q);
+
+      const existingEntry = await q<{ child_id: string }>(
+        "SELECT child_id FROM stg_directory_entries WHERE owner = $1 AND parent_id = $2 AND name = $3 AND deleted_tx IS NULL",
+        [actor, parentId, name],
+      );
+
+      let nodeId: string;
+      if (existingEntry.length) {
+        nodeId = existingEntry[0].child_id;
+        const cur = await q<{ version: string; content_hash: string }>(
+          "SELECT version, content_hash FROM stg_file_current_state WHERE owner = $1 AND node_id = $2",
+          [actor, nodeId],
+        );
+        const newVer = (Number(cur[0]?.version) || 0) + 1;
+        const oldHash = cur[0]?.content_hash ?? null;
+
+        await q(
+          `INSERT INTO stg_file_versions (owner, node_id, version, content_hash, size, content_type, created_tx)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [actor, nodeId, newVer, addr, size, contentType, tx],
+        );
+        await q(
+          `INSERT INTO stg_file_current_state (owner, node_id, content_hash, size, content_type, version, updated_tx, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (node_id) DO UPDATE SET
+             content_hash = EXCLUDED.content_hash, size = EXCLUDED.size,
+             content_type = EXCLUDED.content_type, version = EXCLUDED.version,
+             updated_tx = EXCLUDED.updated_tx, updated_at = EXCLUDED.updated_at`,
+          [actor, nodeId, addr, size, contentType, newVer, tx, now],
+        );
+        await q(
+          `INSERT INTO stg_blob_refs (owner, content_hash, size, ref_count, created_at)
+           VALUES ($1, $2, $3, 1, $4)
+           ON CONFLICT (owner, content_hash) DO UPDATE SET ref_count = stg_blob_refs.ref_count + 1`,
+          [actor, addr, size, now],
+        );
+        if (oldHash && oldHash !== addr) {
+          await q(
+            "UPDATE stg_blob_refs SET ref_count = GREATEST(ref_count - 1, 0) WHERE owner = $1 AND content_hash = $2",
+            [actor, oldHash],
+          );
+        }
+        if (oldHash && oldHash === addr) {
+          await q(
+            "UPDATE stg_blob_refs SET ref_count = GREATEST(ref_count - 1, 0) WHERE owner = $1 AND content_hash = $2",
+            [actor, addr],
+          );
+        }
+      } else {
+        nodeId = nanoid();
+        await q(
+          "INSERT INTO stg_nodes (owner, node_id, kind, created_at) VALUES ($1, $2, 'file', $3)",
+          [actor, nodeId, now],
+        );
+        await q(
+          "INSERT INTO stg_directory_entries (owner, parent_id, name, child_id, created_tx) VALUES ($1, $2, $3, $4, $5)",
+          [actor, parentId, name, nodeId, tx],
+        );
+        await q(
+          `INSERT INTO stg_file_versions (owner, node_id, version, content_hash, size, content_type, created_tx)
+           VALUES ($1, $2, 1, $3, $4, $5, $6)`,
+          [actor, nodeId, addr, size, contentType, tx],
+        );
+        await q(
+          `INSERT INTO stg_file_current_state (owner, node_id, content_hash, size, content_type, version, updated_tx, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 1, $6, $7)`,
+          [actor, nodeId, addr, size, contentType, tx, now],
+        );
+        await q(
+          `INSERT INTO stg_blob_refs (owner, content_hash, size, ref_count, created_at)
+           VALUES ($1, $2, $3, 1, $4)
+           ON CONFLICT (owner, content_hash) DO UPDATE SET ref_count = stg_blob_refs.ref_count + 1`,
+          [actor, addr, size, now],
+        );
+      }
+
+      await q(
+        `INSERT INTO stg_events (owner, tx, action, node_id, path, content_hash, size, content_type, msg, ts)
+         VALUES ($1, $2, 'write', $3, $4, $5, $6, $7, $8, $9)`,
+        [actor, tx, nodeId, p, addr, size, contentType, autoMsg, now],
+      );
+      await q(
+        `INSERT INTO stg_path_cache (owner, path, node_id, parent_id, name, kind, updated_tx)
+         VALUES ($1, $2, $3, $4, $5, 'file', $6)
+         ON CONFLICT (owner, path) DO UPDATE SET
+           node_id = EXCLUDED.node_id, parent_id = EXCLUDED.parent_id,
+           name = EXCLUDED.name, kind = EXCLUDED.kind, updated_tx = EXCLUDED.updated_tx`,
+        [actor, p, nodeId, parentId, name, tx],
+      );
+
+      return { tx, time: now, size };
+    });
+  }
+
   // ── write ─────────────────────────────────────────────────────────
 
   async write(
@@ -1025,8 +1151,12 @@ export abstract class PgV2EngineBase implements StorageEngine {
     path: string,
     contentType: string,
     expiresIn = 3600,
+    contentHash?: string,
   ): Promise<string> {
     await this.ensureSchema();
+    if (contentHash) {
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     const key = `${actor}/${path}`;
     return this.presign("PUT", key, expiresIn, { contentType });
   }
@@ -1037,7 +1167,17 @@ export abstract class PgV2EngineBase implements StorageEngine {
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const legacyKey = `${actor}/${path}`;
     const obj = await this.bucket.get(legacyKey);
     if (!obj) throw new Error("Upload not found in storage");
@@ -1049,6 +1189,11 @@ export abstract class PgV2EngineBase implements StorageEngine {
     return result;
   }
 
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
+  }
+
   // ── multipart ────────────────────────────────────────────────────
 
   async initiateMultipart(
@@ -1056,11 +1201,12 @@ export abstract class PgV2EngineBase implements StorageEngine {
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
     await this.ensureSchema();
 
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, { httpMetadata: { contentType } });
 
     const partUrls: string[] = [];
@@ -1080,11 +1226,20 @@ export abstract class PgV2EngineBase implements StorageEngine {
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })));
 
+    if (contentHash) {
+      // Client provided hash — verify assembled blob via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
 

@@ -610,7 +610,11 @@ export class DOEngine implements StorageEngine {
     path: string,
     contentType: string,
     expiresIn = 3600,
+    contentHash?: string,
   ): Promise<string> {
+    if (contentHash) {
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     const key = `${actor}/${path}`;
     return this.presign("PUT", key, expiresIn, { contentType });
   }
@@ -621,7 +625,17 @@ export class DOEngine implements StorageEngine {
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.stub(actor).recordWrite(path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const legacyKey = `${actor}/${path}`;
     const obj = await this.bucket.get(legacyKey);
     if (!obj) throw new Error("Upload not found in storage");
@@ -634,6 +648,11 @@ export class DOEngine implements StorageEngine {
     return result;
   }
 
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
+  }
+
   // ── multipart ────────────────────────────────────────────────────
 
   async initiateMultipart(
@@ -641,10 +660,11 @@ export class DOEngine implements StorageEngine {
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
 
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, {
       httpMetadata: { contentType },
     });
@@ -666,11 +686,20 @@ export class DOEngine implements StorageEngine {
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })));
 
+    if (contentHash) {
+      // Client provided hash — verify assembled blob via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.stub(actor).recordWrite(path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
 

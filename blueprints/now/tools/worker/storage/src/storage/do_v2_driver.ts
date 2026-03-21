@@ -781,11 +781,24 @@ export class DOV2Engine implements StorageEngine {
     return this.presign("GET", key, expiresIn);
   }
 
-  async presignUpload(actor: string, path: string, contentType: string, expiresIn = 3600): Promise<string> {
+  async presignUpload(actor: string, path: string, contentType: string, expiresIn = 3600, contentHash?: string): Promise<string> {
+    if (contentHash) {
+      // Presign directly to content-addressed blob location
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     return this.presign("PUT", `${actor}/${path}`, expiresIn, { contentType });
   }
 
-  async confirmUpload(actor: string, path: string, msg?: string): Promise<WriteResult> {
+  async confirmUpload(actor: string, path: string, msg?: string, contentHash?: string): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.stub(actor).recordWrite(path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const key = `${actor}/${path}`;
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Upload not found in storage");
@@ -796,9 +809,14 @@ export class DOV2Engine implements StorageEngine {
     return result;
   }
 
-  async initiateMultipart(actor: string, path: string, contentType: string, partCount: number) {
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
+  }
+
+  async initiateMultipart(actor: string, path: string, contentType: string, partCount: number, contentHash?: string) {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, { httpMetadata: { contentType } });
     const partUrls: string[] = [];
     for (let i = 1; i <= Math.min(partCount, 10000); i++) {
@@ -807,10 +825,18 @@ export class DOV2Engine implements StorageEngine {
     return { upload_id: mpu.uploadId, part_urls: partUrls, expires_in: 86400 };
   }
 
-  async completeMultipart(actor: string, path: string, uploadId: string, parts: { part_number: number; etag: string }[], msg?: string): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+  async completeMultipart(actor: string, path: string, uploadId: string, parts: { part_number: number; etag: string }[], msg?: string, contentHash?: string): Promise<WriteResult> {
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })));
+    if (contentHash) {
+      // Client provided hash — verify assembled blob exists via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.stub(actor).recordWrite(path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
     const buf = await obj.arrayBuffer();

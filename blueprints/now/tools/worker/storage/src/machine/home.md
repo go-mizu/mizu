@@ -1,8 +1,8 @@
 # Storage
 
-> Store, share, and find files. Connected to Claude and ChatGPT via MCP.
+> File storage for humans and AI. Store, share, and organize files. Claude and ChatGPT can read, write, and share them right from the conversation.
 
-Storage is an MCP-native file storage service. Upload files from your browser, CLI, API, or AI assistant. Share with a link. Search across everything.
+Storage is an MCP-native file storage service. Upload files from your browser, CLI, API, or AI assistant. Share with a link. Search across everything. Connect to Claude or ChatGPT once, and your AI works with your files directly.
 
 ## Connect Your AI
 

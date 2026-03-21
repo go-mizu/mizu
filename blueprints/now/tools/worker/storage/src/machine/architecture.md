@@ -15,14 +15,14 @@ Client (Human or Agent)
 │              Edge Runtime                    │
 │  ┌────────┐  ┌──────────┐  ┌─────────────┐ │
 │  │  Auth   │  │  Router  │  │  MCP Server │ │
-│  │  Layer  │  │  (Hono)  │  │  (Tools)    │ │
+│  │  Layer  │  │          │  │  (Tools)    │ │
 │  └────────┘  └──────────┘  └─────────────┘ │
 └──────────────────┬──────────────────────────┘
                    │
         ┌──────────┴──────────┐
         ▼                     ▼
 ┌───────────────┐    ┌───────────────┐
-│  Meta Plane   │    │ Object Storage│
+│  Meta Pane   │    │ Object Storage│
 │               │    │   (Blobs)     │
 │  files (inode)│    │               │
 │  events       │    │  blobs/       │
@@ -36,14 +36,14 @@ Client (Human or Agent)
 
 | Layer | Technology | Role |
 |-------|-----------|------|
-| Edge Runtime | TypeScript on V8 isolates | Request handling, auth, routing, MCP |
-| Meta Plane | Structured metadata store | File index, events, sessions, blob refs |
+| Edge Runtime | Global edge workers | Request handling, auth, routing, MCP |
+| Meta Pane | Structured metadata store | File index, events, sessions, blob refs |
 | Blob Store | S3-compatible Object Storage | File content, content-addressed by SHA-256 |
 | Protocol | REST + MCP | Unified access for humans and AI agents |
 
-## Meta Plane
+## Meta Pane
 
-The Meta Plane stores all structured data: file entries, events, sessions, blob references, and transaction counters. It separates file identity from file content, similar to how UNIX inodes separate a filename from disk blocks.
+The Meta Pane stores all structured data: file entries, events, sessions, blob references, and transaction counters. It separates file identity from file content, similar to how UNIX inodes separate a filename from disk blocks.
 
 ### Data Model
 
@@ -78,15 +78,33 @@ blobs table (ref counting)
 ### Upload Flow
 
 ```
-1. Client ──POST /files/uploads──> Edge (auth + validate)
-2. Edge ──returns presigned URL──> Client
-3. Client ──PUT bytes──> Object Storage (direct, no proxy)
-4. Client ──POST /files/uploads/complete──> Edge (confirm + index)
+1. Client computes SHA-256 of file locally
+2. Client ──POST /files/uploads {content_hash}──> Edge (auth + dedup check)
+   └── If blob exists: instant dedup, skip upload, return immediately
+3. Edge ──returns presigned URL to content-addressed location──> Client
+4. Client ──PUT bytes──> Object Storage (direct, to blobs/{actor}/{hash})
+5. Client ──POST /files/uploads/complete──> Edge (HEAD verify + index)
 ```
 
-- File bytes never touch the API server
-- Presigned URL generated in under 50ms
-- Confirmation writes to Meta Plane: file entry + event + blob ref
+- Client-side SHA-256 enables instant deduplication before upload
+- File bytes upload directly to the content-addressed blob location
+- On confirm, edge verifies via HEAD (no data pull), then records metadata
+- Zero file data flows through the edge worker
+
+### Multipart Upload
+
+```
+1. Client computes SHA-256 of complete file locally
+2. Client ──POST /files/uploads/multipart {content_hash, part_count}──> Edge
+3. Edge ──returns presigned URLs for each part──> Client
+4. Client ──PUT parts in parallel──> Object Storage (direct)
+5. Client ──POST /files/uploads/multipart/complete {parts}──> Edge (HEAD verify + index)
+```
+
+- Up to 10,000 parts per upload
+- Parts upload in parallel directly to object storage
+- Same zero-proxy guarantee as single uploads
+- Same client-side SHA-256 dedup check
 
 ### Download Flow
 
@@ -96,9 +114,21 @@ blobs table (ref counting)
 3. Client ──GET──> Object Storage (direct download)
 ```
 
-- Sub-50ms metadata lookup
 - Zero bandwidth through API server
 - No egress fees from Object Storage
+
+### Range Read
+
+Downloads redirect to presigned object storage URLs, which natively support HTTP Range headers. Partial downloads never touch the edge worker.
+
+```
+1. Client ──GET /files/{path}──> Edge (302 redirect to presigned URL)
+2. Client ──GET {presigned_url} -H "Range: bytes=0-1023"──> Object Storage (206 Partial)
+```
+
+- Resume interrupted downloads from last byte
+- Read specific byte ranges without downloading the full file
+- All byte serving happens at the storage layer
 
 ## Content Addressing
 
@@ -113,7 +143,7 @@ Example: blobs/alice/a1/b2/a1b2c3d4e5f67890...
 
 - **Automatic deduplication**: same content = same blob, always
 - **Free integrity verification**: the hash IS the identifier
-- **Zero-cost rename and move**: only the Meta Plane path changes
+- **Zero-cost rename and move**: only the Meta Pane path changes
 - **Collision risk ~2^-128**: effectively zero
 
 Upload the same file twice, one blob stored. Rename a file, zero bytes copied.
@@ -157,7 +187,7 @@ Every event records who did what, when. No action goes untracked. For AI agents 
 
 ### Realtime Change Tracking
 
-Agents can poll for events since their last known `tx` number. No need to list all files and diff. Just ask "what changed since tx 42?" and get exactly the new events.
+Agents can poll for events since their last known tx number. No need to list all files and diff. Just ask "what changed since tx 42?" and get exactly the new events.
 
 ### Why This Matters for AI Agents
 
@@ -197,31 +227,35 @@ Storage treats humans and AI agents as equal participants. Both are "actors" wit
 | Download files | Yes | Yes |
 | Share files | Yes | Yes |
 | Search files | Yes | Yes |
-| Create API keys | Yes | Yes |
-| MCP tools | Yes | Yes |
+| Connect via MCP | Yes | Yes |
 
 No special "service account" or "bot mode". An agent is just another actor.
 
 ## Edge-First Design
 
-The entire application runs at the edge, as close to the client as possible.
+The entire application runs at the edge, as close to the client as possible. No origin server. No single region. V8 isolates distributed across every continent.
 
-### Performance
+### How a Request Travels
 
-| Operation | Latency |
-|-----------|---------|
-| Auth check | < 1ms |
-| File metadata lookup | < 50ms |
-| Presigned URL generation | < 50ms |
-| List files | < 50ms |
-| Search | < 100ms |
+```
+Your client ──nearest edge──> Edge node ──presigned URL──> Object store
+(any location)                (Auth + Meta Pane + Presign)  (Direct transfer)
+```
 
-### Why Edge Matters for AI Agents
+### Traditional vs Edge
 
-- AI agents in cloud functions have cold starts, so every millisecond counts
-- MCP tool calls add latency on top of LLM inference, so the API must be fast
-- Global distribution means agents in any region get consistent performance
-- No single region bottleneck for multi-agent coordination
+| Traditional (single origin) | Storage (global edge) |
+|---|---|
+| All requests route to one region | Requests hit the nearest edge node |
+| File bytes proxy through the API | Direct transfers via presigned URLs |
+| Cold starts from container spin-up | Near-instant cold starts |
+| Latency scales with distance to origin | Consistent performance everywhere |
+
+### Why Edge Matters
+
+- **For AI agents**: Agents in cloud functions have their own cold starts. Adding network round-trips to a distant origin makes tool calls slow. Edge keeps the API fast wherever the agent runs.
+- **For humans**: The web dashboard, file browser, and share links all load from the nearest edge. No matter where your team is located, the experience is the same.
+- **For collaboration**: When a human in Tokyo and an agent in Virginia share the same storage, both get fast responses. No single region becomes a bottleneck for the team.
 
 ## MCP: Native AI Integration
 
@@ -268,24 +302,24 @@ MCP tools and REST API share the same storage engine. A file uploaded via REST i
 
 | Component | Technology | Why |
 |-----------|-----------|-----|
-| Runtime | Edge Workers (V8 isolates) | Sub-5ms cold start, global distribution |
-| Framework | Hono + OpenAPI | Type-safe routes, auto-generated API docs |
-| Meta Plane | Structured metadata store | Fast reads, strong consistency, zero config |
+| Runtime | Edge Workers | Near-instant cold start, global distribution |
+| API Spec | OpenAPI 3.1 | Auto-generated docs from route definitions |
+| Meta Pane | Structured metadata store | Fast reads, strong consistency, zero config |
 | Blob Storage | S3-compatible Object Store | Durable, zero egress fees, presigned URLs |
 | Auth | Ed25519 + Magic Links | No passwords, no shared secrets |
 | API Keys | Scoped, prefixed (`sk_*`) | Path restrictions, 90-day TTL |
 | Protocol | REST + MCP | Universal access, AI-native |
-| Schema | OpenAPI 3.1 | Auto-generated from route definitions |
-| Validation | Zod | Runtime type safety, schema generation |
+| Validation | Schema validation | Runtime type safety, request validation |
+| Security | OAuth 2.0 + PKCE | Standard flow for third-party apps and MCP |
 
 ## Why This Architecture Suits AI Agents
 
 1. **No SDK required**: plain HTTP. Any agent runtime can call it.
-2. **Deterministic responses**: JSON with consistent schemas. No HTML parsing.
+2. **Deterministic responses**: JSON with consistent schemas documented via OpenAPI. No HTML parsing.
 3. **MCP native**: tools map directly to storage operations.
 4. **Event sourcing**: agents can sync incrementally, not poll everything.
 5. **Content addressing**: deduplication means agents don't waste storage re-uploading.
-6. **Sub-50ms latency**: fast enough for tool calls inside LLM inference loops.
+6. **Edge-first**: fast enough for tool calls inside LLM inference loops. Near-instant cold starts.
 7. **Dual identity**: agents are first-class actors, not hacks on top of user accounts.
 8. **Scoped keys**: agents get exactly the permissions they need, nothing more.
 9. **Audit trail**: every agent action is logged and traceable.

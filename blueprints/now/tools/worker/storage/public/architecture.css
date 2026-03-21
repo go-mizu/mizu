@@ -51,7 +51,7 @@ html.dark .section-scanlines{opacity:.02}
     radial-gradient(circle,transparent 400px,var(--text) 401px,transparent 402px)}
 html.dark .section-rings{opacity:.03}
 
-/* Isometric grid for the meta plane section */
+/* Isometric grid for the meta pane section */
 .section-iso{position:absolute;inset:0;pointer-events:none;z-index:-1;opacity:.04;
   background-image:
     linear-gradient(30deg,var(--text) 1px,transparent 1px),
@@ -80,45 +80,74 @@ html.dark .section-iso{opacity:.03}
 html.dark .hero-rings{opacity:.03}
 
 /* ══════════════════════════════════════════════════════════════════════
-   STACK DIAGRAM — 4-layer animated architecture
+   TOPOLOGY DIAGRAM — multi-tier architecture visualization
    ══════════════════════════════════════════════════════════════════════ */
-.stack{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:0}
+.topo{max-width:860px;margin:0 auto;display:flex;flex-direction:column}
 
-.stack-layer{border:1px solid var(--border);background:var(--bg);
-  padding:28px 32px;display:flex;align-items:center;gap:20px;
-  position:relative;transition:background .15s}
-.stack-layer:hover{background:var(--surface-alt)}
-.stack-layer+.stack-layer{border-top:none}
+/* Tier labels */
+.topo-tier-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--text-3);font-weight:500;margin-bottom:8px;padding-left:4px}
 
-.stack-label{font-family:'JetBrains Mono',monospace;font-size:10px;
-  letter-spacing:2px;text-transform:uppercase;color:var(--text-3);
-  font-weight:500;min-width:100px}
-.stack-content{flex:1}
-.stack-name{font-size:15px;font-weight:600;margin-bottom:4px;letter-spacing:-0.2px}
-.stack-desc{font-size:13px;color:var(--text-2);line-height:1.6}
-.stack-tech{font-family:'JetBrains Mono',monospace;font-size:11px;
-  color:var(--text-3);margin-top:6px;display:flex;gap:12px;flex-wrap:wrap}
-.stack-tech span{padding:3px 8px;border:1px solid var(--border);background:var(--surface)}
-
-.stack-connector{display:flex;justify-content:center;padding:4px 0}
-.stack-connector svg{color:var(--text-3)}
-
-/* animated pulse on the connector dots */
-.stack-pulse{animation:pulse 2s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-.stack-pulse:nth-child(2){animation-delay:.3s}
-.stack-pulse:nth-child(3){animation-delay:.6s}
-
-/* ── Split storage layer ─────────────────────────────────────────────── */
-.stack-split{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+/* ── Client nodes ── */
+.topo-clients{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
   border:1px solid var(--border);background:var(--border)}
-.stack-split-item{background:var(--bg);padding:28px 32px;transition:background .15s}
-.stack-split-item:hover{background:var(--surface-alt)}
+.topo-client{background:var(--bg);padding:24px 16px;display:flex;flex-direction:column;
+  align-items:center;gap:8px;text-align:center;transition:background .15s}
+.topo-client:hover{background:var(--surface-alt)}
+.topo-client-icon{color:var(--text-3)}
+.topo-client-name{font-size:14px;font-weight:600;letter-spacing:-0.2px}
+.topo-client-type{font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);letter-spacing:.5px}
+
+/* ── Wire connectors ── */
+.topo-wire{display:flex;flex-direction:column;align-items:center;padding:4px 0}
+.topo-wire-lines{display:flex;gap:80px;justify-content:center}
+.topo-wire-line{width:1px;height:40px;background:var(--border);position:relative;overflow:hidden}
+.topo-wire-line span{position:absolute;left:-2px;width:5px;height:5px;background:var(--green);
+  animation:wireFlow 2s ease-in-out infinite}
+.topo-wire-line:nth-child(2) span{animation-delay:.35s}
+.topo-wire-line:nth-child(3) span{animation-delay:.7s}
+.topo-wire-line:nth-child(4) span{animation-delay:1.05s}
+@keyframes wireFlow{0%{top:-5px;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:40px;opacity:0}}
+.topo-wire-tag{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--text-3);margin-top:2px}
+
+/* ── Edge network band ── */
+.topo-edge-band{border:1px solid var(--border);background:var(--bg);overflow:hidden}
+.topo-edge-nodes{display:flex;gap:1px;background:var(--border)}
+.topo-edge-node{flex:1;background:var(--bg);padding:20px 12px;display:flex;flex-direction:column;
+  align-items:center;gap:8px;transition:background .15s}
+.topo-edge-node:hover{background:var(--surface-alt)}
+.topo-edge-node--active{background:var(--surface-alt)}
+.topo-edge-dot{width:8px;height:8px;border:2px solid var(--text-3);background:var(--bg)}
+.topo-edge-dot--active{border-color:var(--green);background:var(--green);position:relative}
+.topo-edge-dot--active::after{content:'';position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);width:8px;height:8px;
+  border:1px solid var(--green);opacity:0;animation:edgePing 2s ease-out infinite}
+@keyframes edgePing{0%{width:8px;height:8px;opacity:.6}100%{width:28px;height:28px;opacity:0}}
+.topo-edge-name{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-2);letter-spacing:.5px}
+.topo-edge-svc{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  text-align:center;padding:12px 16px;border-top:1px solid var(--border)}
+
+/* ── Storage nodes ── */
+.topo-stores{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  border:1px solid var(--border);background:var(--border)}
+.topo-store{background:var(--bg);padding:28px 24px;transition:background .15s}
+.topo-store:hover{background:var(--surface-alt)}
+.topo-store-badge{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--green);border:1px solid var(--green);
+  padding:2px 8px;display:inline-block;margin-bottom:12px}
+.topo-store-name{font-size:18px;font-weight:600;letter-spacing:-0.3px;margin-bottom:8px}
+.topo-store-desc{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:12px}
+.topo-store-tags{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  display:flex;gap:8px;flex-wrap:wrap}
+.topo-store-tags span{padding:3px 8px;border:1px solid var(--border);background:var(--surface)}
 
 /* ══════════════════════════════════════════════════════════════════════
-   META PLANE — inode-inspired data model
+   META PANE — inode-inspired data model
    ══════════════════════════════════════════════════════════════════════ */
-.meta-section{padding:96px 0}
+.meta-section{padding:64px 0}
 
 .meta-diagram{border:1px solid var(--border);background:var(--bg);overflow:hidden}
 .meta-diagram-head{background:var(--surface-alt);padding:12px 24px;
@@ -155,7 +184,7 @@ html.dark .hero-rings{opacity:.03}
 /* ══════════════════════════════════════════════════════════════════════
    FLOW DIAGRAM — Request lifecycle
    ══════════════════════════════════════════════════════════════════════ */
-.flow-section{padding:96px 0}
+.flow-section{padding:64px 0}
 
 .flow-tabs{display:flex;border:1px solid var(--border);margin-bottom:0}
 .flow-tab{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.5px;
@@ -188,7 +217,7 @@ html.dark .flow-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    CONTENT ADDRESSING — visual hash mapping
    ══════════════════════════════════════════════════════════════════════ */
-.addr-section{padding:96px 0}
+.addr-section{padding:64px 0}
 
 .addr-visual{border:1px solid var(--border);background:var(--bg);overflow:hidden}
 .addr-row{display:grid;grid-template-columns:1fr 48px 1fr;align-items:center;
@@ -221,7 +250,7 @@ html.dark .flow-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    DUAL IDENTITY — humans + agents side by side
    ══════════════════════════════════════════════════════════════════════ */
-.identity-section{padding:96px 0}
+.identity-section{padding:64px 0}
 
 .identity-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;
   border:1px solid var(--border);background:var(--border);overflow:hidden}
@@ -255,7 +284,7 @@ html.dark .flow-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    EVENT ARCHITECTURE — dedicated section
    ══════════════════════════════════════════════════════════════════════ */
-.events-section{padding:96px 0}
+.events-section{padding:64px 0}
 
 .events-timeline{border:1px solid var(--border);background:var(--bg);overflow:hidden}
 .events-header{display:grid;grid-template-columns:48px 64px 1fr 1fr 120px;
@@ -306,39 +335,91 @@ html.dark .flow-num{color:var(--text-3)}
 .events-prop-desc{font-size:12px;color:var(--text-2);line-height:1.5}
 
 /* ══════════════════════════════════════════════════════════════════════
-   EDGE — performance stats
+   EDGE — global architecture
    ══════════════════════════════════════════════════════════════════════ */
-.edge-section{padding:96px 0}
+.edge-section{padding:64px 0}
 
-.edge-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
-  border:1px solid var(--border);background:var(--border);overflow:hidden}
-.edge-stat{background:var(--bg);padding:32px 24px;text-align:center;
-  transition:background .15s}
-.edge-stat:hover{background:var(--surface-alt)}
-.edge-stat-val{font-family:'JetBrains Mono',monospace;font-size:36px;font-weight:700;
-  letter-spacing:-1px;margin-bottom:8px}
-.edge-stat-unit{font-size:14px;color:var(--text-3);font-weight:400}
-.edge-stat-label{font-size:13px;color:var(--text-2);margin-top:4px}
-
-.edge-latency{margin-top:32px;border:1px solid var(--border);overflow:hidden}
-.edge-latency-head{background:var(--surface-alt);padding:12px 24px;
+/* Edge network map */
+.edge-map{border:1px solid var(--border);background:var(--bg);overflow:hidden;margin-bottom:32px}
+.edge-map-title{background:var(--surface-alt);padding:12px 24px;
   font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;
   text-transform:uppercase;color:var(--text-3);font-weight:600;
   border-bottom:1px solid var(--border)}
-.edge-latency-row{display:grid;grid-template-columns:1fr 120px 1fr;
-  padding:0;border-bottom:1px solid var(--border);font-size:13px;align-items:center}
-.edge-latency-row:last-child{border-bottom:none}
-.edge-latency-row>div{padding:12px 24px}
-.edge-latency-row>div:nth-child(2){font-family:'JetBrains Mono',monospace;
-  font-weight:600;text-align:right}
-.edge-latency-bar{padding:12px 24px !important}
-.edge-bar{height:6px;background:var(--border)}
-.edge-bar-fill{height:100%;background:var(--green);transition:width .6s ease}
+.edge-map-canvas{position:relative;height:280px;
+  background:
+    radial-gradient(ellipse at 50% 50%,rgba(161,161,170,0.03) 0%,transparent 70%),
+    radial-gradient(circle,var(--text) 0.5px,transparent 0.5px);
+  background-size:100% 100%,16px 16px}
+html.dark .edge-map-canvas{
+  background:
+    radial-gradient(ellipse at 50% 50%,rgba(250,250,249,0.02) 0%,transparent 70%),
+    radial-gradient(circle,var(--text) 0.5px,transparent 0.5px);
+  background-size:100% 100%,16px 16px}
+.edge-map-region{position:absolute;display:flex;flex-direction:column;align-items:center;gap:6px;
+  transform:translate(-50%,-50%);z-index:2}
+.edge-map-dot{width:10px;height:10px;border:2px solid var(--text-3);background:var(--bg);
+  position:relative}
+.edge-map-dot--pulse{border-color:var(--green);background:var(--green)}
+.edge-map-dot--pulse::after{content:'';position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);width:24px;height:24px;
+  border:1px solid var(--green);opacity:0;animation:edgePulse 2.5s ease-out infinite}
+@keyframes edgePulse{0%{width:10px;height:10px;opacity:.6}100%{width:32px;height:32px;opacity:0}}
+.edge-map-label{font-family:'JetBrains Mono',monospace;font-size:10px;
+  letter-spacing:0.5px;color:var(--text-3);white-space:nowrap}
+.edge-map-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  text-align:center;z-index:1}
+.edge-map-center-label{font-size:13px;color:var(--text-2);line-height:1.5;
+  padding:12px 20px;border:1px dashed var(--border);background:var(--bg)}
+
+/* Globe request flow */
+.edge-globe{border:1px solid var(--border);background:var(--bg);overflow:hidden;margin-bottom:32px}
+.edge-globe-title{background:var(--surface-alt);padding:12px 24px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--text-3);font-weight:600;
+  border-bottom:1px solid var(--border)}
+.edge-globe-flow{display:flex;align-items:center;justify-content:center;
+  padding:40px 32px;gap:0}
+.edge-globe-node{display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:20px 24px;min-width:140px;text-align:center;transition:background .15s}
+.edge-globe-node:hover{background:var(--surface-alt)}
+.edge-globe-node--active{border:1px solid var(--border);background:var(--surface-alt)}
+.edge-globe-icon{color:var(--text-3)}
+.edge-globe-label{font-size:14px;font-weight:600;letter-spacing:-0.2px}
+.edge-globe-region{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.edge-globe-arrow{display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:0 8px;color:var(--text-3)}
+.edge-globe-arrow-label{font-family:'JetBrains Mono',monospace;font-size:9px;
+  letter-spacing:1px;text-transform:uppercase;color:var(--text-3);white-space:nowrap}
+
+/* Traditional vs Edge comparison */
+.edge-compare{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  border:1px solid var(--border);background:var(--border);margin-bottom:32px}
+.edge-compare-col{background:var(--bg);padding:28px}
+.edge-compare-col--good{background:var(--bg)}
+.edge-compare-head{font-size:14px;font-weight:600;letter-spacing:-0.2px;
+  margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--text)}
+.edge-compare-items{display:flex;flex-direction:column;gap:0}
+.edge-compare-item{font-size:13px;color:var(--text-2);line-height:1.6;
+  padding:8px 0 8px 24px;position:relative;border-bottom:1px solid var(--border)}
+.edge-compare-item:last-child{border-bottom:none}
+.edge-compare-item::before{position:absolute;left:0;top:8px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600}
+.edge-compare-item--bad::before{content:'✕';color:var(--red)}
+.edge-compare-item--good::before{content:'✓';color:var(--green)}
+
+/* Why edge cards */
+.edge-why{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  border:1px solid var(--border);background:var(--border)}
+.edge-why-card{background:var(--bg);padding:28px;transition:background .15s}
+.edge-why-card:hover{background:var(--surface-alt)}
+.edge-why-icon{color:var(--text-3);margin-bottom:12px}
+.edge-why-name{font-size:15px;font-weight:600;margin-bottom:6px;letter-spacing:-0.2px}
+.edge-why-desc{font-size:13px;color:var(--text-2);line-height:1.6}
 
 /* ══════════════════════════════════════════════════════════════════════
    MCP — tool mapping
    ══════════════════════════════════════════════════════════════════════ */
-.mcp-section{padding:96px 0}
+.mcp-section{padding:64px 0}
 
 .mcp-flow{display:grid;grid-template-columns:1fr 48px 1fr 48px 1fr;
   align-items:stretch;gap:0;margin-bottom:32px}
@@ -371,7 +452,7 @@ html.dark .flow-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    TECH STACK — card grid
    ══════════════════════════════════════════════════════════════════════ */
-.stack-section{padding:96px 0}
+.stack-section{padding:64px 0}
 
 .tech-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
   border:1px solid var(--border);background:var(--border);overflow:hidden}
@@ -386,7 +467,7 @@ html.dark .flow-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    WHY AI — reasons grid with numbering
    ══════════════════════════════════════════════════════════════════════ */
-.why-section{padding:96px 0}
+.why-section{padding:64px 0}
 
 .why-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
   border:1px solid var(--border);background:var(--border);overflow:hidden}
@@ -403,7 +484,7 @@ html.dark .why-num{color:var(--text-3)}
 /* ══════════════════════════════════════════════════════════════════════
    CTA
    ══════════════════════════════════════════════════════════════════════ */
-.cta-section{padding:96px 0}
+.cta-section{padding:64px 0}
 .cta-title{font-size:28px;font-weight:500;letter-spacing:-0.5px;margin-bottom:12px}
 .cta-sub{font-size:15px;color:var(--text-2);margin-bottom:32px}
 .cta-actions{display:flex;gap:12px;justify-content:center}
@@ -430,25 +511,27 @@ html.dark .why-num{color:var(--text-3)}
   .identity-unified-grid{grid-template-columns:repeat(3,1fr)}
   .mcp-flow{grid-template-columns:1fr;gap:0}
   .mcp-flow-arrow{transform:rotate(90deg);padding:8px 0}
-  .edge-stats{grid-template-columns:repeat(2,1fr)}
+  .edge-compare{grid-template-columns:1fr}
+  .edge-why{grid-template-columns:1fr}
+  .edge-globe-flow{flex-direction:column}
+  .edge-globe-arrow{transform:rotate(90deg);padding:8px 0}
   .addr-dedup::after{display:none}
   .meta-split{grid-template-columns:1fr}
   .meta-ops{grid-template-columns:1fr}
   .events-capabilities{grid-template-columns:1fr}
+  .topo-edge-nodes{flex-wrap:wrap}
+  .topo-edge-node{min-width:calc(33% - 1px)}
 }
 @media(max-width:768px){
   .hero{padding:72px 0 48px}
   .hero-title{font-size:36px;letter-spacing:-1.5px}
-  .stack-layer{padding:20px 24px;flex-direction:column;align-items:flex-start;gap:8px}
-  .stack-label{min-width:auto}
-  .stack-split{grid-template-columns:1fr}
+  .topo-clients{grid-template-columns:repeat(2,1fr)}
+  .topo-wire-lines{gap:48px}
+  .topo-stores{grid-template-columns:1fr}
   .flow-steps{padding:24px}
   .events-header,.events-row{grid-template-columns:40px 56px 1fr 100px;font-size:12px}
   .events-hash{display:none}
   .events-props{grid-template-columns:1fr}
-  .edge-stats{grid-template-columns:1fr 1fr}
-  .edge-stat{padding:24px 16px}
-  .edge-stat-val{font-size:28px}
   .why-grid{grid-template-columns:1fr}
   .tech-grid{grid-template-columns:1fr}
   .mcp-tools-head,.mcp-tool{grid-template-columns:120px 1fr}
@@ -470,11 +553,9 @@ html.dark .why-num{color:var(--text-3)}
   .flow-tab:last-child{border-bottom:none}
   .flow-step{flex-direction:column;gap:8px}
   .flow-num{min-width:auto}
-  .edge-latency-row{grid-template-columns:1fr 80px 1fr}
-  .edge-latency-row>div{padding:10px 16px}
   .identity-unified-grid{grid-template-columns:repeat(3,1fr)}
   .identity-unified-cell{padding:8px 10px;font-size:12px}
-  .stack-split-item{padding:20px}
+  .topo-wire-lines{gap:32px}
   .cta-title{font-size:24px}
   .cta-actions{flex-direction:column;align-items:center}
   .cta-actions .btn{width:100%;max-width:320px;justify-content:center}
@@ -484,7 +565,6 @@ html.dark .why-num{color:var(--text-3)}
 }
 @media(max-width:480px){
   .hero-title{font-size:26px;letter-spacing:-1px}
-  .edge-stats{grid-template-columns:1fr}
   .events-header,.events-row{grid-template-columns:36px 48px 1fr}
   .events-time{display:none}
   .addr-row{grid-template-columns:1fr}

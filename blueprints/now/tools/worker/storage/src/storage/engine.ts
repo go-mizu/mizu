@@ -145,43 +145,57 @@ export interface StorageEngine {
     expiresIn?: number,
   ): Promise<string | null>;
 
-  /** Generate a presigned PUT URL for uploading. */
+  /** Generate a presigned PUT URL for uploading.
+   *  When contentHash is provided, presigns to the content-addressed blob location.
+   */
   presignUpload(
     actor: string,
     path: string,
     contentType: string,
     expiresIn?: number,
+    contentHash?: string,
   ): Promise<string>;
 
   /**
    * Confirm a presigned upload completed.
-   * Called after the client PUTs to the presigned URL.
+   * When contentHash is provided, verifies the blob exists via HEAD (no data pull).
+   * Otherwise falls back to legacy flow (pull data, compute hash, re-store).
    */
   confirmUpload(
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult>;
 
-  /** Initiate a multipart upload. Returns upload_id and part URLs. */
+  /** Check if a content-addressed blob exists. Returns size if found, null if not. */
+  blobExists(actor: string, contentHash: string): Promise<number | null>;
+
+  /** Initiate a multipart upload. Returns upload_id and part URLs.
+   *  When contentHash is provided, creates multipart at content-addressed location.
+   */
   initiateMultipart(
     actor: string,
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{
     upload_id: string;
     part_urls: string[];
     expires_in: number;
   }>;
 
-  /** Complete a multipart upload by assembling parts. */
+  /** Complete a multipart upload by assembling parts.
+   *  When contentHash is provided, skips data pull and records metadata via HEAD.
+   */
   completeMultipart(
     actor: string,
     path: string,
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult>;
 
   /** Abort a multipart upload. */

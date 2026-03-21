@@ -179,7 +179,7 @@ async function initiateUpload(c: C) {
   const rl = await checkRateLimit(c.env.DB, { endpoint: "files/uploads", limit: 200, windowMs: 3600_000 }, actor);
   if (!rl.allowed) return rateLimitResponse(c);
 
-  const body = await c.req.json<{ path?: string; content_type?: string }>();
+  const body = await c.req.json<{ path?: string; content_type?: string; content_hash?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
   const pathErr = validatePath(path);
@@ -189,15 +189,28 @@ async function initiateUpload(c: C) {
 
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
+  const contentHash = body.content_hash;
 
-  const url = await engine(c).presignUpload(actor, path, contentType, UPLOAD_EXPIRES);
+  // Client-side SHA-256: check for instant dedup
+  if (contentHash) {
+    const existingSize = await engine(c).blobExists(actor, contentHash);
+    if (existingSize !== null) {
+      // Blob already exists — record metadata without upload
+      const result = await engine(c).confirmUpload(actor, path, undefined, contentHash);
+      invalidateCache(actor);
+      audit(c, "write", path);
+      return c.json({ path, name, size: result.size, tx: result.tx, time: result.time, deduplicated: true });
+    }
+  }
 
-  return c.json({ url, content_type: contentType, expires_in: UPLOAD_EXPIRES });
+  const url = await engine(c).presignUpload(actor, path, contentType, UPLOAD_EXPIRES, contentHash);
+
+  return c.json({ url, content_type: contentType, content_hash: contentHash || undefined, expires_in: UPLOAD_EXPIRES });
 }
 
 // ── POST /files/uploads/complete ────────────────────────────────────
 async function completeUpload(c: C) {
-  const body = await c.req.json<{ path?: string; message?: string }>();
+  const body = await c.req.json<{ path?: string; message?: string; content_hash?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path) return err(c, "bad_request", "path is required");
   const pathErr = validatePath(path);
@@ -208,7 +221,7 @@ async function completeUpload(c: C) {
   const actor = c.get("actor");
   let result;
   try {
-    result = await engine(c).confirmUpload(actor, path, body.message);
+    result = await engine(c).confirmUpload(actor, path, body.message, body.content_hash);
   } catch (e: any) {
     if (e?.message?.includes("not found")) return err(c, "not_found", "Upload not found in storage");
     throw e;
@@ -228,7 +241,7 @@ async function initiateMultipart(c: C) {
   const rl = await checkRateLimit(c.env.DB, { endpoint: "files/uploads/multipart", limit: 50, windowMs: 3600_000 }, actor);
   if (!rl.allowed) return rateLimitResponse(c);
 
-  const body = await c.req.json<{ path?: string; content_type?: string; part_count?: number }>();
+  const body = await c.req.json<{ path?: string; content_type?: string; part_count?: number; content_hash?: string }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path || path.endsWith("/")) return err(c, "bad_request", "File path required");
   const pathErr = validatePath(path);
@@ -239,13 +252,26 @@ async function initiateMultipart(c: C) {
   const name = path.split("/").pop()!;
   const contentType = body.content_type || mimeFromName(name);
   const partCount = Math.min(body.part_count || 1, 10000);
+  const contentHash = body.content_hash;
 
-  const result = await engine(c).initiateMultipart(actor, path, contentType, partCount);
+  // Client-side SHA-256: check for instant dedup
+  if (contentHash) {
+    const existingSize = await engine(c).blobExists(actor, contentHash);
+    if (existingSize !== null) {
+      const result = await engine(c).confirmUpload(actor, path, undefined, contentHash);
+      invalidateCache(actor);
+      audit(c, "write", path);
+      return c.json({ path, name, size: result.size, tx: result.tx, time: result.time, deduplicated: true });
+    }
+  }
+
+  const result = await engine(c).initiateMultipart(actor, path, contentType, partCount, contentHash);
 
   return c.json({
     upload_id: result.upload_id,
     key: path,
     content_type: contentType,
+    content_hash: contentHash || undefined,
     part_urls: result.part_urls,
     expires_in: result.expires_in,
   });
@@ -258,6 +284,7 @@ async function completeMultipart(c: C) {
     upload_id?: string;
     parts?: { part_number: number; etag: string }[];
     message?: string;
+    content_hash?: string;
   }>();
   const path = (body.path || "").replace(/^\/+/, "");
   if (!path) return err(c, "bad_request", "path is required");
@@ -269,7 +296,7 @@ async function completeMultipart(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const result = await engine(c).completeMultipart(actor, path, body.upload_id, body.parts, body.message);
+  const result = await engine(c).completeMultipart(actor, path, body.upload_id, body.parts, body.message, body.content_hash);
 
   const name = path.split("/").pop()!;
   invalidateCache(actor);

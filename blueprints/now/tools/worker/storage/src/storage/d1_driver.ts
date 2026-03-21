@@ -303,6 +303,68 @@ export class D1Engine implements StorageEngine {
     ]);
   }
 
+  // ── record write metadata (no R2 blob ops) ──────────────────────
+
+  /** Record file metadata without touching R2. Used by confirmUpload/completeMultipart with contentHash. */
+  private async recordWriteMeta(
+    actor: string,
+    path: string,
+    addr: string,
+    size: number,
+    contentType: string,
+    msg?: string,
+  ): Promise<WriteResult> {
+    const s = await this.ensureShard(actor);
+    const now = Date.now();
+    const name = path.split("/").pop() || path;
+
+    const oldFile = await this.db
+      .prepare(`SELECT addr FROM f_${s} WHERE path = ?`)
+      .bind(path)
+      .first<{ addr: string | null }>();
+
+    const tx = await this.nextTx(actor);
+
+    const stmts: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `INSERT INTO e_${s} (tx, action, path, addr, size, type, msg, ts) VALUES (?, 'write', ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(tx, path, addr, size, contentType, msg || `write ${path}`, now),
+      this.db
+        .prepare(
+          `INSERT INTO f_${s} (path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ` +
+            `ON CONFLICT (path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at`,
+        )
+        .bind(path, name, size, contentType, addr, tx, now, now),
+      this.db
+        .prepare(
+          `INSERT INTO b_${s} (addr, size, ref_count, created_at) VALUES (?, ?, 1, ?) ` +
+            `ON CONFLICT (addr) DO UPDATE SET ref_count = ref_count + 1`,
+        )
+        .bind(addr, size, now),
+    ];
+
+    if (oldFile?.addr && oldFile.addr !== addr) {
+      stmts.push(
+        this.db
+          .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+          .bind(oldFile.addr),
+      );
+    }
+    if (oldFile?.addr && oldFile.addr === addr) {
+      stmts.push(
+        this.db
+          .prepare(`UPDATE b_${s} SET ref_count = MAX(ref_count - 1, 0) WHERE addr = ?`)
+          .bind(addr),
+      );
+    }
+
+    await this.db.batch(stmts);
+
+    return { tx, time: now, size };
+  }
+
   // ── write ────────────────────────────────────────────────────────
 
   async write(
@@ -733,10 +795,14 @@ export class D1Engine implements StorageEngine {
     path: string,
     contentType: string,
     expiresIn = 3600,
+    contentHash?: string,
   ): Promise<string> {
     // Ensure shard exists (creates tables if needed for new actor)
     await this.ensureShard(actor);
 
+    if (contentHash) {
+      return this.presign("PUT", blobKey(actor, contentHash), expiresIn, { contentType });
+    }
     // Presigned uploads still go to legacy path — confirmUpload will
     // content-address them.
     const key = `${actor}/${path}`;
@@ -749,7 +815,17 @@ export class D1Engine implements StorageEngine {
     actor: string,
     path: string,
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
+    if (contentHash) {
+      // Client provided hash — verify blob exists via HEAD, no data pull
+      const key = blobKey(actor, contentHash);
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Upload not found at content-addressed location");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull data, compute hash, re-store
     const legacyKey = `${actor}/${path}`;
     const obj = await this.bucket.get(legacyKey);
     if (!obj) throw new Error("Upload not found in storage");
@@ -766,6 +842,11 @@ export class D1Engine implements StorageEngine {
     return result;
   }
 
+  async blobExists(actor: string, contentHash: string): Promise<number | null> {
+    const head = await this.bucket.head(blobKey(actor, contentHash));
+    return head ? head.size : null;
+  }
+
   // ── multipart ────────────────────────────────────────────────────
 
   async initiateMultipart(
@@ -773,14 +854,14 @@ export class D1Engine implements StorageEngine {
     path: string,
     contentType: string,
     partCount: number,
+    contentHash?: string,
   ): Promise<{ upload_id: string; part_urls: string[]; expires_in: number }> {
     if (!this.presignConfigured) throw new Error("Presigned URLs not configured");
 
     // Ensure shard exists
     await this.ensureShard(actor);
 
-    // Multipart uploads use legacy key — completeMultipart will content-address
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = await this.bucket.createMultipartUpload(key, {
       httpMetadata: { contentType },
     });
@@ -802,12 +883,20 @@ export class D1Engine implements StorageEngine {
     uploadId: string,
     parts: { part_number: number; etag: string }[],
     msg?: string,
+    contentHash?: string,
   ): Promise<WriteResult> {
-    const key = `${actor}/${path}`;
+    const key = contentHash ? blobKey(actor, contentHash) : `${actor}/${path}`;
     const mpu = this.bucket.resumeMultipartUpload(key, uploadId);
     await mpu.complete(parts.map((p) => ({ partNumber: p.part_number, etag: p.etag })));
 
-    // Now content-address the assembled object
+    if (contentHash) {
+      // Client provided hash — verify assembled blob via HEAD, no data pull
+      const head = await this.bucket.head(key);
+      if (!head) throw new Error("Multipart upload not found after completion");
+      const ct = head.httpMetadata?.contentType || mimeFromName(path.split("/").pop() || path);
+      return this.recordWriteMeta(actor, path, contentHash, head.size, ct, msg);
+    }
+    // Legacy flow: pull assembled data, compute hash, re-store
     const obj = await this.bucket.get(key);
     if (!obj) throw new Error("Multipart upload not found after completion");
 

@@ -32,8 +32,8 @@ export function homePage(actor: string | null = null, siteKey?: string): string 
 </div>`;
 
   const heroSignedOut = `
-<h1 class="hero-title">Your team's files.<br><span class="shimmer">Always within reach.</span></h1>
-<p class="hero-sub">Store, share, and find files across your team. Connected to Claude and ChatGPT so your AI can work with your files too.</p>
+<h1 class="hero-title">One place for files.<br><span class="shimmer">Humans and AI.</span></h1>
+<p class="hero-sub">Store, share, and organize files across your team. Claude and ChatGPT can read, write, and share them right from the conversation.</p>
 <div class="hero-ctas">
   <a href="#" class="btn btn--primary btn--lg" onclick="openRegister();return false">Get started</a>
   <a href="/developers" class="btn btn--ghost btn--lg">See how it works</a>
@@ -68,8 +68,8 @@ export function homePage(actor: string | null = null, siteKey?: string): string 
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Storage — Your team's files, always within reach</title>
-<meta name="description" content="Store, share, and find files across your team. Connected to Claude and ChatGPT.">
+<title>Storage — File storage for humans and AI</title>
+<meta name="description" content="Store, share, and organize files. Claude and ChatGPT can read, write, and share them right from the conversation.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -136,8 +136,8 @@ ${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"
       </div>
       <div class="pillar">
         <div class="pillar-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></div>
-        <h3 class="pillar-title">AI-connected</h3>
-        <p class="pillar-desc">Claude and ChatGPT can read, write, and share your files directly. Connect once, then just ask.</p>
+        <h3 class="pillar-title">AI-ready</h3>
+        <p class="pillar-desc">Claude and ChatGPT can read, write, and share your files right from the conversation. Set up once, then just ask.</p>
       </div>
     </div>
   </div>
@@ -214,7 +214,7 @@ ${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         <div class="feature-facts">
           <div class="feature-fact"><strong>Time-limited links</strong> that auto-expire</div>
           <div class="feature-fact"><strong>No recipient sign-up</strong> required to download</div>
-          <div class="feature-fact"><strong>Ask your AI</strong> to share files for you</div>
+          <div class="feature-fact"><strong>Share from Claude</strong> without leaving the chat</div>
         </div>
       </div>
       <div class="feature-visual">
@@ -269,11 +269,11 @@ ${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"
     <div class="feature">
       <div class="feature-text">
         <div class="sec-label">AI INTEGRATION</div>
-        <h2 class="sec-h">Your AI knows your files.</h2>
-        <p class="feature-desc">Connect Storage to Claude or ChatGPT in under a minute. Then ask your AI to save files, find documents, organize folders, or share links with your team.</p>
+        <h2 class="sec-h">Your AI works with your files.</h2>
+        <p class="feature-desc">Connect Storage to Claude or ChatGPT once. Then your AI can read, write, organize, and share files right from the conversation. Your whole team collaborates through the tools they already use.</p>
         <div class="feature-facts">
-          <div class="feature-fact"><strong>Claude</strong> via Settings &rarr; Integrations</div>
-          <div class="feature-fact"><strong>ChatGPT</strong> via Settings &rarr; Connected apps</div>
+          <div class="feature-fact"><strong>Works in Claude</strong> via MCP integration</div>
+          <div class="feature-fact"><strong>Works in ChatGPT</strong> via connected apps</div>
           <div class="feature-fact"><strong>8 tools</strong> for read, write, search, share, and more</div>
         </div>
         <a href="/developers#ai" class="btn btn--ghost" style="margin-top:24px">Learn more &rarr;</a>
@@ -368,8 +368,8 @@ ${siteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"
      ═══════════════════════════════════════════════════════════════════ -->
 <section class="sec sec--cta">
   <div class="inner cta-inner">
-    <h2 class="cta-h">Start storing.</h2>
-    <p class="cta-sub">Set up in 30 seconds.</p>
+    <h2 class="cta-h">Give your AI access to your files.</h2>
+    <p class="cta-sub">Set up in 30 seconds. Start collaborating.</p>
     <div class="cta-actions">
       ${isSignedIn
         ? '<a href="/browse" class="btn btn--primary">Go to my files</a>'

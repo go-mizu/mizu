@@ -57,75 +57,103 @@ export function architecturePage(): string {
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════
-     SYSTEM OVERVIEW — layered stack diagram
+     SYSTEM OVERVIEW — topology diagram
      ═══════════════════════════════════════════════════════════════════ -->
 <div class="section" id="overview">
   <div class="section-glow"></div>
   <div class="section-inner">
     <div class="arch-label">System Overview</div>
     <div class="arch-h">Four layers, one API</div>
-    <div class="arch-sub">Requests flow from clients through the edge runtime, which handles auth and routing, down to the metadata and blob stores.</div>
+    <div class="arch-sub">Requests flow from any client to the nearest edge node. The edge authenticates and routes, then reads or writes metadata and blobs.</div>
 
-    <div class="stack">
-      <!-- Layer 1: Client -->
-      <div class="stack-layer">
-        <div class="stack-label">CLIENT</div>
-        <div class="stack-content">
-          <div class="stack-name">Humans &amp; AI Agents</div>
-          <div class="stack-desc">Any HTTP client, MCP-compatible AI, CLI tool, or web browser. No SDK required.</div>
-          <div class="stack-tech">
-            <span>curl</span><span>fetch</span><span>MCP</span><span>CLI</span><span>Browser</span>
-          </div>
+    <div class="topo">
+      <!-- Clients -->
+      <div class="topo-tier-label">CLIENTS</div>
+      <div class="topo-clients">
+        <div class="topo-client">
+          <div class="topo-client-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+          <div class="topo-client-name">Browser</div>
+          <div class="topo-client-type">Human</div>
+        </div>
+        <div class="topo-client">
+          <div class="topo-client-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="22"/><line x1="2" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="22" y2="12"/></svg></div>
+          <div class="topo-client-name">Claude</div>
+          <div class="topo-client-type">AI agent</div>
+        </div>
+        <div class="topo-client">
+          <div class="topo-client-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="12" y1="15" x2="12" y2="22"/><line x1="2" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="22" y2="12"/></svg></div>
+          <div class="topo-client-name">ChatGPT</div>
+          <div class="topo-client-type">AI agent</div>
+        </div>
+        <div class="topo-client">
+          <div class="topo-client-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+          <div class="topo-client-name">CLI / API</div>
+          <div class="topo-client-type">Any HTTP client</div>
         </div>
       </div>
 
-      <!-- Connector -->
-      <div class="stack-connector">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle class="stack-pulse" cx="12" cy="4" r="2"/>
-          <circle class="stack-pulse" cx="12" cy="12" r="2"/>
-          <circle class="stack-pulse" cx="12" cy="20" r="2"/>
-        </svg>
+      <!-- Wire: Clients to Edge -->
+      <div class="topo-wire">
+        <div class="topo-wire-lines">
+          <div class="topo-wire-line"><span></span></div>
+          <div class="topo-wire-line"><span></span></div>
+          <div class="topo-wire-line"><span></span></div>
+          <div class="topo-wire-line"><span></span></div>
+        </div>
+        <div class="topo-wire-tag">HTTPS / MCP</div>
       </div>
 
-      <!-- Layer 2: Edge -->
-      <div class="stack-layer">
-        <div class="stack-label">EDGE</div>
-        <div class="stack-content">
-          <div class="stack-name">Edge Runtime</div>
-          <div class="stack-desc">Runs in V8 isolates globally. Handles authentication, routing, rate limiting, presigned URL generation, and MCP tool dispatch.</div>
-          <div class="stack-tech">
-            <span>V8 isolates</span><span>OpenAPI</span><span>REST</span><span>MCP</span>
+      <!-- Edge network -->
+      <div class="topo-tier-label">GLOBAL EDGE NETWORK</div>
+      <div class="topo-edge-band">
+        <div class="topo-edge-nodes">
+          <div class="topo-edge-node">
+            <div class="topo-edge-dot"></div>
+            <div class="topo-edge-name">US East</div>
+          </div>
+          <div class="topo-edge-node">
+            <div class="topo-edge-dot"></div>
+            <div class="topo-edge-name">EU West</div>
+          </div>
+          <div class="topo-edge-node topo-edge-node--active">
+            <div class="topo-edge-dot topo-edge-dot--active"></div>
+            <div class="topo-edge-name">AP South</div>
+          </div>
+          <div class="topo-edge-node">
+            <div class="topo-edge-dot"></div>
+            <div class="topo-edge-name">AP East</div>
+          </div>
+          <div class="topo-edge-node">
+            <div class="topo-edge-dot"></div>
+            <div class="topo-edge-name">SA East</div>
           </div>
         </div>
+        <div class="topo-edge-svc">Auth · Routing · Rate limiting · Presigned URLs · MCP dispatch</div>
       </div>
 
-      <!-- Connector -->
-      <div class="stack-connector">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle class="stack-pulse" cx="12" cy="4" r="2"/>
-          <circle class="stack-pulse" cx="12" cy="12" r="2"/>
-          <circle class="stack-pulse" cx="12" cy="20" r="2"/>
-        </svg>
-      </div>
-
-      <!-- Layer 3+4: Storage split -->
-      <div class="stack-split">
-        <div class="stack-split-item">
-          <div class="stack-label">METADATA</div>
-          <div class="stack-name">Meta Plane</div>
-          <div class="stack-desc">File index, event log, session tokens, blob references, transaction counters. Strong consistency for all metadata reads.</div>
-          <div class="stack-tech">
-            <span>files</span><span>events</span><span>blobs</span><span>sessions</span>
-          </div>
+      <!-- Wire: Edge to Storage -->
+      <div class="topo-wire">
+        <div class="topo-wire-lines">
+          <div class="topo-wire-line"><span></span></div>
+          <div class="topo-wire-line"><span></span></div>
         </div>
-        <div class="stack-split-item">
-          <div class="stack-label">BLOBS</div>
-          <div class="stack-name">Object Storage</div>
-          <div class="stack-desc">S3-compatible object store. Durable, globally distributed, zero egress fees. Content-addressed by SHA-256 hash.</div>
-          <div class="stack-tech">
-            <span>SHA-256</span><span>presigned URLs</span><span>zero egress</span>
-          </div>
+        <div class="topo-wire-tag">Read / Write</div>
+      </div>
+
+      <!-- Storage -->
+      <div class="topo-tier-label">STORAGE</div>
+      <div class="topo-stores">
+        <div class="topo-store">
+          <div class="topo-store-badge">Global consistency</div>
+          <div class="topo-store-name">Meta Pane</div>
+          <div class="topo-store-desc">File index, event log, sessions, blob references, tx counters</div>
+          <div class="topo-store-tags"><span>files</span><span>events</span><span>blobs</span><span>sessions</span></div>
+        </div>
+        <div class="topo-store">
+          <div class="topo-store-badge">Geo-distributed</div>
+          <div class="topo-store-name">Object Storage</div>
+          <div class="topo-store-desc">S3-compatible blob store, content-addressed by SHA-256</div>
+          <div class="topo-store-tags"><span>SHA-256</span><span>presigned URLs</span><span>zero egress</span></div>
         </div>
       </div>
     </div>
@@ -135,10 +163,10 @@ export function architecturePage(): string {
 <!-- ═══════════════════════════════════════════════════════════════════
      META PLANE — inode-inspired data model
      ═══════════════════════════════════════════════════════════════════ -->
-<div class="section meta-section" id="meta-plane">
+<div class="section meta-section" id="meta-pane">
   <div class="section-iso"></div>
   <div class="section-inner">
-    <div class="arch-label">Meta Plane</div>
+    <div class="arch-label">Meta Pane</div>
     <div class="arch-h">Paths and content live apart</div>
     <div class="arch-sub">File identity is decoupled from file content. A path points to a content hash, like how a filename points to an inode. This makes moves, renames, and dedup instant.</div>
 
@@ -194,8 +222,8 @@ export function architecturePage(): string {
   <div class="section-dots"></div>
   <div class="section-inner">
     <div class="arch-label">Request Lifecycle</div>
-    <div class="arch-h">File bytes never touch the API</div>
-    <div class="arch-sub">The API server only handles metadata. Uploads and downloads go directly to object storage via presigned URLs.</div>
+    <div class="arch-h">Zero data through the API</div>
+    <div class="arch-sub">Clients compute SHA-256 locally, then upload directly to the content-addressed location via presigned URLs. Downloads redirect to presigned URLs. File bytes never touch the edge worker.</div>
 
     <div class="flow-tabs">
       <button class="flow-tab active" onclick="showFlow('upload')">UPLOAD</button>
@@ -209,18 +237,18 @@ export function architecturePage(): string {
         <div class="flow-step">
           <div class="flow-num">01</div>
           <div class="flow-step-content">
-            <div class="flow-step-title">Initiate upload</div>
-            <div class="flow-step-desc">Client sends path and content type. Edge validates auth, checks quotas, generates a presigned PUT URL.</div>
-            <div class="flow-step-code">POST /files/uploads  {path: "report.pdf", content_type: "application/pdf"}</div>
-            <div class="flow-step-badge">~30ms</div>
+            <div class="flow-step-title">Compute hash &amp; initiate</div>
+            <div class="flow-step-desc">Client computes SHA-256 of the file locally, then sends path, content type, and hash. Edge checks if the blob already exists (instant dedup). If not, generates a presigned PUT URL to the content-addressed location.</div>
+            <div class="flow-step-code">POST /files/uploads  {path: "report.pdf", content_hash: "a1b2c3..."}</div>
+            <div class="flow-step-badge">dedup check</div>
           </div>
         </div>
         <div class="flow-step">
           <div class="flow-num">02</div>
           <div class="flow-step-content">
-            <div class="flow-step-title">Direct upload to storage</div>
-            <div class="flow-step-desc">Client PUTs file bytes directly to the presigned URL. No proxy, no bandwidth through the API server.</div>
-            <div class="flow-step-code">PUT {presigned_url}  --data-binary @report.pdf</div>
+            <div class="flow-step-title">Direct upload to content-addressed location</div>
+            <div class="flow-step-desc">Client PUTs file bytes directly to the presigned URL. The blob lands at its final content-addressed path. No data flows through the API server.</div>
+            <div class="flow-step-code">PUT {presigned_url}  blobs/{actor}/a1/b2/a1b2c3...</div>
             <div class="flow-step-badge">direct to storage</div>
           </div>
         </div>
@@ -228,9 +256,9 @@ export function architecturePage(): string {
           <div class="flow-num">03</div>
           <div class="flow-step-content">
             <div class="flow-step-title">Confirm &amp; index</div>
-            <div class="flow-step-desc">Client confirms completion. Edge computes SHA-256, writes file entry + event to the Meta Plane, updates blob ref count.</div>
+            <div class="flow-step-desc">Client confirms completion. Edge verifies the blob exists at the content-addressed location via HEAD (no data pull), then writes the file entry + event to the Meta Pane and updates blob ref count.</div>
             <div class="flow-step-code">POST /files/uploads/complete  {path: "report.pdf"}</div>
-            <div class="flow-step-badge">~40ms</div>
+            <div class="flow-step-badge">fast</div>
           </div>
         </div>
       </div>
@@ -243,9 +271,9 @@ export function architecturePage(): string {
           <div class="flow-num">01</div>
           <div class="flow-step-content">
             <div class="flow-step-title">Request file</div>
-            <div class="flow-step-desc">Client requests a file by path. Edge validates auth, looks up the file in the Meta Plane.</div>
+            <div class="flow-step-desc">Client requests a file by path. Edge validates auth, looks up the file in the Meta Pane.</div>
             <div class="flow-step-code">GET /files/report.pdf  -H "Authorization: Bearer $TOKEN"</div>
-            <div class="flow-step-badge">~20ms</div>
+            <div class="flow-step-badge">fast</div>
           </div>
         </div>
         <div class="flow-step">
@@ -278,18 +306,113 @@ export function architecturePage(): string {
             <div class="flow-step-title">MCP server handles internally</div>
             <div class="flow-step-desc">The MCP server uses the same storage engine as REST. It uploads the blob, writes the file entry, and records the event in one step.</div>
             <div class="flow-step-code">engine.put(actor, "notes/summary.md", blob)</div>
-            <div class="flow-step-badge">~50ms total</div>
+            <div class="flow-step-badge">single round-trip</div>
           </div>
         </div>
         <div class="flow-step">
           <div class="flow-num">03</div>
           <div class="flow-step-content">
             <div class="flow-step-title">Result returned to AI</div>
-            <div class="flow-step-desc">The tool returns success with a transaction number. The AI can immediately read the file back or share it.</div>
+            <div class="flow-step-desc">The tool returns success with a transaction number (tx). The AI can immediately read the file back or share it.</div>
             <div class="flow-step-code">result: {tx: 42, path: "notes/summary.md", size: 1847}</div>
             <div class="flow-step-badge">immediately visible</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     MULTIPART UPLOAD — large file support
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section flow-section" id="multipart">
+  <div class="section-glow"></div>
+  <div class="section-inner">
+    <div class="arch-label">Multipart Upload</div>
+    <div class="arch-h">Large files, same zero-proxy guarantee</div>
+    <div class="arch-sub">Files too large for a single PUT are split into parts. Each part uploads directly to object storage. The edge never touches the file bytes.</div>
+
+    <div class="flow-steps" style="border:1px solid var(--border);padding:32px">
+      <div class="flow-step">
+        <div class="flow-num">01</div>
+        <div class="flow-step-content">
+          <div class="flow-step-title">Compute hash &amp; initiate</div>
+          <div class="flow-step-desc">Client computes SHA-256 of the complete file, then requests a multipart upload. Edge creates the upload at the content-addressed location and returns presigned URLs for each part.</div>
+          <div class="flow-step-code">POST /files/uploads/multipart  {path: "dataset.parquet", part_count: 5, content_hash: "a1b2c3..."}</div>
+          <div class="flow-step-badge">up to 10,000 parts</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">02</div>
+        <div class="flow-step-content">
+          <div class="flow-step-title">Upload parts directly</div>
+          <div class="flow-step-desc">Client PUTs each part directly to its presigned URL. Parts upload in parallel to object storage. No data flows through the API server.</div>
+          <div class="flow-step-code">PUT {part_url_1}  --data-binary @part1
+PUT {part_url_2}  --data-binary @part2  (parallel)</div>
+          <div class="flow-step-badge">direct to storage</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">03</div>
+        <div class="flow-step-content">
+          <div class="flow-step-title">Complete &amp; index</div>
+          <div class="flow-step-desc">Client sends part ETags to finalize assembly. Edge verifies the assembled blob via HEAD (no data pull), then records file entry + event in the Meta Pane.</div>
+          <div class="flow-step-code">POST /files/uploads/multipart/complete  {parts: [{part_number: 1, etag: "..."}, ...]}</div>
+          <div class="flow-step-badge">metadata only</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     RANGE READ — partial downloads
+     ═══════════════════════════════════════════════════════════════════ -->
+<div class="section flow-section" id="range-read">
+  <div class="section-scanlines"></div>
+  <div class="section-inner">
+    <div class="arch-label">Range Read</div>
+    <div class="arch-h">Download any byte range</div>
+    <div class="arch-sub">Downloads redirect to presigned object storage URLs, which natively support HTTP Range headers. Partial downloads never touch the edge worker.</div>
+
+    <div class="flow-steps" style="border:1px solid var(--border);padding:32px">
+      <div class="flow-step">
+        <div class="flow-num">01</div>
+        <div class="flow-step-content">
+          <div class="flow-step-title">Request file</div>
+          <div class="flow-step-desc">Client requests a file by path. Edge validates auth, looks up metadata, and returns a 302 redirect to a presigned object storage URL.</div>
+          <div class="flow-step-code">GET /files/report.pdf  →  302 Location: {presigned_url}</div>
+          <div class="flow-step-badge">redirect</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">02</div>
+        <div class="flow-step-content">
+          <div class="flow-step-title">Range request to storage</div>
+          <div class="flow-step-desc">Client follows the redirect and sends a standard HTTP Range header directly to object storage. The storage layer handles partial content natively, returning HTTP 206.</div>
+          <div class="flow-step-code">GET {presigned_url}  -H "Range: bytes=0-1023"  →  206 Partial Content</div>
+          <div class="flow-step-badge">direct from storage</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="addr-props">
+      <div class="addr-prop">
+        <div class="addr-prop-name">Resume downloads</div>
+        <div class="addr-prop-desc">Interrupted transfers can resume from the last byte received.</div>
+      </div>
+      <div class="addr-prop">
+        <div class="addr-prop-name">Stream sections</div>
+        <div class="addr-prop-desc">Read specific byte ranges without downloading the entire file.</div>
+      </div>
+      <div class="addr-prop">
+        <div class="addr-prop-name">Zero worker load</div>
+        <div class="addr-prop-desc">All byte serving happens at the storage layer, not the edge worker.</div>
+      </div>
+      <div class="addr-prop">
+        <div class="addr-prop-name">Standard HTTP</div>
+        <div class="addr-prop-desc">Uses standard Range headers. Works with any HTTP client.</div>
       </div>
     </div>
   </div>
@@ -348,7 +471,7 @@ export function architecturePage(): string {
       </div>
       <div class="addr-prop">
         <div class="addr-prop-name">Zero-cost move</div>
-        <div class="addr-prop-desc">Only the Meta Plane path changes. No blob copies.</div>
+        <div class="addr-prop-desc">Only the Meta Pane path changes. No blob copies.</div>
       </div>
       <div class="addr-prop">
         <div class="addr-prop-name">Collision risk ~2<sup>-128</sup></div>
@@ -401,7 +524,7 @@ export function architecturePage(): string {
         <div class="events-tx">4</div>
         <div class="events-action events-action--delete">delete</div>
         <div class="events-path">old/draft.txt</div>
-        <div class="events-hash">&mdash;</div>
+        <div class="events-hash">-</div>
         <div class="events-time">09:15:44</div>
       </div>
       <div class="events-row events-row--version">
@@ -441,7 +564,7 @@ export function architecturePage(): string {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
         <div class="events-cap-name">Realtime Change Tracking</div>
-        <div class="events-cap-desc">Agents poll for events since their last known tx number. No need to list all files and diff. Just ask "what changed since tx 42?" and get exactly the new events.</div>
+        <div class="events-cap-desc">Agents poll for events since their last known transaction number. No need to list all files and diff. Just ask "what changed since tx 42?" and get exactly the new events.</div>
       </div>
     </div>
 
@@ -552,11 +675,45 @@ export function architecturePage(): string {
   <div class="section-inner">
     <div class="arch-label">Edge-First</div>
     <div class="arch-h">Global by default</div>
-    <div class="arch-sub">No origin server. No single region. The entire application runs inside V8 isolates distributed across every continent.</div>
+    <div class="arch-sub">No origin server. No single region. The entire application runs at the edge, distributed across every continent. Your request never crosses the world to reach a data center.</div>
 
-    <!-- Globe visualization: request path diagram -->
+    <!-- Edge network map -->
+    <div class="edge-map">
+      <div class="edge-map-title">GLOBAL EDGE NETWORK</div>
+      <div class="edge-map-canvas">
+        <div class="edge-map-region" style="top:20%;left:15%">
+          <div class="edge-map-dot edge-map-dot--pulse"></div>
+          <div class="edge-map-label">North America</div>
+        </div>
+        <div class="edge-map-region" style="top:55%;left:22%">
+          <div class="edge-map-dot"></div>
+          <div class="edge-map-label">South America</div>
+        </div>
+        <div class="edge-map-region" style="top:18%;left:48%">
+          <div class="edge-map-dot edge-map-dot--pulse"></div>
+          <div class="edge-map-label">Europe</div>
+        </div>
+        <div class="edge-map-region" style="top:40%;left:55%">
+          <div class="edge-map-dot"></div>
+          <div class="edge-map-label">Africa</div>
+        </div>
+        <div class="edge-map-region" style="top:25%;left:72%">
+          <div class="edge-map-dot edge-map-dot--pulse"></div>
+          <div class="edge-map-label">Asia</div>
+        </div>
+        <div class="edge-map-region" style="top:60%;left:82%">
+          <div class="edge-map-dot"></div>
+          <div class="edge-map-label">Oceania</div>
+        </div>
+        <div class="edge-map-center">
+          <div class="edge-map-center-label">Every request served<br>from the nearest node</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Request flow -->
     <div class="edge-globe">
-      <div class="edge-globe-title">How a request travels</div>
+      <div class="edge-globe-title">HOW A REQUEST TRAVELS</div>
       <div class="edge-globe-flow">
         <div class="edge-globe-node">
           <div class="edge-globe-icon">
@@ -574,7 +731,7 @@ export function architecturePage(): string {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
           </div>
           <div class="edge-globe-label">Edge node</div>
-          <div class="edge-globe-region">Auth + Meta Plane + Presign</div>
+          <div class="edge-globe-region">Auth + Meta Pane + Presign</div>
         </div>
         <div class="edge-globe-arrow">
           <svg width="40" height="24" viewBox="0 0 40 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="12" x2="34" y2="12"/><polyline points="28 6 34 12 28 18"/></svg>
@@ -612,7 +769,7 @@ export function architecturePage(): string {
         <div class="edge-compare-items">
           <div class="edge-compare-item edge-compare-item--good">Requests hit the nearest edge node</div>
           <div class="edge-compare-item edge-compare-item--good">Direct transfers via presigned URLs</div>
-          <div class="edge-compare-item edge-compare-item--good">V8 isolate starts in milliseconds</div>
+          <div class="edge-compare-item edge-compare-item--good">Near-instant cold starts at the edge</div>
           <div class="edge-compare-item edge-compare-item--good">Consistent performance everywhere</div>
         </div>
       </div>
@@ -682,7 +839,7 @@ export function architecturePage(): string {
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
         <div class="mcp-flow-node-name">Storage Engine</div>
-        <div class="mcp-flow-node-desc">Meta Plane + Object Store</div>
+        <div class="mcp-flow-node-desc">Meta Pane + Object Store</div>
       </div>
     </div>
 
@@ -759,7 +916,7 @@ export function architecturePage(): string {
         <div class="why-num">02</div>
         <div class="why-content">
           <div class="why-item-title">Deterministic responses</div>
-          <div class="why-item-desc">Consistent JSON schemas, typed with Zod, documented via OpenAPI. No HTML parsing, no brittle scraping.</div>
+          <div class="why-item-desc">Consistent JSON schemas documented via OpenAPI. No HTML parsing, no brittle scraping.</div>
         </div>
       </div>
       <div class="why-item">
@@ -786,8 +943,8 @@ export function architecturePage(): string {
       <div class="why-item">
         <div class="why-num">06</div>
         <div class="why-content">
-          <div class="why-item-title">Sub-50ms latency</div>
-          <div class="why-item-desc">Fast enough for tool calls inside LLM inference loops. Edge runtime eliminates round-trip to a single origin.</div>
+          <div class="why-item-title">Edge-fast responses</div>
+          <div class="why-item-desc">Fast enough for tool calls inside LLM inference loops. Edge runtime eliminates round-trips to a distant origin.</div>
         </div>
       </div>
       <div class="why-item">
@@ -836,16 +993,16 @@ export function architecturePage(): string {
       <div class="tech-card">
         <div class="tech-card-cat">COMPUTE</div>
         <div class="tech-card-name">Edge Workers</div>
-        <div class="tech-card-desc">V8 isolates distributed globally. Sub-5ms cold starts. No containers, no VMs, no orchestration.</div>
+        <div class="tech-card-desc">Distributed globally across every continent. Near-instant cold starts. No containers, no VMs, no orchestration.</div>
       </div>
       <div class="tech-card">
-        <div class="tech-card-cat">FRAMEWORK</div>
-        <div class="tech-card-name">Hono + OpenAPI</div>
-        <div class="tech-card-desc">Type-safe routes with auto-generated API documentation. Zod schemas validate at runtime and generate OpenAPI specs.</div>
+        <div class="tech-card-cat">API SPEC</div>
+        <div class="tech-card-name">OpenAPI 3.1</div>
+        <div class="tech-card-desc">Auto-generated API documentation from route definitions. Every endpoint typed, validated, and documented.</div>
       </div>
       <div class="tech-card">
         <div class="tech-card-cat">METADATA</div>
-        <div class="tech-card-name">Meta Plane</div>
+        <div class="tech-card-name">Meta Pane</div>
         <div class="tech-card-desc">Fast reads, strong consistency, zero configuration. Stores file index, events, sessions, and blob references.</div>
       </div>
       <div class="tech-card">
@@ -865,8 +1022,8 @@ export function architecturePage(): string {
       </div>
       <div class="tech-card">
         <div class="tech-card-cat">VALIDATION</div>
-        <div class="tech-card-name">Zod</div>
-        <div class="tech-card-desc">Runtime type safety for all request and response schemas. Generates OpenAPI specs automatically from route definitions.</div>
+        <div class="tech-card-name">Schema Validation</div>
+        <div class="tech-card-desc">Runtime type safety for all request and response schemas. Invalid inputs rejected before reaching business logic.</div>
       </div>
       <div class="tech-card">
         <div class="tech-card-cat">SECURITY</div>
