@@ -96,6 +96,17 @@ func (c *Client) Close() {
 	}
 }
 
+// VerifyData forces re-hashing of all pieces in the torrent, invalidating any
+// stale completion entries in the piece completion database. Blocks until all
+// pieces are verified. Should be called after metadata is available (e.g. after
+// FileSize or Files) and before Download.
+func (c *Client) VerifyData(ctx context.Context) error {
+	if err := c.addTorrent(ctx); err != nil {
+		return err
+	}
+	return c.t.VerifyDataContext(ctx)
+}
+
 // addTorrent adds the torrent and waits for metadata.
 func (c *Client) addTorrent(ctx context.Context) error {
 	if c.t != nil {
@@ -182,13 +193,11 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 	}
 
 	// Select files for download.
-	// Important: torrent pieces can span file boundaries. The last piece of a
-	// selected file may overlap into the next file in the torrent. If that next
-	// file has PiecePriorityNone, the overlapping piece is never fully downloaded
-	// and its portion in the mmap stays as zeros — corrupting the end of the
-	// selected file's data. To prevent this, we also enable the file immediately
-	// following each selected file (the "boundary neighbour"), so the shared last
-	// piece can be fully downloaded and hash-verified.
+	// Torrent pieces can span file boundaries. anacrolix/torrent's purePriority()
+	// uses Raise() to set each piece's priority to MAX of all covering files'
+	// priorities. So a boundary piece shared between a selected file (Normal) and
+	// an unselected file (None) automatically gets PiecePriorityNormal — no need
+	// to manually enable the neighbouring file.
 	allFiles := c.t.Files()
 
 	selectedIdx := make(map[int]bool, len(paths))
@@ -198,41 +207,13 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 		}
 	}
 
-	// Files that are enabled only to cover the boundary piece of the selected file.
-	var boundaryFiles []*torrent.File
-
 	var selected []*torrent.File
 	for i, f := range allFiles {
 		if selectedIdx[i] {
 			f.Download()
 			selected = append(selected, f)
-			// Enable the next file at readahead priority so the shared last
-			// piece of the selected file (which overlaps into the next file)
-			// can be fully downloaded and hash-verified.
-			// Exception: if the boundary file is already fully downloaded its
-			// pieces are already verified, AND anacrolix needs O_RDWR access
-			// to mmap it — if it was completed by a prior session it may be
-			// 0444 (read-only). Skipping SetPriority avoids anacrolix deleting
-			// and re-downloading an already-complete neighbour file.
-			if i+1 < len(allFiles) && !selectedIdx[i+1] {
-				bf := allFiles[i+1]
-				if bf.BytesCompleted() < bf.Length() {
-					bf.SetPriority(torrent.PiecePriorityReadahead)
-					boundaryFiles = append(boundaryFiles, bf)
-				}
-			}
 		} else {
-			// Leave boundary files at their already-set priority.
-			isBoundary := false
-			for _, bf := range boundaryFiles {
-				if bf.DisplayPath() == f.DisplayPath() {
-					isBoundary = true
-					break
-				}
-			}
-			if !isBoundary {
-				f.SetPriority(torrent.PiecePriorityNone)
-			}
+			f.SetPriority(torrent.PiecePriorityNone)
 		}
 	}
 
@@ -325,11 +306,6 @@ func (c *Client) Download(ctx context.Context, paths []string, cb ProgressCallba
 			}
 
 			if allDone {
-				// Cancel boundary-neighbour file downloads — we only needed
-				// them to complete the last boundary piece.
-				for _, bf := range boundaryFiles {
-					bf.SetPriority(torrent.PiecePriorityNone)
-				}
 				return nil
 			}
 		}

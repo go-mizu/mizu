@@ -151,7 +151,7 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 		DataDir:  cfg.RawDir,
 		InfoHash: infoHash,
 		Trackers: arcticTrackers,
-		NoUpload: true,
+		NoUpload: false, // allow tit-for-tat — peers choke pure leechers
 	}
 
 	cl, err := torrent.New(tcfg)
@@ -179,6 +179,22 @@ func DownloadZst(ctx context.Context, cfg Config, year, month int, typ string,
 		if cb != nil {
 			cb(DownloadProgress{Phase: "metadata", BytesTotal: fileSize,
 				Message: fmt.Sprintf("file size: %.1f GB", float64(fileSize)/(1024*1024*1024))})
+		}
+	}
+
+	// For monthly torrents, verify data integrity to invalidate stale completion
+	// entries from previous sessions. When a prior session downloaded the other
+	// file type (e.g. submissions), its pieces were marked complete in the piece
+	// completion database. In a new session, sparse .part files pass the file
+	// size check, so anacrolix trusts the stale entries — but the data is zeros.
+	// Re-hashing detects the mismatch and marks those pieces NOT complete.
+	if infoHash != bundleInfoHash {
+		if cb != nil {
+			cb(DownloadProgress{Phase: "metadata", Message: "verifying data integrity…"})
+		}
+		if verifyErr := cl.VerifyData(ctx); verifyErr != nil {
+			cl.Close()
+			return 0, fmt.Errorf("verify torrent data: %w", verifyErr)
 		}
 	}
 

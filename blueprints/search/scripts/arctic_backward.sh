@@ -61,7 +61,7 @@ while true; do
     LOG="$LOG_DIR/arctic_backward_${n}.log"
     echo "[$(date)] arctic_backward attempt $n starting (--from $FROM --type $TYPE)" >> "$LOG_DIR/arctic_restart.log"
 
-    search arctic publish \
+    "$HOME/bin/search-linux-noble" arctic publish \
         --from "$FROM" \
         --type "$TYPE" \
         --max-commit-stall "$STALL" \
