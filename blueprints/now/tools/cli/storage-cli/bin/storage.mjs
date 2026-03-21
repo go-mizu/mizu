@@ -17,7 +17,7 @@ import process from "node:process";
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const VERSION = "2.0.0";
+const VERSION = "2.1.0";
 const DEFAULT_ENDPOINT = "https://storage.liteio.dev";
 const OAUTH_CLIENT_ID = "storage-cli";
 const OAUTH_SCOPE = "storage:read storage:write storage:admin";
@@ -479,14 +479,21 @@ async function cmdLs(cfg, args, flags) {
 
 // ─── multipart upload ───────────────────────────────────────────────────
 
-async function multipartUpload(cfg, destPath, body, contentType) {
+async function multipartUpload(cfg, destPath, body, contentType, contentHash) {
   const PART_SIZE = 50 * 1024 * 1024; // 50 MB
   const partCount = Math.ceil(body.length / PART_SIZE);
 
-  // 1. Initiate multipart upload
+  // 1. Initiate multipart upload with content_hash for dedup
+  const initBody = { path: destPath, content_type: contentType, part_count: partCount };
+  if (contentHash) initBody.content_hash = contentHash;
+
   const init = await request(cfg, "POST", "/files/uploads/multipart", {
-    body: { path: destPath, content_type: contentType, part_count: partCount },
+    body: initBody,
   });
+
+  // If deduplicated, blob already exists
+  if (init.deduplicated) return init;
+
   if (!init.upload_id) throw new CLIError("multipart init failed", "Server did not return an upload ID", EXIT_ERROR);
 
   info("Multipart", `${partCount} parts, ${humanSize(PART_SIZE)} each`);
@@ -522,8 +529,10 @@ async function multipartUpload(cfg, destPath, body, contentType) {
 
   // 3. Complete multipart upload
   parts.sort((a, b) => a.part_number - b.part_number);
+  const completeBody = { path: destPath, upload_id: init.upload_id, parts };
+  if (contentHash) completeBody.content_hash = contentHash;
   const data = await request(cfg, "POST", "/files/uploads/multipart/complete", {
-    body: { path: destPath, upload_id: init.upload_id, parts },
+    body: completeBody,
   });
 
   return data;
@@ -566,21 +575,32 @@ async function cmdPut(cfg, args, flags) {
     }
   }
 
+  // Compute SHA-256 content hash for dedup
+  const contentHash = createHash("sha256").update(body).digest("hex");
+
   const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100 MB
-  const PART_SIZE = 50 * 1024 * 1024; // 50 MB
 
   if (body.length > MULTIPART_THRESHOLD) {
-    // Multipart upload for large files
-    const data = await multipartUpload(cfg, destPath, body, ct);
+    // Multipart upload for large files (with content_hash)
+    const data = await multipartUpload(cfg, destPath, body, ct, contentHash);
     if (jsonOutput) return printJSON(data);
-    info("Uploaded", `${destPath} (${humanSize(body.length)}, multipart)`);
+    const action = data.deduplicated ? "Deduplicated" : "Uploaded";
+    info(action, `${destPath} (${humanSize(body.length)}${data.deduplicated ? "" : ", multipart"})`);
     return;
   }
 
-  // 1. Get presigned URL
+  // 1. Initiate upload with content_hash for dedup check
   const presign = await request(cfg, "POST", "/files/uploads", {
-    body: { path: destPath, content_type: ct },
+    body: { path: destPath, content_type: ct, content_hash: contentHash },
   });
+
+  // If deduplicated, blob already exists — no upload needed
+  if (presign.deduplicated) {
+    if (jsonOutput) return printJSON({ ...presign, content_hash: contentHash });
+    info("Deduplicated", `${destPath} (${humanSize(presign.size || body.length)})`);
+    return;
+  }
+
   if (!presign.url) throw new CLIError("presigned URL not available", "Server did not return a presigned URL", EXIT_ERROR);
 
   // 2. Upload directly to R2
@@ -596,12 +616,12 @@ async function cmdPut(cfg, args, flags) {
   }
   if (!r2Res.ok) throw new APIError(r2Res.status, r2Res.status, `R2 upload failed: HTTP ${r2Res.status}`);
 
-  // 3. Confirm upload (updates DB index)
+  // 3. Confirm upload with content_hash
   const data = await request(cfg, "POST", "/files/uploads/complete", {
-    body: { path: destPath },
+    body: { path: destPath, content_hash: contentHash },
   });
 
-  if (jsonOutput) return printJSON(data);
+  if (jsonOutput) return printJSON({ ...data, content_hash: contentHash });
   const sizeStr = humanSize(body.length);
   info("Uploaded", `${destPath} (${sizeStr})`);
 }
