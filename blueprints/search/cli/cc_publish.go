@@ -352,20 +352,14 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 // Parquets are written atomically (via .parquet.tmp → rename) so the watcher
 // only sees fully-written files. A .meta sidecar carries timing info to the watcher.
 //
-// The direct pipeline merges pack+export into a single step:
-//
-//	.warc.gz → decompress → convert HTML→MD → write parquet (zstd)
-//
-// This eliminates the intermediate .md.warc.gz file and its gzip compression/
-// decompression overhead. If a .md.warc.gz already exists from a previous run,
-// it falls back to the legacy export path.
+// Direct pipeline: .warc.gz → decompress → convert HTML→MD → write parquet (zstd)
+// No intermediate .md.warc.gz — eliminates 2 gzip passes and intermediate disk I/O.
 func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup, lightConvert, skipErrors bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
 	}
 
-	warcMdDir := ccDefaultWARCMdConfig(crawlID)
 	dataDir := filepath.Join(repoRoot, "data", crawlID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
@@ -387,10 +381,10 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	// Prefetch: download the NEXT shard's raw .warc.gz while processing the current.
 	// This overlaps network I/O with CPU-bound pack+parquet work.
 	type prefetchResult struct {
-		idx          int
-		localPath    string
-		downloaded   bool
-		err          error
+		idx       int
+		localPath string
+		downloaded bool
+		err       error
 	}
 	var prefetchCh chan prefetchResult
 	var prefetchCancel context.CancelFunc
@@ -422,7 +416,6 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		shard := fmt.Sprintf("%05d", idx)
-		mdWARCPath := filepath.Join(warcMdDir, shard+".md.warc.gz")
 		parquetPath := filepath.Join(dataDir, shard+".parquet")
 
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
@@ -449,51 +442,20 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 
 		var durDownloadS, durConvertS int64
 
-		// Legacy fallback: if .md.warc.gz exists from a prior run, export it.
-		if fileExists(mdWARCPath) {
-			fmt.Printf("  [%s] legacy: exporting existing .md.warc.gz\n", labelStyle.Render(shard))
-			t0 := time.Now()
-			rows, _, _, exportErr := exportWARCMdShardToParquet(mdWARCPath, parquetPath, nil)
-			if exportErr != nil {
-				if skipErrors {
-					fmt.Printf("  [%s] export error (skipping): %v\n", labelStyle.Render(shard), exportErr)
-					ccRecordSkip(skippedCSV, crawlID, idx, "export", exportErr)
-					fmt.Println()
-					continue
-				}
-				return fmt.Errorf("export %d: %w", idx, exportErr)
-			}
-			durExportS := int64(time.Since(t0).Seconds())
-			fmt.Printf("  [%s] exported %s docs  %s\n", labelStyle.Render(shard), infoStyle.Render(ccFmtInt64(rows)), successStyle.Render("done"))
-			peakRSS := int64(warcmd.ReadRSSMB())
-			metaData, _ := json.Marshal(ccShardMeta{DurExportS: durExportS, PeakRSSMB: peakRSS})
-			_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
-			if cleanup {
-				_ = os.Remove(mdWARCPath)
-			}
-			fmt.Println()
-			continue
-		}
-
-		// ── Direct pipeline: download → pack → parquet in one step ──
-
 		// Check if prefetch downloaded this shard's raw WARC.
 		var rawWARCPath string
-		prefetchedDownload := false
 		if prefetchCh != nil {
 			select {
 			case pf := <-prefetchCh:
 				if pf.idx == idx && pf.err == nil {
 					rawWARCPath = pf.localPath
-					prefetchedDownload = true
 					if pf.downloaded {
 						fmt.Printf("  [%s] raw WARC prefetched\n", labelStyle.Render(shard))
 					}
 				} else if pf.idx == idx && pf.err != nil {
-					fmt.Printf("  [%s] prefetch download failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
+					fmt.Printf("  [%s] prefetch failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
 				}
 			default:
-				// Prefetch not done yet — ignore.
 			}
 			prefetchCh = nil
 			prefetchCancel = nil
@@ -516,9 +478,6 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			if downloaded {
 				durDownloadS = int64(time.Since(t0).Seconds())
 			}
-		} else if prefetchedDownload {
-			// Download time was overlapped with previous shard processing.
-			durDownloadS = 0
 		}
 
 		// Start prefetching NEXT shard download while we pack+parquet the current.
@@ -543,12 +502,13 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			if elapsed.Seconds() > 0 {
 				rate = float64(done) / elapsed.Seconds()
 			}
-			fmt.Printf("\r  [%s] packing  in=%s  out=%s  err=%s  %.0f/s  %s",
+			fmt.Printf("\r  [%s] packing  in=%s  out=%s  err=%s  %.0f/s  mem=%sMB  %s",
 				labelStyle.Render(shard),
 				infoStyle.Render(ccFmtInt64(total)),
 				infoStyle.Render(ccFmtInt64(done)),
 				infoStyle.Render(ccFmtInt64(errors)),
 				rate,
+				infoStyle.Render(fmt.Sprintf("%.0f", peakMemMB)),
 				elapsed.Round(time.Millisecond))
 		}
 
