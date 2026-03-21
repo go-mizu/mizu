@@ -11,7 +11,7 @@ import (
 const (
 	gzipMagic1 = byte(0x1f)
 	gzipMagic2 = byte(0x8b)
-	bufSize    = 64 * 1024
+	bufSize    = 256 * 1024 // 256 KB: reduces read syscalls 4× for sequential WARC scans
 )
 
 // Reader iterates WARC records from any io.Reader.

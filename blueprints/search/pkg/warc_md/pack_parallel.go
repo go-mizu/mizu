@@ -146,6 +146,13 @@ func RunPackParallel(ctx context.Context, cfg PackConfig, offsets []GzipMemberOf
 	prevGOGC := debug.SetGCPercent(200)
 	defer debug.SetGCPercent(prevGOGC)
 
+	// GOMEMLIMIT: hard ceiling prevents OOM kills. Without this, Go runtime
+	// can grow to 3+ GB during gzip offset scanning bursts. 600 MiB leaves
+	// ~200 MB for non-heap (file descriptors, OS buffers, goroutine stacks).
+	// The runtime aggressively GCs near this limit, keeping RSS predictable.
+	prevMemLimit := debug.SetMemoryLimit(600 << 20) // 600 MiB
+	defer debug.SetMemoryLimit(prevMemLimit)
+
 	var stats PackStats
 	start := time.Now()
 	stopMem := make(chan struct{})
@@ -154,7 +161,7 @@ func RunPackParallel(ctx context.Context, cfg PackConfig, offsets []GzipMemberOf
 	// Select converter
 	convertFn := mdpkg.Convert
 	if cfg.LightConvert {
-		convertFn = mdpkg.ConvertLight
+		convertFn = mdpkg.ConvertUltraLight // tokenizer-based, no DOM tree
 	} else if cfg.FastConvert {
 		convertFn = mdpkg.ConvertFast
 	}
