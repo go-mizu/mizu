@@ -594,9 +594,6 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 	}
 
-	schedStart := time.Now()
-	startCommitted := len(committed)
-
 	// Pack rate tracking: total packed = committed + pending parquets on disk.
 	// Parquets are deleted after HF commit, so we can't just count files — we
 	// need committed (from stats.csv) + pending (files not yet committed).
@@ -615,7 +612,18 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		return n
 	}
 	totalPacked := func() int { return len(committed) + countPendingParquets() }
-	startPacked := totalPacked()
+
+	// Rate tracking via sliding window of per-round deltas.
+	// This avoids inflated rates from backlog flushing at startup.
+	type rateSnapshot struct {
+		packed    int
+		committed int
+		time      time.Time
+	}
+	var rateHistory []rateSnapshot
+	rateHistory = append(rateHistory, rateSnapshot{
+		packed: totalPacked(), committed: len(committed), time: time.Now(),
+	})
 
 	round := 0
 	for {
@@ -688,6 +696,14 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		totalCommitted := len(committed)
 
+		// Read watcher status: single source of truth for HF commit progress.
+		// Use watcher's total_committed when available (it's written after each
+		// successful HF push). Falls back to stats.csv count otherwise.
+		watcherStatus, hasWatcherStatus := ccReadWatcherStatus(cfg.RepoRoot)
+		if hasWatcherStatus && watcherStatus.TotalCommitted > totalCommitted {
+			totalCommitted = watcherStatus.TotalCommitted
+		}
+
 		// Record snapshot for adaptive tracking.
 		loadAvg := readLoadAvg1()
 		tracker.record(ccRoundSnapshot{
@@ -711,30 +727,55 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		// ── Round summary ────────────────────────────────────────────────────
 		const totalTarget = 100_000
-		elapsed := time.Since(schedStart)
-		newCommitted := totalCommitted - startCommitted
 
 		// Pack rate: total packed (committed + pending parquets on disk).
 		curPacked := totalPacked()
-		newPacked := curPacked - startPacked
 		pending := countPendingParquets()
-		var packRate float64
-		if newPacked < 0 {
-			newPacked = 0 // cleanup can reduce pending count
-		}
-		if elapsed.Seconds() > 60 && newPacked > 0 {
-			packRate = float64(newPacked) / elapsed.Hours()
+
+		// Record this round's snapshot for sliding-window rate calculation.
+		rateHistory = append(rateHistory, rateSnapshot{
+			packed: curPacked, committed: totalCommitted, time: time.Now(),
+		})
+		// Keep last 20 rounds (~15 min at 45s/round) for stable window.
+		if len(rateHistory) > 20 {
+			rateHistory = rateHistory[len(rateHistory)-20:]
 		}
 
-		// Commit rate: shards pushed to HF per hour.
-		var commitRate float64
+		// Compute rates from the sliding window (oldest → newest).
+		// Requires at least 5 rounds (~4 min) to avoid startup noise.
+		var packRate, commitRate float64
 		rateSource := ""
-		if elapsed.Seconds() > 60 && newCommitted > 0 {
-			commitRate = float64(newCommitted) / elapsed.Hours()
-			rateSource = "live"
-		} else if csvShardsPerHour > 0 {
+		windowStart := rateHistory[0]
+		windowEnd := rateHistory[len(rateHistory)-1]
+		windowDur := windowEnd.time.Sub(windowStart.time)
+
+		if len(rateHistory) >= 5 && windowDur.Seconds() > 60 {
+			newPacked := windowEnd.packed - windowStart.packed
+			if newPacked < 0 {
+				newPacked = 0
+			}
+			packRate = float64(newPacked) / windowDur.Hours()
+
+			newCommitted := windowEnd.committed - windowStart.committed
+			if newCommitted > 0 {
+				commitRate = float64(newCommitted) / windowDur.Hours()
+				rateSource = "live"
+			}
+		}
+		if commitRate <= 0 && csvShardsPerHour > 0 {
 			commitRate = csvShardsPerHour
 			rateSource = "csv"
+		}
+
+		// Delta since last round (for display).
+		var lastRoundPacked, lastRoundCommitted int
+		if len(rateHistory) >= 2 {
+			prev := rateHistory[len(rateHistory)-2]
+			lastRoundPacked = windowEnd.packed - prev.packed
+			lastRoundCommitted = windowEnd.committed - prev.committed
+			if lastRoundPacked < 0 {
+				lastRoundPacked = 0
+			}
 		}
 
 		remaining := totalTarget - totalCommitted
@@ -750,7 +791,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		// Line 2: throughput rates.
 		if packRate > 0 || commitRate > 0 {
 			logLine(fmt.Sprintf("  rate   | pack: %.0f shards/hr (+%d) | commit: %.0f shards/hr [%s] (+%d)",
-				packRate, newPacked, commitRate, rateSource, newCommitted))
+				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted))
 		}
 
 		// Line 3: progress counters.
@@ -775,7 +816,14 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			logLine(fmt.Sprintf("  DONE   | %d/%d shards committed", totalCommitted, totalTarget))
 		}
 
-		// Line 5: running sessions detail.
+		// Line 5: latest HF commit from watcher.
+		if hasWatcherStatus && watcherStatus.CommitNumber > 0 {
+			ago := time.Since(watcherStatus.Timestamp).Round(time.Second)
+			logLine(fmt.Sprintf("  HF     | #%d: %q  +%d shards  (%s ago)",
+				watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit, ago))
+		}
+
+		// Line 6: running sessions detail.
 		if len(runningNames) > 0 {
 			logLine("  active | " + strings.Join(runningNames, " "))
 		}

@@ -13,6 +13,41 @@ import (
 	"time"
 )
 
+// ccWatcherStatus is written by the watcher after each successful HF commit.
+// The scheduler reads this as the single source of truth for commit progress.
+type ccWatcherStatus struct {
+	CommitNumber   int       `json:"commit_number"`    // increments each HF commit
+	Message        string    `json:"message"`           // commit message sent to HF
+	CommitURL      string    `json:"commit_url"`        // full URL to commit
+	ShardsInCommit int       `json:"shards_in_commit"`  // parquets in this commit
+	TotalCommitted int       `json:"total_committed"`   // all-time committed shards (from stats.csv)
+	Timestamp      time.Time `json:"timestamp"`         // when this commit happened
+}
+
+func ccWatcherStatusPath(repoRoot string) string {
+	return filepath.Join(repoRoot, "watcher_status.json")
+}
+
+func ccReadWatcherStatus(repoRoot string) (ccWatcherStatus, bool) {
+	data, err := os.ReadFile(ccWatcherStatusPath(repoRoot))
+	if err != nil {
+		return ccWatcherStatus{}, false
+	}
+	var s ccWatcherStatus
+	if err := json.Unmarshal(data, &s); err != nil {
+		return ccWatcherStatus{}, false
+	}
+	return s, true
+}
+
+func ccWriteWatcherStatus(repoRoot string, s ccWatcherStatus) {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(ccWatcherStatusPath(repoRoot), data, 0o644)
+}
+
 // ccShardMeta is written by the pipeline alongside each parquet to pass timing info to the watcher.
 type ccShardMeta struct {
 	DurDownloadS int64 `json:"dur_download_s"`
@@ -91,10 +126,16 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	// Seed to zero so the very first flush (leftover parquets) is never blocked.
 	var lastCommitTime time.Time
 
+	// Commit counter: seed from existing status file so restarts don't reset.
+	commitNum := 0
+	if prev, ok := ccReadWatcherStatus(repoRoot); ok {
+		commitNum = prev.CommitNumber
+	}
+
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
 		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir,
-			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime); err != nil {
+			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime, &commitNum); err != nil {
 			fmt.Printf("  [watcher] flush: %v\n", err)
 		}
 	}
@@ -118,7 +159,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 // minCommitInterval enforces a minimum gap between commits to stay under HF's 128/hour limit.
 func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir string,
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration,
-	minCommitInterval time.Duration, lastCommitTime *time.Time) error {
+	minCommitInterval time.Duration, lastCommitTime *time.Time, commitNum *int) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
 	chartsStale := chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery
@@ -329,6 +370,17 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	if len(chartRelPaths) > 0 {
 		*lastChartTime = time.Now()
 	}
+
+	// Write watcher status so scheduler can display the latest HF commit.
+	*commitNum++
+	ccWriteWatcherStatus(repoRoot, ccWatcherStatus{
+		CommitNumber:   *commitNum,
+		Message:        commitMsg,
+		CommitURL:      commitURL,
+		ShardsInCommit: len(uploadedFiles),
+		TotalCommitted: len(committed) + len(uploadedFiles), // committed map updated below
+		Timestamp:      time.Now(),
+	})
 
 	// Step 5: Update publish timing, delete all local intermediates, mark committed.
 	// Only process files that buildOps confirmed still existed at commit time;
