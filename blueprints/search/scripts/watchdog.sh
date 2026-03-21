@@ -96,9 +96,15 @@ else
     log "arctic_backward DEAD — restarting"
     screen -S arctic_backward -X quit 2>/dev/null || true
     sleep 1
+    # Try repo-tracked script first, fall back to $HOME/bin copy.
+    ARCTIC_SCRIPT="$HOME/scripts/arctic_backward.sh"
+    if [[ ! -f "$ARCTIC_SCRIPT" ]]; then
+        ARCTIC_SCRIPT="$HOME/bin/arctic_backward.sh"
+    fi
+    HF_TOKEN=$(cat "$HOME/.hf_token")
     screen -dmS arctic_backward bash -c \
-        "bash $HOME/bin/arctic_backward.sh; exec bash"
-    log "arctic_backward restarted"
+        "HF_TOKEN=$HF_TOKEN bash $ARCTIC_SCRIPT; exec bash"
+    log "arctic_backward restarted (script: $ARCTIC_SCRIPT)"
     restart_count=$(( restart_count + 1 ))
 fi
 

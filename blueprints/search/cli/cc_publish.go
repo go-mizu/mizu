@@ -92,15 +92,15 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (--pipeline only)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
 	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
-	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
-	cmd.Flags().IntVar(&commitInterval, "commit-interval", 180, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 180s → ≤20/hour per server, 40 total, leaving 88 headroom for other repos")
+	cmd.Flags().IntVar(&watchInterval, "watch-interval", 10, "Watcher poll interval in seconds (--watch only)")
+	cmd.Flags().IntVar(&commitInterval, "commit-interval", 120, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 120s → ≤30/hour per server, leaving headroom for arctic/HN/other repos")
 	cmd.Flags().IntVar(&chartsEvery, "charts-every", 60, "Regenerate charts every N minutes (--watch only, 0=disable)")
 	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedEnd, "end", 9999, "Last file index in range (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 0, "Max concurrent screen sessions (0=auto-detect from hardware; --schedule only)")
 	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Gap indices per screen session chunk (--schedule/--gaps; smaller = faster cycling, natural memory release)")
 	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule/--gaps)")
-	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
+	cmd.Flags().IntVar(&schedStall, "stall-rounds", 40, "Rounds with no new commits before killing a stalled session (--schedule only; ~30 min at 45s/round)")
 	return cmd
 }
 
@@ -368,6 +368,55 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	// Load committed set once at startup (watcher maintains this via stats.csv).
 	committed := ccLoadCommittedSet(statsCSV, crawlID)
 
+	// Prefetch: pack the next shard in background while exporting the current.
+	// This overlaps network I/O (WARC download) with CPU-bound work (export),
+	// roughly doubling per-session throughput.
+	type prefetchResult struct {
+		idx          int
+		err          error
+		durDownloadS int64
+		durConvertS  int64
+	}
+	var prefetchCh chan prefetchResult
+
+	// cancelPrefetch cancels any in-flight prefetch goroutine.
+	var prefetchCancel context.CancelFunc
+	defer func() {
+		if prefetchCancel != nil {
+			prefetchCancel()
+		}
+	}()
+
+	// startPrefetch kicks off pack for the next shard in background.
+	startPrefetch := func(nextIdx int) {
+		nextShard := fmt.Sprintf("%05d", nextIdx)
+		nextMdWARC := filepath.Join(warcMdDir, nextShard+".md.warc.gz")
+		nextParquet := filepath.Join(dataDir, nextShard+".parquet")
+
+		// Don't prefetch if already done.
+		if committed[nextIdx] || fileExists(nextParquet) || fileExists(nextMdWARC) {
+			return
+		}
+
+		prefetchCh = make(chan prefetchResult, 1)
+		var pfCtx context.Context
+		pfCtx, prefetchCancel = context.WithCancel(ctx)
+
+		go func() {
+			rawExists := ccFindRawWARC(crawlID, nextIdx) != ""
+			t0 := time.Now()
+			packErr := runCCWarcPack(pfCtx, crawlID, strconv.Itoa(nextIdx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, nextShard)
+			elapsed := int64(time.Since(t0).Seconds())
+			r := prefetchResult{idx: nextIdx, err: packErr}
+			if rawExists {
+				r.durConvertS = elapsed
+			} else {
+				r.durDownloadS = elapsed
+			}
+			prefetchCh <- r
+		}()
+	}
+
 	for i, idx := range indices {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -401,8 +450,29 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 
 		var durDownloadS, durConvertS, durExportS int64
 
-		// Pack if md.warc.gz is missing.
-		if !fileExists(mdWARCPath) {
+		// Check if prefetch already packed this shard.
+		prefetched := false
+		if prefetchCh != nil {
+			select {
+			case pf := <-prefetchCh:
+				if pf.idx == idx && pf.err == nil {
+					prefetched = true
+					durDownloadS = pf.durDownloadS
+					durConvertS = pf.durConvertS
+					fmt.Printf("  [%s] prefetched (pack done in background)\n", labelStyle.Render(shard))
+				} else if pf.idx == idx && pf.err != nil {
+					// Prefetch failed — fall through to normal pack.
+					fmt.Printf("  [%s] prefetch failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
+				}
+			default:
+				// Prefetch not done yet or for different shard — ignore.
+			}
+			prefetchCh = nil
+			prefetchCancel = nil
+		}
+
+		// Pack if md.warc.gz is missing and not prefetched.
+		if !prefetched && !fileExists(mdWARCPath) {
 			rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
 			fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
 			t0 := time.Now()
@@ -421,14 +491,21 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			} else {
 				durDownloadS = elapsed
 			}
-			if cleanup {
-				if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
-					_ = os.Remove(rawPath)
-					fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
-				}
-			}
-		} else {
+		} else if !prefetched {
 			fmt.Printf("  [%s] md.warc.gz exists, skipping pack\n", labelStyle.Render(shard))
+		}
+
+		if cleanup {
+			if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+				_ = os.Remove(rawPath)
+				fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
+			}
+		}
+
+		// Start prefetching the NEXT shard while we export the current one.
+		// This overlaps network download (I/O) with parquet export (CPU).
+		if i+1 < len(indices) {
+			startPrefetch(indices[i+1])
 		}
 
 		// Export to .tmp then atomically rename to .parquet.

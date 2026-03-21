@@ -11,22 +11,22 @@
 #
 # HuggingFace rate limit: 128 commits/hour per token across ALL repos and servers.
 # With 2 servers + other repos also committing, keep well under that budget.
-# COMMIT_INTERVAL defaults to 180s → 20/hour per server, 40/hour total, leaving
-# 88 commits/hour headroom for arctic, goodreads, and any other HF repos.
-# Lower only if you're not running other HF publish jobs on the same token.
+# COMMIT_INTERVAL defaults to 120s → 30/hour per server, leaving plenty of
+# headroom for arctic, HN, goodreads, and any other HF repos sharing the
+# same token (128 commits/hour total). With maxBatchSize=20: 30 × 20 = 600/h.
 #
 # Environment:
-#   CRAWL           — crawl ID (default: CC-MAIN-2026-08)
+#   CRAWL           — crawl ID (default: CC-MAIN-2026-12)
 #   HF_TOKEN        — Hugging Face token (required; also checked in ~/.hf_token)
 #   SEARCH_BIN      — path to search binary (default: auto-detected)
 #   RESTART_DELAY   — seconds to wait before restarting after failure (default: 10)
-#   COMMIT_INTERVAL — minimum seconds between HF commits (default: 180)
+#   COMMIT_INTERVAL — minimum seconds between HF commits (default: 90)
 
 set -uo pipefail
 
 CRAWL=${CRAWL:-CC-MAIN-2026-12}
 RESTART_DELAY=${RESTART_DELAY:-10}
-COMMIT_INTERVAL=${COMMIT_INTERVAL:-180}
+COMMIT_INTERVAL=${COMMIT_INTERVAL:-120}
 LOG_DIR="$HOME/log"
 LOG="$LOG_DIR/cc_watch.log"
 mkdir -p "$LOG_DIR"

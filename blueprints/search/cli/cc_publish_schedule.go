@@ -52,15 +52,15 @@ func (b ccBudget) String() string {
 
 // computeCCBudget derives the session budget from hardware profile.
 //
-// Each pipeline session (download → pack → export) peaks at ~2–5 GB observed
-// during WARC parallel offset scanning. Budget 2.5 GB per session.
-// Use available RAM (not total) since background services (lnx, quickwit,
-// llama-server, chrome, docker) consume significant memory.
-// Hard cap at 6 sessions (diminishing returns from disk I/O contention).
+// Each pipeline session (download → pack → export) peaks at ~1.5–2.5 GB observed
+// during WARC parallel offset scanning. Budget 1.8 GB per session (measured p95).
+// Use available RAM (not total) since background services consume memory.
+// Hard cap at 12 sessions — with 1.8 GB/session, 12 sessions need ~22 GB,
+// achievable on 32+ GB servers. On 12 GB servers, RAM cap limits to ~4-5 sessions.
 func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 	const (
-		perSessionGB = 2.5
-		maxCap       = 6
+		perSessionGB = 1.8
+		maxCap       = 12
 	)
 
 	b := ccBudget{
@@ -95,11 +95,11 @@ func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 		b.MaxSessions = maxCap
 	}
 
-	// Safety: on machines with < 16 GB total, never exceed 3 sessions regardless
+	// Safety: on machines with < 16 GB total, never exceed 4 sessions regardless
 	// of what available RAM says (background services can release cache temporarily,
 	// creating a false sense of headroom that vanishes under load).
-	if hw.RAMTotalGB < 16 && b.MaxSessions > 3 {
-		b.MaxSessions = 3
+	if hw.RAMTotalGB < 16 && b.MaxSessions > 4 {
+		b.MaxSessions = 4
 	}
 
 	// Environment override.
@@ -550,7 +550,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		logLine(fmt.Sprintf("  Sessions:    %d max (manual)", cfg.MaxSessions))
 	}
 	logLine(fmt.Sprintf("  Done pct:    %d%%", cfg.DonePct))
-	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%dm) with no new commits", cfg.StallRounds, cfg.StallRounds*2))
+	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%ds each) with no new commits", cfg.StallRounds, 45))
 	logLine(fmt.Sprintf("  Binary:      %s", searchBin))
 
 	// ── Initial cleanup ──────────────────────────────────────────────────────
@@ -729,9 +729,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			return nil
 		}
 
-		// Ramp up gradually: max 2 new sessions per round to avoid
-		// spiking load/memory when many slots open at once.
-		const maxStartPerRound = 2
+		// Ramp up gradually: max 4 new sessions per round to avoid
+		// spiking load/memory when many slots open at once. With 45s rounds
+		// and 12 max sessions, 4/round reaches full capacity in ~2 minutes.
+		const maxStartPerRound = 4
 		started := 0
 		for _, key := range todoKeys {
 			if slots <= 0 || started >= maxStartPerRound {
@@ -752,7 +753,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Minute):
+		case <-time.After(45 * time.Second):
 		}
 	}
 }

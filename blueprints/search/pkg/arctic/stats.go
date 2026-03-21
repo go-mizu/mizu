@@ -112,6 +112,121 @@ func CommittedSet(rows []StatsRow) map[string]bool {
 	return m
 }
 
+// FailureRow records a pipeline download or process failure.
+type FailureRow struct {
+	Year    int
+	Month   int
+	Type    string // "comments" | "submissions"
+	Stage   string // "download" | "process"
+	Error   string
+	FailedAt time.Time
+}
+
+// RecordFailure appends a failure entry to failures.csv.
+// Thread-safe via file-level append (no read-modify-write).
+func RecordFailure(path string, row FailureRow) {
+	dir := filepath.Dir(path)
+	_ = os.MkdirAll(dir, 0o755)
+
+	needHeader := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		needHeader = true
+	}
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	if needHeader {
+		_ = w.Write([]string{"year", "month", "type", "stage", "error", "failed_at"})
+	}
+	// Truncate long error messages to keep CSV manageable.
+	errMsg := row.Error
+	if len(errMsg) > 200 {
+		errMsg = errMsg[:200] + "…"
+	}
+	_ = w.Write([]string{
+		strconv.Itoa(row.Year),
+		strconv.Itoa(row.Month),
+		row.Type,
+		row.Stage,
+		errMsg,
+		row.FailedAt.UTC().Format(time.RFC3339),
+	})
+	w.Flush()
+}
+
+// ReadFailuresCSV reads the failures file. Returns nil if not found.
+func ReadFailuresCSV(path string) ([]FailureRow, error) {
+	f, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	if _, err := r.Read(); err != nil { // skip header
+		return nil, nil
+	}
+	var rows []FailureRow
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil || len(rec) < 6 {
+			continue
+		}
+		var row FailureRow
+		row.Year, _ = strconv.Atoi(rec[0])
+		row.Month, _ = strconv.Atoi(rec[1])
+		row.Type = rec[2]
+		row.Stage = rec[3]
+		row.Error = rec[4]
+		row.FailedAt, _ = time.Parse(time.RFC3339, rec[5])
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// GapMonths returns (year, month, type) tuples that exist in the expected
+// range but are NOT in the committed set. Useful for gap detection.
+func GapMonths(committed map[string]bool, fromYear, fromMonth, toYear, toMonth int) []FailureRow {
+	if fromYear == 0 {
+		fromYear, fromMonth = 2005, 12
+	}
+	if toYear == 0 {
+		now := time.Now().UTC()
+		toYear, toMonth = now.Year(), int(now.Month())
+	}
+	var gaps []FailureRow
+	for y := fromYear; y <= toYear; y++ {
+		startM := 1
+		if y == fromYear {
+			startM = fromMonth
+		}
+		endM := 12
+		if y == toYear {
+			endM = toMonth
+		}
+		for m := startM; m <= endM; m++ {
+			for _, typ := range []string{"comments", "submissions"} {
+				key := fmt.Sprintf("%04d-%02d/%s", y, m, typ)
+				if !committed[key] {
+					gaps = append(gaps, FailureRow{Year: y, Month: m, Type: typ})
+				}
+			}
+		}
+	}
+	return gaps
+}
+
 func writeCSVAtomic(path string, rows []StatsRow) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".stats_*.csv")

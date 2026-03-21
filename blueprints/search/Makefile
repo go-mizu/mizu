@@ -644,7 +644,7 @@ remote-hn-tail: ## Tail hn swarm recrawl log on remote
 # Arctic publish (with auto-restart on stall / crash)
 # ---------------------------------------------------------------------------
 ARCTIC_FROM ?= 2005-12
-ARCTIC_STALL ?= 45m
+ARCTIC_STALL ?= 90m
 
 .PHONY: deploy-arctic
 deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run with auto-restart loop (SERVER=2 for server2)
@@ -654,12 +654,14 @@ deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run wit
 	@echo "==> Starting arctic_run with restart loop on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'screen -dmS arctic_run bash -c "\
 		export PATH=$$HOME/bin:\$$PATH; \
+		export TORRENT_STORAGE_DEFAULT_FILE_IO=classic; \
+		export HF_XET_FIXED_UPLOAD_CONCURRENCY=4; \
 		n=0; \
 		while true; do \
 			n=\$$((n+1)); \
 			LOG=$$HOME/log/arctic_run_\$${n}.log; \
 			echo \"[\$$(date)] arctic_run attempt \$$n starting\" >> $$HOME/log/arctic_restart.log; \
-			GOMEMLIMIT=8GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
+			GOMEMLIMIT=6GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
 				search arctic publish --from $(ARCTIC_FROM) --max-commit-stall $(ARCTIC_STALL) 2>&1 | tee \$$LOG; \
 			rc=\$$?; \
 			echo \"[\$$(date)] arctic_run exited \$$rc (attempt \$$n)\" >> $$HOME/log/arctic_restart.log; \
@@ -670,6 +672,21 @@ deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run wit
 		exec bash"'
 	@sleep 2
 	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep arctic_run && echo "arctic_run started (restart loop)" || { echo "ERROR: arctic_run not found"; exit 1; }'
+
+.PHONY: deploy-arctic-scripts
+deploy-arctic-scripts: ## Deploy arctic scripts (backward, gaps, watchdog) to remote server
+	@echo "==> Deploying arctic scripts to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/scripts $$HOME/log'
+	@$(SCP) scripts/arctic_backward.sh scripts/arctic_gaps.sh scripts/watchdog.sh scripts/hf_check.sh $(REMOTE_SSH):scripts/
+	@$(SSH) $(REMOTE_SSH) 'chmod +x $$HOME/scripts/*.sh'
+	@echo "==> Installing cron jobs..."
+	@$(SSH) $(REMOTE_SSH) 'crontab -l 2>/dev/null | grep -v arctic_gaps | grep -v watchdog | grep -v hf_check > /tmp/cron_clean; \
+		echo "*/5 * * * * bash $$HOME/scripts/watchdog.sh" >> /tmp/cron_clean; \
+		echo "*/30 * * * * bash $$HOME/scripts/hf_check.sh" >> /tmp/cron_clean; \
+		echo "*/30 * * * * bash $$HOME/scripts/arctic_gaps.sh" >> /tmp/cron_clean; \
+		crontab /tmp/cron_clean; rm /tmp/cron_clean'
+	@echo "==> Cron jobs installed:"
+	@$(SSH) $(REMOTE_SSH) 'crontab -l | grep -E "(watchdog|hf_check|arctic_gaps)"'
 
 .PHONY: remote-arctic-attach
 remote-arctic-attach: ## Attach to arctic_run screen session on remote server
@@ -685,8 +702,15 @@ remote-arctic-tail: ## Tail the most recent arctic log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f $$(ls -t $$HOME/log/arctic_run_*.log 2>/dev/null | head -1)'
 
 .PHONY: remote-arctic-status
-remote-arctic-status: ## Show arctic process status and restart history
-	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"'
+remote-arctic-status: ## Show arctic process status, restart history, and gaps
+	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; \
+		echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"; \
+		echo ""; echo "=== Gaps status ==="; cat $$HOME/log/arctic_gaps_status.json 2>/dev/null || echo "(no gaps status)"; \
+		echo ""; echo "=== Recent failures ==="; tail -10 $$HOME/data/arctic/repo/failures.csv 2>/dev/null || echo "(no failures)"'
+
+.PHONY: remote-arctic-gaps
+remote-arctic-gaps: ## Run gap detection on remote server
+	@$(SSH) $(REMOTE_SSH) 'bash $$HOME/scripts/arctic_gaps.sh && cat $$HOME/log/arctic_gaps_status.json'
 
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)

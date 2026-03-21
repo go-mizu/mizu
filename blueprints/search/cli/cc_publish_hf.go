@@ -199,12 +199,12 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		return "", fmt.Errorf("uv not found")
 	}
 
-	// Per-upload timeout: 40 min. Python's SIGALRM can't interrupt Rust FFI
+	// Per-upload timeout: 60 min. Python's SIGALRM can't interrupt Rust FFI
 	// (xet), so this Go-side timeout with process-group SIGKILL is the primary
-	// recovery mechanism. Batch cap (10 files, ~650 MB raw) — cold xet cache
-	// at 216 kB/s needs ~25 min; warm cache is much faster. 40 min gives
-	// comfortable headroom while still catching genuine hangs.
-	uploadTimeout := 40 * time.Minute
+	// recovery mechanism. Batch cap (20 files, ~600 MB raw) — cold xet cache
+	// at 216 kB/s needs ~25 min; warm cache is much faster. 60 min gives
+	// comfortable headroom for larger batches while catching genuine hangs.
+	uploadTimeout := 60 * time.Minute
 	uploadCtx, uploadCancel := context.WithTimeout(ctx, uploadTimeout)
 	defer uploadCancel()
 
