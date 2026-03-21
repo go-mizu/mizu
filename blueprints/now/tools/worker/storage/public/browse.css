@@ -626,17 +626,33 @@ html.dark .perm--editor{background:rgba(16,185,129,.2);color:#6EE7B7}
 /* ════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ════════════════════════════════════════════════════════════════════════ */
+@media(max-width:768px){
+  .bar{padding:14px 20px 12px}
+  .file-header{padding:0 20px}
+  .file-row{padding:0 20px}
+  .fh-time,.file-time{width:80px}
+  .pv-bar{padding:0 16px;height:42px}
+  .pv-body{padding:20px 24px}
+  .preview-code{font-size:12px}
+  .preview-text{font-size:12px}
+  .preview-md{padding:24px 20px;font-size:14px}
+  .docx-page{padding:40px 32px}
+  .pptx-thumbs{width:100px;min-width:100px}
+  .pptx-slide{padding:32px 40px}
+  .pptx-slide-title{font-size:24px}
+  .pptx-slide-body{font-size:14px}
+}
 @media(max-width:640px){
   .bar{padding:12px 16px 10px;gap:6px;flex-wrap:wrap}
   .crumb-seg{font-size:12px}
   .bar-search{flex:1 1 100%;order:10;margin-top:4px}
   .bar-actions .btn span{display:none}
   .bar-actions .btn{padding:6px}
+  .file-header{padding:0 16px}
   .file-row{padding:0 16px;gap:10px}
   .drop-area{margin:12px 16px 16px}
-  .pv-top{padding:10px 16px}
+  .pv-bar{padding:0 12px;gap:4px;height:40px}
   .pv-body{padding:16px}
-  .pv-sibling{padding:10px 16px}
   #ctx-menu.open{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;max-width:none;min-width:auto;animation:slide-up .2s ease}
   #ctx-menu::before{content:'';display:block;width:36px;height:4px;background:var(--text-3);margin:8px auto 4px;opacity:.5}
   .ctx-item{padding:12px 20px;font-size:14px}
@@ -647,12 +663,35 @@ html.dark .perm--editor{background:rgba(16,185,129,.2);color:#6EE7B7}
   .shortcuts{grid-template-columns:1fr}
   .shortcut:nth-child(odd){border-right:none}
   .preview-code{padding:12px;font-size:11px;max-width:100%;border:none}
+  .preview-md{padding:20px 16px;font-size:13px}
+  .preview-md h1{font-size:22px}
+  .preview-md h2{font-size:18px}
+  .preview-text{padding:16px;font-size:11px}
+  .docx-page{padding:28px 24px;min-height:400px}
+  .docx-ruler{display:none}
+  .pdf-page{padding:32px 24px}
   .pptx-thumbs{width:100%;min-width:0;flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:none;border-bottom:1px solid var(--border);padding:6px;gap:4px}
   .pptx-thumb{min-width:60px;flex-shrink:0}
   .pptx-stage{padding:8px}
+  .pptx-slide{padding:24px 28px}
+  .pptx-slide-title{font-size:20px}
+  .pptx-slide-body{font-size:13px}
   .mp--audio{padding:20px}
   .mp-art{width:100px;height:100px}
   .mp-vol-wrap{display:none}
+  .preview-generic{padding:32px 16px}
+  .preview-generic-name{font-size:16px}
+}
+@media(max-width:480px){
+  .fh-time,.file-time{display:none}
+  .pv-crumb{font-size:11px}
+  .pv-crumb--current{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+  .pptx-slide-title{font-size:18px}
+  .pptx-slide-body{font-size:12px}
+  .pptx-slide--title .pptx-slide-title{font-size:24px}
+  .pptx-slide--title .pptx-slide-body{font-size:14px}
+  .mp-controls{gap:8px}
+  .mp-time{font-size:9px;min-width:32px}
 }
 
 @media(pointer:coarse){

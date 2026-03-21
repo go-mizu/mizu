@@ -208,12 +208,23 @@ html.dark .cmp-hl{background:color-mix(in srgb,var(--green) 4%,var(--surface)) !
   .arch-arr{flex-direction:row;padding:6px 0}
   .arch-arr::before{width:1px;height:16px}
 }
+@media(max-width:768px){
+  .hero-title{font-size:34px;letter-spacing:-1.2px}
+  .sec-h{font-size:24px}
+  .sec-sub{font-size:14px}
+  .cmp th,.cmp td{padding:10px 12px;font-size:12px}
+  .cmp tbody th{font-size:11px}
+  .tbl-wrap{-webkit-overflow-scrolling:touch}
+  .lang-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .lang-tab{flex-shrink:0}
+}
 @media(max-width:640px){
   .hero{padding:48px 0 24px}
   .hero-split{padding:0 20px;gap:24px}
   .hero-title{font-size:30px;letter-spacing:-1px}
   .hero-sub{font-size:13px;margin-bottom:20px}
   .hero-ctas{flex-direction:column;width:100%;max-width:280px}
+  .btn{justify-content:center;min-height:44px}
   .qs-flow{padding:0 20px}
   .qs-step{padding:18px}
   .qs-ep{font-size:9.5px}
@@ -226,7 +237,7 @@ html.dark .cmp-hl{background:color-mix(in srgb,var(--green) 4%,var(--surface)) !
   .lang-tab{padding:8px 16px;font-size:11px;white-space:nowrap}
   .lang-panel{padding:16px 18px;font-size:10.5px}
   .ai-left{padding:20px}
-  .ai-cap{padding:7px 10px}
+  .ai-cap{padding:7px 10px;min-height:44px}
   .ai-say{font-size:11px}
   .ai-connect{grid-template-columns:1fr}
   .chat{padding:14px}
@@ -238,5 +249,14 @@ html.dark .cmp-hl{background:color-mix(in srgb,var(--green) 4%,var(--surface)) !
   .cta-h{font-size:24px}
   .cta-sub{font-size:13px}
   .cta-actions{flex-direction:column;width:100%;max-width:280px}
-  .btn{justify-content:center}
+}
+@media(max-width:480px){
+  .hero-title{font-size:26px;letter-spacing:-.8px}
+  .hero-badge{font-size:9px;padding:5px 12px}
+  .qs-step{padding:14px}
+  .qs-desc{font-size:11px}
+  .ep{font-size:10px}
+  .api-card h3{font-size:14px}
+  .arch-nm{font-size:12px}
+  .use-card h3{font-size:14px}
 }

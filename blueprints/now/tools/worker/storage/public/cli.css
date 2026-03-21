@@ -230,6 +230,8 @@
   .section{padding:48px 0}
   .dl-grid{flex-direction:column}
   .dl-btn+.dl-btn{border-left:1px solid var(--border);border-top:none}
+  .dl-btn{min-height:48px}
+  .flag-row{grid-template-columns:120px 60px 1fr}
 }
 @media(max-width:640px){
   .hero-inner,.wrap{padding:0 20px}
@@ -238,17 +240,31 @@
   .hero-sub{font-size:14px}
   .install-box .cmd{font-size:11px}
   .install-tabs{flex-wrap:wrap}
+  .install-tab{min-height:40px}
   .term-body{padding:14px 16px;font-size:11px}
   .section--cta{padding:48px 0}
   .cta-title{font-size:24px}
   .cta-actions{flex-direction:column;width:100%;max-width:280px}
-  .cta-actions a{justify-content:center;border-right:none;border-bottom:1px solid var(--border)}
+  .cta-actions a{justify-content:center;border-right:none;border-bottom:1px solid var(--border);min-height:44px}
   .cta-actions a:last-child{border-bottom:none}
   .uc-head{padding:20px}
   .cmd-card{padding:16px}
   .step{padding:20px}
+  .step-cmd{font-size:10.5px;overflow-x:auto}
   .flag-row{grid-template-columns:1fr}
   .flag-col-name,.flag-col-short{border-right:none;border-bottom:1px solid var(--border)}
   .flag-col-short:empty{display:none}
   .flag-header{display:none}
+  .copy-btn{padding:10px 12px}
+}
+@media(max-width:480px){
+  .hero-title{font-size:24px;letter-spacing:-.8px}
+  .hero-eyebrow{font-size:10px;padding:5px 12px}
+  .h2{font-size:22px}
+  .sub{font-size:13px}
+  .cmd-name{font-size:13px}
+  .cmd-desc{font-size:12px}
+  .cmd-example{font-size:10px}
+  .step-title{font-size:14px}
+  .step-desc{font-size:12px}
 }

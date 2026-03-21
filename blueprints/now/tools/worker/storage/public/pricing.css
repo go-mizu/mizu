@@ -96,17 +96,36 @@
   .tier--pro{order:-1}
   .inc-grid{grid-template-columns:1fr 1fr}
 }
+@media(max-width:768px){
+  .hero-title{font-size:30px;letter-spacing:-1px}
+  .section--included{padding:64px 0}
+  .section--faq{padding:64px 0}
+  .faq-q{font-size:14px}
+  .faq-a{font-size:13px}
+}
 @media(max-width:640px){
   .section-inner{padding:0 20px}
   .hero{padding:48px 0 24px}
-  .hero-title{font-size:32px;letter-spacing:-1.5px}
+  .hero-title{font-size:28px;letter-spacing:-1px}
   .hero-sub{font-size:15px}
   .section--tiers{padding:24px 0 48px}
-  .tier{padding:24px}
-  .tier-price{font-size:40px}
+  .tier{padding:24px 20px}
+  .tier-price{font-size:36px}
   .tier-desc{min-height:auto}
+  .tier-cta{min-height:44px;display:flex;align-items:center;justify-content:center}
   .inc-grid{grid-template-columns:1fr}
-  .inc-title{font-size:24px}
-  .faq-title{font-size:24px}
-  .cta-title{font-size:26px}
+  .inc{padding:20px}
+  .inc-title{font-size:22px}
+  .faq-title{font-size:22px}
+  .faq{padding:20px 0}
+  .section--cta{padding:64px 0 48px}
+  .cta-title{font-size:24px}
+  .cta-main{min-height:44px;display:flex;align-items:center;justify-content:center}
+}
+@media(max-width:480px){
+  .hero-title{font-size:24px;letter-spacing:-.8px}
+  .tier-name{font-size:18px}
+  .tier-price{font-size:32px}
+  .tier-item{font-size:13px;padding:8px 0}
+  .tier-includes{font-size:10px}
 }

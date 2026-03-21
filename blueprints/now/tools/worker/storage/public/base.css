@@ -144,10 +144,16 @@ html.dark .term-dots span,html.dark .term-dots i{background:var(--text-3)}
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media(max-width:1024px){
+  .card-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
   .card-grid{grid-template-columns:1fr}
+  .inner{padding:0 24px}
+  .sec{padding:64px 0}
+  .term-body{font-size:11px;padding:14px 16px}
 }
 @media(max-width:640px){
-  .nav-inner{padding:0 20px;height:48px}
+  .nav-inner{padding:0 16px;height:48px}
   .nav-links{display:none;position:absolute;top:48px;left:0;right:0;
     flex-direction:column;padding:14px 20px;gap:14px;z-index:100;
     border-bottom:1px solid var(--border);
@@ -161,4 +167,10 @@ html.dark .term-dots span,html.dark .term-dots i{background:var(--text-3)}
   .md{padding:24px 20px;font-size:12px}
   .mode-switch{bottom:16px}
   .mode-switch button{padding:8px 14px;font-size:10px}
+  .nav-right{gap:8px}
+  .nav-user{max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+  .nav-signout{padding:4px 8px;font-size:10px}
+}
+@supports(padding-bottom:env(safe-area-inset-bottom)){
+  .mode-switch{bottom:max(16px,env(safe-area-inset-bottom))}
 }

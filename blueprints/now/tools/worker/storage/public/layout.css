@@ -14,6 +14,12 @@
 .page-desc{font-size:14px;color:var(--text-2)}
 
 /* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .container{padding:32px 24px 72px}
+  .page-title{font-size:22px}
+  .page-desc{font-size:13px}
+}
 @media(max-width:640px){
   .container{padding:16px 20px 60px}
+  .page-title{font-size:20px}
 }

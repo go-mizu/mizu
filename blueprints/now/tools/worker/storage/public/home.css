@@ -158,7 +158,7 @@ html.dark .mockup-dots span{background:var(--text-3)}
 .register-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.5);
   backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .register-modal-box{position:relative;z-index:1;background:var(--bg);
-  border:1px solid var(--border);padding:48px;width:100%;max-width:400px;text-align:center}
+  border:1px solid var(--border);padding:48px;width:100%;max-width:440px;text-align:center}
 .register-modal-close{position:absolute;top:12px;right:16px;background:none;border:none;
   font-size:24px;color:var(--text-3);cursor:pointer;line-height:1;padding:4px;
   transition:color .15s}
@@ -203,7 +203,11 @@ html.dark .prompt-error{color:#FCA5A5}
   .hero-title{font-size:44px;letter-spacing:-2px}
   .hero-sub{font-size:16px;margin-bottom:24px}
   .pillars{grid-template-columns:1fr}
+  .pillar{padding:32px 24px}
   .trust-grid{grid-template-columns:1fr}
+  .trust-item{padding:20px}
+  .cta-h{font-size:30px}
+  .cta-sub{font-size:15px}
 }
 @media(max-width:640px){
   .hero{padding:72px 0 48px}
@@ -211,14 +215,23 @@ html.dark .prompt-error{color:#FCA5A5}
   .hero-title{font-size:36px;letter-spacing:-1.5px}
   .hero-sub{font-size:15px}
   .hero-ctas,.hero-actions{flex-direction:column;width:100%;max-width:320px}
-  .btn--lg,.btn{justify-content:center}
-  .pillar{padding:24px}
+  .btn--lg,.btn{justify-content:center;min-height:44px}
+  .pillar{padding:24px 20px}
   .mockup-body{padding:16px}
   .mock-chat-pill{font-size:12px;padding:8px 12px}
   .mock-chat-text{font-size:12px}
   .cta-h{font-size:28px}
   .cta-actions{flex-direction:column;width:100%;max-width:320px}
-  .register-modal-box{margin:0 20px;padding:32px 24px}
+  .register-modal-box{margin:0 16px;padding:28px 20px}
   .prompt-form{flex-direction:column}
-  .prompt-form button{border-left:none;border-top:1px solid var(--border);justify-content:center}
+  .prompt-form button{border-left:none;border-top:1px solid var(--border);justify-content:center;min-height:48px}
+}
+@media(max-width:480px){
+  .hero{padding:56px 0 40px}
+  .hero-title{font-size:30px;letter-spacing:-1.2px}
+  .hero-sub{font-size:14px}
+  .hero-greeting{font-size:22px}
+  .feature-fact{font-size:12px}
+  .mock-file-meta{display:none}
+  .register-modal-title{font-size:20px}
 }
