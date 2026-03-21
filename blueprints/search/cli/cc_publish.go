@@ -1306,15 +1306,14 @@ The source data consists of web pages crawled by the [Common Crawl](https://comm
 
 ### Data Processing Steps
 
-The processing pipeline runs in five stages:
+The processing pipeline runs as a single-pass direct conversion:
 
 1. **Download** raw .warc.gz files from Common Crawl S3 (each file is roughly 1 GB compressed)
 2. **Filter** to keep only HTTP 200 responses with a text/html content type, discarding images, scripts, redirects, and error pages
-3. **Convert** HTML to Markdown using [trafilatura](https://github.com/adbar/trafilatura), which extracts the main content and strips boilerplate, navigation, sidebars, footers, and ads
-4. **Pack** converted records into seekable .md.warc.gz files where each record is wrapped in its own gzip member, matching Common Crawl's concatenated-gzip format
-5. **Export** each shard to Apache Parquet with Zstd compression, 100,000 rows per row group, and an 8 MB page buffer
+3. **Convert** HTML to clean Markdown using a lightweight tokenizer-based extractor that strips tags, scripts, styles, navigation, and boilerplate — keeping only the main content
+4. **Export** directly to Apache Parquet with Zstd compression, 100,000 rows per row group
 
-Empty conversions (pages where trafilatura could not extract meaningful content) are dropped.
+No intermediate files are created — the pipeline streams from compressed WARC through conversion directly into Parquet. Pages that produce empty conversions are dropped.
 
 ### Compression Ratios
 
@@ -1324,10 +1323,10 @@ Numbers below are actual measurements summed across all %[8]s files of %[1]s (%[
 |---|---|---|---|
 | Raw WARC (.warc.gz, downloaded) | %[10]s | %[20]s | — |
 | HTML extracted (uncompressed) | %[11]s | %[21]s | — |
-| Packed markdown WARC (.md.warc.gz) | %[12]s | %[22]s | **-%[13]s%%** vs HTML |
-| Final Parquet (Zstd level 19) | %[14]s | %[23]s | **-%[15]s%%** vs packed WARC |
+| Markdown (clean text) | %[16]s | %[22]s | **-%[13]s%%** vs HTML |
+| Final Parquet (Zstd) | %[14]s | %[23]s | **-%[17]s%%** vs markdown |
 
-The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further %[17]s%%.
+The big win is HTML → Markdown conversion: the tokenizer strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction**. Parquet with Zstd then compresses the markdown a further %[17]s%%.
 
 End to end: %[10]s of raw gzipped WARCs becomes **%[14]s of Parquet** — a **%[18]s%% total reduction** — containing %[9]s clean markdown documents.
 %[19]s
