@@ -377,12 +377,38 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	statsCSV := ccStatsCSVPath(repoRoot)
 	skippedCSV := ccSkippedCSVPath(repoRoot)
 
+	// Redis integration: register pipeline session, track progress.
+	rds := newCCRedis(crawlID)
+	sessionID := fmt.Sprintf("pipe_%d_%s", os.Getpid(), fileIdx)
+	if rds.Available(ctx) {
+		rds.RegisterPipeline(ctx, sessionID)
+		defer rds.UnregisterPipeline(ctx, sessionID)
+		// Heartbeat goroutine: refresh TTL every 30s so dead sessions auto-expire.
+		heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
+		defer heartbeatCancel()
+		go func() {
+			tick := time.NewTicker(30 * time.Second)
+			defer tick.Stop()
+			for {
+				select {
+				case <-tick.C:
+					rds.HeartbeatPipeline(heartbeatCtx, sessionID)
+				case <-heartbeatCtx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → parquet (direct)"))
 	fmt.Println()
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %s\n", infoStyle.Render(strconv.Itoa(len(indices))))
 	fmt.Printf("  Output    %s\n", labelStyle.Render(dataDir))
+	if rds.Available(ctx) {
+		fmt.Printf("  Redis     %s\n", successStyle.Render("connected"))
+	}
 	fmt.Println()
 
 	// Load committed set once at startup (watcher maintains this via stats.csv).
@@ -430,8 +456,8 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
-		// Skip: already committed to HF.
-		if committed[idx] {
+		// Skip: already committed to HF (check Redis first, then file-based).
+		if rds.IsCommitted(ctx, idx) || committed[idx] {
 			fmt.Printf("  [%s] already committed, skipping\n", labelStyle.Render(shard))
 			fmt.Println()
 			continue
@@ -472,6 +498,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		// Ensure raw .warc.gz is available.
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{"status": "downloading", "shard": idx})
 		if rawWARCPath == "" {
 			t0 := time.Now()
 			path, downloaded, dlErr := ccEnsureRawWARC(ctx, crawlID, idx)
@@ -487,6 +514,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			rawWARCPath = path
 			if downloaded {
 				durDownloadS = int64(time.Since(t0).Seconds())
+				rds.RecordDownloaded(ctx)
 			}
 		}
 
@@ -496,6 +524,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		// Direct pack → parquet (merged pipeline).
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{"status": "packing", "shard": idx})
 		fmt.Printf("  [%s] packing  ", labelStyle.Render(shard))
 		packCfg := warcmd.PackConfig{
 			InputFiles:   []string{rawWARCPath},
@@ -564,6 +593,14 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 			PeakRSSMB:    peakRSS,
 		})
 		_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
+
+		// Redis: record pack event, update session state, push to watcher queue.
+		rds.RecordPacked(ctx)
+		rds.PushPendingParquet(ctx, parquetPath)
+		rds.SetSessionRSS(ctx, sessionID, float64(peakRSS))
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{
+			"status": "idle", "shard": idx, "peak_rss_mb": peakRSS,
+		})
 
 		// Cleanup raw .warc.gz.
 		if cleanup {

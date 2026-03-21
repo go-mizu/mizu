@@ -542,6 +542,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 	}
 
+	// Redis integration for rate tracking and state queries.
+	rds := newCCRedis(cfg.CrawlID)
+	useRedis := rds.Available(ctx)
+
 	logLine("=== CC Schedule starting ===")
 	logLine(fmt.Sprintf("  Crawl:       %s", cfg.CrawlID))
 	if gapSet != nil {
@@ -560,6 +564,9 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	logLine(fmt.Sprintf("  Done pct:    %d%%", cfg.DonePct))
 	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%ds each) with no new commits", cfg.StallRounds, 45))
 	logLine(fmt.Sprintf("  Binary:      %s", searchBin))
+	if useRedis {
+		logLine("  Redis:       connected")
+	}
 
 	// ── Initial cleanup ──────────────────────────────────────────────────────
 	schedStart := time.Now()
@@ -770,38 +777,83 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			rateHistory = rateHistory[len(rateHistory)-20:]
 		}
 
-		// Compute rates from the sliding window (oldest → newest).
-		// Requires at least 5 rounds (~4 min) to avoid startup noise.
-		var packRate, commitRate float64
+		// Compute rates: prefer Redis (accurate, real-time), fall back to sliding window.
+		var packRate, commitRate, downloadRate float64
 		rateSource := ""
-		windowStart := rateHistory[0]
-		windowEnd := rateHistory[len(rateHistory)-1]
-		windowDur := windowEnd.time.Sub(windowStart.time)
 
-		if len(rateHistory) >= 5 && windowDur.Seconds() > 60 {
-			newPacked := windowEnd.sessionPacked - windowStart.sessionPacked
-			if newPacked < 0 {
-				newPacked = 0
+		if useRedis {
+			// Redis rates use sorted sets with 15-min window — accurate across all processes.
+			packRate = rds.PackRate(ctx, 15*time.Minute)
+			commitRate = rds.CommitRate(ctx, 15*time.Minute)
+			downloadRate = rds.DownloadRate(ctx, 15*time.Minute)
+			if commitRate > 0 {
+				rateSource = "redis"
 			}
-			packRate = float64(newPacked) / windowDur.Hours()
+			// Trim old entries periodically (every 10 rounds).
+			if round%10 == 0 {
+				rds.TrimRates(ctx)
+			}
+			// Update hardware state in Redis.
+			rds.SetHardware(ctx, map[string]interface{}{
+				"cpu_cores":    hw.CPUCores,
+				"ram_total_gb": fmt.Sprintf("%.1f", hw.RAMTotalGB),
+				"ram_avail_gb": fmt.Sprintf("%.1f", hw.RAMAvailGB),
+				"disk_free_gb": fmt.Sprintf("%.1f", hw.DiskFreeGB),
+				"load_avg_1":   fmt.Sprintf("%.1f", loadAvg),
+			})
+		} else {
+			// Fallback: file-based sliding window.
+			windowStart := rateHistory[0]
+			windowEnd := rateHistory[len(rateHistory)-1]
+			windowDur := windowEnd.time.Sub(windowStart.time)
 
-			// Commit rate from actual HF pushes during this session only.
-			newSessionCommits := windowEnd.sessionCommits - windowStart.sessionCommits
-			if newSessionCommits > 0 {
-				commitRate = float64(newSessionCommits) / windowDur.Hours()
-				rateSource = "hf"
+			if len(rateHistory) >= 5 && windowDur.Seconds() > 60 {
+				newPacked := windowEnd.sessionPacked - windowStart.sessionPacked
+				if newPacked < 0 {
+					newPacked = 0
+				}
+				packRate = float64(newPacked) / windowDur.Hours()
+
+				// Commit rate from actual HF pushes during this session only.
+				newSessionCommits := windowEnd.sessionCommits - windowStart.sessionCommits
+				if newSessionCommits > 0 {
+					commitRate = float64(newSessionCommits) / windowDur.Hours()
+					rateSource = "hf"
+				}
 			}
 		}
 
 		// Delta since last round (for display).
 		var lastRoundPacked, lastRoundCommitted, lastRoundDownload int
-		if len(rateHistory) >= 2 {
+		if !useRedis && len(rateHistory) >= 2 {
+			windowEnd := rateHistory[len(rateHistory)-1]
 			prev := rateHistory[len(rateHistory)-2]
 			lastRoundPacked = windowEnd.sessionPacked - prev.sessionPacked
 			lastRoundCommitted = windowEnd.sessionCommits - prev.sessionCommits
 			lastRoundDownload = windowEnd.downloading - prev.downloading
 			if lastRoundPacked < 0 {
 				lastRoundPacked = 0
+			}
+		}
+
+		// Redis: read totalCommitted from Redis when available (O(1) vs CSV scan).
+		if useRedis {
+			redisCount := rds.CommittedCount(ctx)
+			if redisCount > totalCommitted {
+				totalCommitted = redisCount
+			}
+			// Read pending from Redis counter if available.
+			redisPending := rds.PendingCount(ctx)
+			if redisPending > 0 {
+				pending = redisPending
+			}
+		}
+
+		// Watcher status: prefer Redis, fall back to file.
+		if useRedis {
+			if ws, ok := rds.GetWatcherStatus(ctx); ok {
+				watcherStatus = ws
+				hasWatcherStatus = true
 			}
 		}
 
@@ -817,12 +869,22 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		// Line 2: throughput rates (always shown).
 		if packRate > 0 || commitRate > 0 {
-			logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (%+d)",
-				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted,
-				downloading, lastRoundDownload))
+			if useRedis {
+				logLine(fmt.Sprintf("  rate   | pack: %.0f/hr | commit: %.0f/hr [%s] | download: %.0f/hr | pending: %d",
+					packRate, commitRate, rateSource, downloadRate, pending))
+			} else {
+				logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (%+d)",
+					packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted,
+					downloading, lastRoundDownload))
+			}
 		} else {
-			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (%+d)",
-				len(rateHistory)-1, 5, downloading, lastRoundDownload))
+			if useRedis {
+				logLine(fmt.Sprintf("  rate   | warming up (redis) | pending: %d | downloading: %d",
+					pending, downloading))
+			} else {
+				logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (%+d)",
+					len(rateHistory)-1, 5, downloading, lastRoundDownload))
+			}
 		}
 
 		// Line 3: progress counters.

@@ -86,6 +86,9 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 		return err
 	}
 
+	// Redis integration.
+	rds := newCCRedis(crawlID)
+
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Watcher: parquet folder → HuggingFace"))
 	fmt.Println()
@@ -99,6 +102,11 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	)
 	if chartsEvery > 0 {
 		fmt.Printf("  Charts    every %s\n", infoStyle.Render(chartsEvery.String()))
+	}
+	if rds.Available(ctx) {
+		fmt.Printf("  Redis     %s\n", successStyle.Render("connected"))
+		// Seed Redis from stats.csv on first run.
+		rds.SeedFromCSV(ctx, statsCSV, crawlID)
 	}
 	fmt.Println()
 
@@ -135,7 +143,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
 		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir,
-			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime, &commitNum); err != nil {
+			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime, &commitNum, rds); err != nil {
 			fmt.Printf("  [watcher] flush: %v\n", err)
 		}
 	}
@@ -159,7 +167,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 // minCommitInterval enforces a minimum gap between commits to stay under HF's 128/hour limit.
 func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir string,
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration,
-	minCommitInterval time.Duration, lastCommitTime *time.Time, commitNum *int) error {
+	minCommitInterval time.Duration, lastCommitTime *time.Time, commitNum *int, rds *ccRedis) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
 	chartsStale := chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery
@@ -373,14 +381,27 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 
 	// Write watcher status so scheduler can display the latest HF commit.
 	*commitNum++
-	ccWriteWatcherStatus(repoRoot, ccWatcherStatus{
+	wsStatus := ccWatcherStatus{
 		CommitNumber:   *commitNum,
 		Message:        commitMsg,
 		CommitURL:      commitURL,
 		ShardsInCommit: len(uploadedFiles),
 		TotalCommitted: len(committed) + len(uploadedFiles), // committed map updated below
 		Timestamp:      time.Now(),
-	})
+	}
+	ccWriteWatcherStatus(repoRoot, wsStatus)
+
+	// Redis: update committed set, record commit events, update watcher status.
+	if rds != nil {
+		committedIndices := make([]int, len(uploadedFiles))
+		for i, f := range uploadedFiles {
+			committedIndices[i] = f.fileIdx
+		}
+		rds.AddCommittedBatch(ctx, committedIndices)
+		rds.RecordCommitted(ctx, len(uploadedFiles))
+		rds.SetWatcherStatus(ctx, wsStatus)
+		rds.Log(ctx, "watcher", "info", commitMsg)
+	}
 
 	// Step 5: Update publish timing, delete all local intermediates, mark committed.
 	// Only process files that buildOps confirmed still existed at commit time;
