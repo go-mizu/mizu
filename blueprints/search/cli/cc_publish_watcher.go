@@ -153,10 +153,13 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	// Between finding them and committing, the scheduler cleanup or a crashed
 	// session may have deleted the local file. Committing a phantom shard
 	// (stats row without data on HF) causes data integrity issues.
-	// Also skip tiny/corrupt files (<1 MB) — these are truncated exports from
-	// crashed pipelines; the pipeline will regenerate them on next run.
+	// Skip files that disappeared or are truly corrupt (0 bytes / no parquet header).
+	// Valid empty parquets (shards with 0 HTML records) are ~343 bytes — these
+	// must be committed so the scheduler marks them as done and moves on.
+	// Previously the threshold was 1 MB which caused empty shards to loop
+	// (export → delete → re-export → delete) and never commit.
 	{
-		const minParquetBytes = 1 << 20 // 1 MB
+		const minParquetBytes = 100 // parquet header is ~100+ bytes; 0 bytes = truly corrupt
 		var existing []ccUncommittedParquet
 		for _, f := range newFiles {
 			fi, err := os.Stat(f.localPath)
@@ -165,8 +168,8 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 				continue
 			}
 			if fi.Size() < minParquetBytes {
-				fmt.Printf("  [watcher] skipping %s (truncated: %d bytes, expected ~30 MB) — deleting so pipeline retries\n", f.shard, fi.Size())
-				_ = os.Remove(f.localPath) // delete so pipeline regenerates on next run
+				fmt.Printf("  [watcher] skipping %s (corrupt: %d bytes) — deleting so pipeline retries\n", f.shard, fi.Size())
+				_ = os.Remove(f.localPath)
 				continue
 			}
 			existing = append(existing, f)
