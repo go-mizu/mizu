@@ -101,10 +101,11 @@ func computeCCBudget(hw arctic.HardwareProfile, ramPerSession float64, maxSessio
 		b.MaxSessions = maxCap
 	}
 
-	// Safety: on machines with < 16 GB total, never exceed 4 sessions regardless
-	// of what available RAM says (background services can release cache temporarily,
-	// creating a false sense of headroom that vanishes under load).
-	if hw.RAMTotalGB < 16 && b.MaxSessions > 4 {
+	// Safety cap for small-RAM machines. With memory optimizations (pooled buffers,
+	// capped workers, GOGC=200), real per-session RSS is ~300-500 MB. On a 12 GB
+	// machine with 4 GB for OS/arctic, 8 GB is usable → 8/0.6 = ~13 sessions.
+	// CPU cap (cores×1.5) is the real limit on these machines.
+	if hw.RAMTotalGB < 8 && b.MaxSessions > 4 {
 		b.MaxSessions = 4
 	}
 
