@@ -8,11 +8,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/arctic"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
 )
@@ -1029,21 +1031,53 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		projPackStr = "~" + ccFmtBytes(int64(float64(packBytes)*projScale))
 		projParquetStr = "~" + ccFmtBytes(int64(float64(totals.ParquetBytes)*projScale))
 
-		// Progress/ETA — computed from stats.csv timestamps.
+		// Progress/ETA — computed from stats.csv timestamps + live hardware info.
 		if totals.ShardsPerHour > 0 {
 			remaining := projFiles - totals.Shards
 			if remaining > 0 {
 				etaHours := float64(remaining) / totals.ShardsPerHour
 				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				pctDone := float64(totals.Shards) / float64(projFiles) * 100
+
+				var etaStr string
 				if etaHours >= 24 {
-					progressLine = fmt.Sprintf(
-						"\nProcessing at **%.1f shards/hour** — estimated completion of all 100,000 shards: **%s** (~%.0f days).",
-						totals.ShardsPerHour, etaDone.Format("January 2, 2006"), etaHours/24)
+					etaStr = fmt.Sprintf("**%s** (~%.0f days)", etaDone.Format("January 2, 2006"), etaHours/24)
 				} else {
-					progressLine = fmt.Sprintf(
-						"\nProcessing at **%.1f shards/hour** — estimated completion of all 100,000 shards: **%s** (~%.1f hours).",
-						totals.ShardsPerHour, etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
+					etaStr = fmt.Sprintf("**%s** (~%.1f hours)", etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
 				}
+
+				// Build progress section with hardware context.
+				var sb strings.Builder
+				sb.WriteString(fmt.Sprintf("\n### Live Progress\n\n"))
+				sb.WriteString(fmt.Sprintf("Processing at **%.1f shards/hour** — %s of %s done (**%.2f%%**)\n\n",
+					totals.ShardsPerHour, ccFmtInt64(int64(totals.Shards)), ccFmtInt64(projFiles), pctDone))
+				sb.WriteString(fmt.Sprintf("Estimated completion: %s\n\n", etaStr))
+
+				// Hardware snapshot.
+				hw := arctic.DetectHardware("")
+				sb.WriteString(fmt.Sprintf("**Current server:** %d CPU cores, %.0f GB RAM (%.1f GB available), %.0f GB disk free\n\n",
+					runtime.NumCPU(), hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskFreeGB))
+
+				// RSS from stats.csv.
+				if totals.AvgRSSMB > 0 {
+					sb.WriteString(fmt.Sprintf("**Memory per session:** avg %d MB, peak %d MB (measured via VmRSS)\n\n",
+						totals.AvgRSSMB, totals.MaxRSSMB))
+				}
+
+				// 10-server projection.
+				tenServerRate := totals.ShardsPerHour * 10
+				tenEtaHours := float64(remaining) / tenServerRate
+				var tenEtaStr string
+				if tenEtaHours >= 24 {
+					tenEtaDone := time.Now().Add(time.Duration(tenEtaHours * float64(time.Hour)))
+					tenEtaStr = fmt.Sprintf("%s (~%.0f days)", tenEtaDone.Format("January 2, 2006"), tenEtaHours/24)
+				} else {
+					tenEtaStr = fmt.Sprintf("~%.1f hours", tenEtaHours)
+				}
+				sb.WriteString(fmt.Sprintf("**With 10 identical servers:** ~%.0f shards/hour → %s",
+					tenServerRate, tenEtaStr))
+
+				progressLine = sb.String()
 			}
 		}
 
