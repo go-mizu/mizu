@@ -182,7 +182,7 @@ func exportWARCMdShardToParquet(inPath, outPath string, progressFn exportProgres
 	pw := parquet.NewGenericWriter[ccWARCExportRow](out,
 		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBestCompression}),
 		parquet.MaxRowsPerRowGroup(100_000),
-		parquet.PageBufferSize(8*1024*1024),
+		parquet.PageBufferSize(2*1024*1024), // 2 MB: saves ~54 MB vs 8 MB (9 cols × 6 MB)
 	)
 
 	reader := warcpkg.NewReader(in)
