@@ -269,11 +269,13 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 		reasons = append(reasons, fmt.Sprintf("ram_tight=%.1fGB: hold", hw.RAMAvailGB))
 	}
 
-	// Load average too high: other processes are contending.
+	// Load average: pipeline sessions are I/O-heavy (downloads, gzip scanning)
+	// which inflate load average without actually being CPU-bound. Use high
+	// thresholds to avoid shedding sessions that are just doing network I/O.
 	loadAvg := readLoadAvg1()
 	if loadAvg > 0 {
-		overloadThreshold := float64(hw.CPUCores) * 4
-		highThreshold := float64(hw.CPUCores) * 2.5
+		overloadThreshold := float64(hw.CPUCores) * 8
+		highThreshold := float64(hw.CPUCores) * 5
 
 		if loadAvg > overloadThreshold {
 			// Severely overloaded — shed load proportionally.
@@ -288,7 +290,7 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 			if newMax < effective {
 				effective = newMax
 			}
-			reasons = append(reasons, fmt.Sprintf("load=%.1f>%d×3: -%d", loadAvg, hw.CPUCores, reduction))
+			reasons = append(reasons, fmt.Sprintf("load=%.1f>%d×8: -%d", loadAvg, hw.CPUCores, reduction))
 		} else if loadAvg > highThreshold && effective > nRunning {
 			// High load — don't grow.
 			effective = nRunning
