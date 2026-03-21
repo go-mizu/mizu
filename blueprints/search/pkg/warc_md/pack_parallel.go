@@ -2,7 +2,7 @@ package warc_md
 
 import (
 	"bufio"
-	gzip "github.com/klauspost/compress/gzip"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,9 +14,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	gzip "github.com/klauspost/compress/gzip"
+
 	mdpkg "github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
+
+// gzReaderPool recycles gzip readers to avoid per-offset allocation of internal
+// decompression buffers (~32 KB each). On a shard with 50,000 offsets, this
+// eliminates 50,000 gzip reader allocations.
+var gzReaderPool sync.Pool
 
 // GzipMemberOffset represents one gzip member's position in a .warc.gz file.
 type GzipMemberOffset struct {
@@ -114,6 +121,9 @@ func RunPackParallel(ctx context.Context, cfg PackConfig, offsets []GzipMemberOf
 	if cfg.Workers <= 0 {
 		cfg.Workers = runtime.NumCPU() * 4
 	}
+	if cfg.Workers > maxPackWorkers {
+		cfg.Workers = maxPackWorkers
+	}
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = 200
 	}
@@ -133,7 +143,7 @@ func RunPackParallel(ctx context.Context, cfg PackConfig, offsets []GzipMemberOf
 		return nil, err
 	}
 
-	prevGOGC := debug.SetGCPercent(400)
+	prevGOGC := debug.SetGCPercent(200)
 	defer debug.SetGCPercent(prevGOGC)
 
 	var stats PackStats
@@ -256,11 +266,27 @@ func processOneOffset(warcPath string, off GzipMemberOffset, cfg PackConfig, con
 		return nil, err
 	}
 
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return nil, err
+	// Reuse gzip reader from pool when possible.
+	var gz *gzip.Reader
+	if pooled, ok := gzReaderPool.Get().(*gzip.Reader); ok {
+		if err := pooled.Reset(f); err != nil {
+			gz, err = gzip.NewReader(f)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			gz = pooled
+		}
+	} else {
+		gz, err = gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
 	}
-	defer gz.Close()
+	defer func() {
+		gz.Close()
+		gzReaderPool.Put(gz)
+	}()
 
 	// Use the standard WARC reader to parse the record
 	wr := warcpkg.NewReader(gz)
@@ -273,26 +299,33 @@ func processOneOffset(warcPath string, off GzipMemberOffset, cfg PackConfig, con
 		return nil, nil
 	}
 
-	// Read body (HTTP status line + headers + HTML body)
+	// Read body using pooled buffer.
+	buf := bodyBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
 	var bodyReader io.Reader = rec.Body
 	if cfg.MaxBodySize > 0 {
 		bodyReader = io.LimitReader(rec.Body, cfg.MaxBodySize+8192)
 	}
-	bodyBytes, err := io.ReadAll(bodyReader)
+	_, err = buf.ReadFrom(bodyReader)
 	if err != nil {
+		bodyBufPool.Put(buf)
 		return nil, err
 	}
+	bodyBytes := buf.Bytes()
 
 	status, mime, htmlBody := parseHTTPResponseFast(bodyBytes)
 	if cfg.StatusCode != 0 && status != cfg.StatusCode {
+		bodyBufPool.Put(buf)
 		return nil, nil
 	}
 	if cfg.MIMEFilter != "" && mime != cfg.MIMEFilter {
 		if idx := strings.IndexByte(cfg.MIMEFilter, '/'); idx >= 0 {
 			if !strings.HasPrefix(mime, cfg.MIMEFilter[:idx]) {
+				bodyBufPool.Put(buf)
 				return nil, nil
 			}
 		} else {
+			bodyBufPool.Put(buf)
 			return nil, nil
 		}
 	}
@@ -300,11 +333,14 @@ func processOneOffset(warcPath string, off GzipMemberOffset, cfg PackConfig, con
 		htmlBody = htmlBody[:cfg.MaxBodySize]
 	}
 	if len(htmlBody) == 0 {
+		bodyBufPool.Put(buf)
 		return nil, nil
 	}
 
-	// Convert HTML → Markdown
+	// Convert HTML → Markdown (htmlBody is a sub-slice of the pooled buffer).
 	res := convertFn(htmlBody, "")
+	bodyBufPool.Put(buf) // return buffer now that conversion read the data
+
 	if !res.HasContent || res.Markdown == "" {
 		return nil, nil
 	}

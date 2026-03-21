@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,20 @@ import (
 	mdpkg "github.com/go-mizu/mizu/blueprints/search/pkg/markdown"
 	warcpkg "github.com/go-mizu/mizu/blueprints/search/pkg/warc"
 )
+
+// bodyBufPool recycles large byte buffers used for io.ReadAll of WARC record
+// bodies. Each buffer grows to MaxBodySize+8192 once and is reused, eliminating
+// ~50,000 allocations per shard.
+var bodyBufPool = sync.Pool{
+	New: func() any {
+		b := bytes.NewBuffer(make([]byte, 0, 520*1024)) // 512 KB + 8 KB
+		return b
+	},
+}
+
+// maxPackWorkers caps the number of parallel converter workers to limit peak
+// memory. ConvertLight is ~1ms, so 8 workers easily saturate I/O throughput.
+const maxPackWorkers = 8
 
 // PackConfig configures the pack pipeline: .warc.gz → .md.warc.gz
 type PackConfig struct {
@@ -62,7 +77,7 @@ type PackStats struct {
 	Errors        int64
 	ReadBytes     int64
 	WriteBytes    int64
-	PeakMemMB     float64
+	PeakMemMB     float64 // peak RSS in MB (VmRSS on Linux)
 	Duration      time.Duration
 }
 
@@ -76,6 +91,9 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 	}
 	if cfg.Workers <= 0 {
 		cfg.Workers = runtime.NumCPU() * 4
+	}
+	if cfg.Workers > maxPackWorkers {
+		cfg.Workers = maxPackWorkers
 	}
 	if cfg.StatusCode == 0 {
 		cfg.StatusCode = 200
@@ -97,8 +115,9 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 		return nil, err
 	}
 
-	// Reduce GC frequency during bulk conversion — short-lived per-doc allocs.
-	prevGOGC := debug.SetGCPercent(400)
+	// GOGC=200: 2× live heap. Higher values waste memory as GC headroom;
+	// pack is I/O-bound so the extra GC pauses are hidden by disk/network waits.
+	prevGOGC := debug.SetGCPercent(200)
 	defer debug.SetGCPercent(prevGOGC)
 
 	var stats PackStats
@@ -248,28 +267,35 @@ func packReadFile(ctx context.Context, warcPath string, cfg PackConfig, stats *P
 			continue
 		}
 
-		// Read body (HTTP status line + headers + HTML body)
+		// Read body using pooled buffer to eliminate per-record allocations.
+		buf := bodyBufPool.Get().(*bytes.Buffer)
+		buf.Reset()
 		var bodyReader io.Reader = rec.Body
 		if cfg.MaxBodySize > 0 {
 			bodyReader = io.LimitReader(rec.Body, cfg.MaxBodySize+8192)
 		}
-		bodyBytes, err := io.ReadAll(bodyReader)
+		_, err := buf.ReadFrom(bodyReader)
 		if err != nil {
+			bodyBufPool.Put(buf)
 			atomic.AddInt64(&stats.Errors, 1)
 			continue
 		}
+		bodyBytes := buf.Bytes()
 		atomic.AddInt64(&stats.ReadBytes, int64(len(bodyBytes)))
 
 		status, mime, htmlBody := parseHTTPResponseFast(bodyBytes)
 		if cfg.StatusCode != 0 && status != cfg.StatusCode {
+			bodyBufPool.Put(buf)
 			continue
 		}
 		if cfg.MIMEFilter != "" && mime != cfg.MIMEFilter {
 			if idx := strings.IndexByte(cfg.MIMEFilter, '/'); idx >= 0 {
 				if !strings.HasPrefix(mime, cfg.MIMEFilter[:idx]) {
+					bodyBufPool.Put(buf)
 					continue
 				}
 			} else {
+				bodyBufPool.Put(buf)
 				continue
 			}
 		}
@@ -279,17 +305,24 @@ func packReadFile(ctx context.Context, warcPath string, cfg PackConfig, stats *P
 		}
 
 		if len(htmlBody) == 0 {
+			bodyBufPool.Put(buf)
 			continue
 		}
 
 		atomic.AddInt64(&stats.InputRecords, 1)
 
+		// Copy htmlBody out of the pooled buffer so we can return it immediately.
+		// The copy is max 512 KB; far cheaper than allocating a fresh buffer per record.
+		htmlCopy := make([]byte, len(htmlBody))
+		copy(htmlCopy, htmlBody)
+		bodyBufPool.Put(buf)
+
 		itemCh <- packItem{
 			targetURI: rec.Header.TargetURI(),
 			date:      rec.Header.Get("WARC-Date"),
 			recordID:  rec.Header.RecordID(),
-			htmlBody:  htmlBody,
-			htmlLen:   len(htmlBody),
+			htmlBody:  htmlCopy,
+			htmlLen:   len(htmlCopy),
 		}
 	}
 	return r.Err()
