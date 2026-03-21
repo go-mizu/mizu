@@ -336,3 +336,94 @@ func ccPctReduction(from, to int64) string {
 	}
 	return fmt.Sprintf("%.0f", float64(from-to)/float64(from)*100)
 }
+
+// packDirectToParquet runs the pack pipeline and writes directly to parquet,
+// skipping the intermediate .md.warc.gz file entirely. This eliminates:
+//   - gzip compression during pack write
+//   - WARC serialization during pack write
+//   - disk I/O for the intermediate file
+//   - gzip decompression during export read
+//   - WARC parsing during export read
+//
+// Returns (rows, htmlBytes, mdBytes, packStats, error).
+func packDirectToParquet(ctx context.Context, packCfg warcmd.PackConfig, parquetPath string,
+	progressFn warcmd.ProgressFunc) (int64, int64, int64, *warcmd.PackStats, error) {
+
+	tmpPath := parquetPath + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(parquetPath), 0o755); err != nil {
+		return 0, 0, 0, nil, fmt.Errorf("mkdir parquet dir: %w", err)
+	}
+
+	_ = os.Remove(tmpPath)
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return 0, 0, 0, nil, fmt.Errorf("create parquet: %w", err)
+	}
+	defer func() {
+		out.Close()
+		os.Remove(tmpPath) // cleanup on error; no-op after successful rename
+	}()
+
+	pw := parquet.NewGenericWriter[ccWARCExportRow](out,
+		parquet.Compression(&zstd.Codec{Level: zstd.SpeedBestCompression}),
+		parquet.MaxRowsPerRowGroup(100_000),
+		parquet.PageBufferSize(2*1024*1024),
+	)
+
+	var totalRows, totalHTML, totalMd int64
+	batch := make([]ccWARCExportRow, 0, 1000)
+
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if _, err := pw.Write(batch); err != nil {
+			return err
+		}
+		batch = batch[:0]
+		return nil
+	}
+
+	writerFn := func(rec warcmd.PackRecord) error {
+		md := sanitizeUTF8(rec.Markdown)
+		url := strings.TrimSpace(rec.TargetURI)
+		batch = append(batch, ccWARCExportRow{
+			DocID:          ccURLToDocID(url),
+			URL:            url,
+			Host:           ccHostFromURL(url),
+			CrawlDate:      rec.Date,
+			WARCRecordID:   uuid.New().String(),
+			WARCRefersTo:   rec.RefersTo,
+			HTMLLength:     int64(rec.HTMLLen),
+			MarkdownLength: int64(len(md)),
+			Markdown:       md,
+		})
+		totalRows++
+		totalHTML += int64(rec.HTMLLen)
+		totalMd += int64(len(md))
+		if len(batch) >= 1000 {
+			return flush()
+		}
+		return nil
+	}
+
+	stats, packErr := warcmd.RunPackDirect(ctx, packCfg, writerFn, progressFn)
+	if packErr != nil {
+		return 0, 0, 0, stats, packErr
+	}
+
+	// Flush remaining rows and finalize parquet.
+	if err := flush(); err != nil {
+		return 0, 0, 0, stats, fmt.Errorf("flush parquet: %w", err)
+	}
+	if err := pw.Close(); err != nil {
+		return 0, 0, 0, stats, fmt.Errorf("close parquet writer: %w", err)
+	}
+	if err := out.Close(); err != nil {
+		return 0, 0, 0, stats, fmt.Errorf("close parquet file: %w", err)
+	}
+	if err := os.Rename(tmpPath, parquetPath); err != nil {
+		return 0, 0, 0, stats, fmt.Errorf("finalize parquet: %w", err)
+	}
+	return totalRows, totalHTML, totalMd, stats, nil
+}
