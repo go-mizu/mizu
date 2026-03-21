@@ -63,8 +63,8 @@ export function architecturePage(): string {
   <div class="section-glow"></div>
   <div class="section-inner">
     <div class="arch-label">System Overview</div>
-    <div class="arch-h">Four layers, one API</div>
-    <div class="arch-sub">Requests flow from any client to the nearest edge node. The edge authenticates and routes, then reads or writes metadata and blobs.</div>
+    <div class="arch-h">Client, edge, storage</div>
+    <div class="arch-sub">Every request follows the same path. Any client - browser, AI agent, CLI - hits the nearest edge node for auth and routing. The edge reads and writes to two storage layers: a metadata index and a content-addressed blob store.</div>
 
     <div class="topo">
       <!-- Clients -->
