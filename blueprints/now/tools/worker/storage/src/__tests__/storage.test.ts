@@ -579,6 +579,158 @@ describe("Storage API", () => {
     });
   });
 
+  // ── Content-Hash Dedup ─────────────────────────────────────────────
+  describe("Content-Hash Dedup", () => {
+    it("HEAD /files/{path} includes X-Content-Hash header", async () => {
+      const res = await api("/files/hello.txt", { method: "HEAD", token });
+      expect(res.status).toBe(200);
+      const hash = res.headers.get("X-Content-Hash");
+      expect(hash).toBeTruthy();
+      expect(hash!.length).toBe(64); // SHA-256 hex = 64 chars
+    });
+
+    it("GET /files/{path} JSON response includes content_hash", async () => {
+      const res = await api("/files/hello.txt", { token });
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.content_hash).toBeTruthy();
+      expect(body.content_hash.length).toBe(64);
+    });
+
+    it("same content produces same content_hash across files", async () => {
+      await seedFile("testuser", "dedup/a.txt", "identical content");
+      await seedFile("testuser", "dedup/b.txt", "identical content");
+
+      const resA = await api("/files/dedup/a.txt", { method: "HEAD", token });
+      const resB = await api("/files/dedup/b.txt", { method: "HEAD", token });
+
+      expect(resA.headers.get("X-Content-Hash")).toBe(resB.headers.get("X-Content-Hash"));
+    });
+
+    it("different content produces different content_hash", async () => {
+      await seedFile("testuser", "dedup/x.txt", "content X");
+      await seedFile("testuser", "dedup/y.txt", "content Y");
+
+      const resX = await api("/files/dedup/x.txt", { method: "HEAD", token });
+      const resY = await api("/files/dedup/y.txt", { method: "HEAD", token });
+
+      expect(resX.headers.get("X-Content-Hash")).not.toBe(resY.headers.get("X-Content-Hash"));
+    });
+
+    it("POST /files/uploads with content_hash deduplicates when blob exists", async () => {
+      // Seed a file to ensure the blob exists
+      await seedFile("testuser", "dedup/original.txt", "dedup upload content");
+
+      // Get the content_hash from the seeded file
+      const headRes = await api("/files/dedup/original.txt", { method: "HEAD", token });
+      const contentHash = headRes.headers.get("X-Content-Hash")!;
+
+      // Initiate upload with the same content_hash
+      const res = await api("/files/uploads", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "dedup/copy.txt",
+          content_type: "text/plain",
+          content_hash: contentHash,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.deduplicated).toBe(true);
+      expect(body.path).toBe("dedup/copy.txt");
+      expect(body.tx).toBeGreaterThan(0);
+      expect(body.size).toBeGreaterThan(0);
+    });
+
+    it("POST /files/uploads with unknown content_hash returns presigned URL", async () => {
+      const fakeHash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+
+      const res = await api("/files/uploads", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "dedup/new-file.txt",
+          content_type: "text/plain",
+          content_hash: fakeHash,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.deduplicated).toBeUndefined();
+      expect(body.url).toBeTruthy();
+      expect(body.url).toContain("X-Amz-Signature");
+      expect(body.content_hash).toBe(fakeHash);
+    });
+
+    it("POST /files/uploads/complete with content_hash records metadata", async () => {
+      // First seed content via engine to create the blob
+      await seedFile("testuser", "dedup/source-for-complete.txt", "complete test content");
+      const headRes = await api("/files/dedup/source-for-complete.txt", { method: "HEAD", token });
+      const contentHash = headRes.headers.get("X-Content-Hash")!;
+
+      // Complete upload with content_hash pointing to existing blob
+      const res = await api("/files/uploads/complete", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: "dedup/completed-copy.txt",
+          content_hash: contentHash,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as any;
+      expect(body.path).toBe("dedup/completed-copy.txt");
+      expect(body.size).toBeGreaterThan(0);
+      expect(body.tx).toBeGreaterThan(0);
+
+      // Verify the file is accessible
+      const verifyRes = await api("/files/dedup/completed-copy.txt", { method: "HEAD", token });
+      expect(verifyRes.status).toBe(200);
+      expect(verifyRes.headers.get("X-Content-Hash")).toBe(contentHash);
+    });
+
+    it("MCP storage_write + storage_read preserves content_hash", async () => {
+      // Write via MCP
+      const writeRes = await api("/mcp", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 20, method: "tools/call",
+          params: { name: "storage_write", arguments: { path: "dedup/mcp-file.txt", content: "mcp dedup test" } },
+        }),
+      });
+      const writeBody = await writeRes.json() as any;
+      expect(writeBody.result.isError).toBeFalsy();
+
+      // Check content_hash via HEAD
+      const headRes = await api("/files/dedup/mcp-file.txt", { method: "HEAD", token });
+      expect(headRes.status).toBe(200);
+      expect(headRes.headers.get("X-Content-Hash")).toBeTruthy();
+
+      // Read via MCP
+      const readRes = await api("/mcp", {
+        method: "POST",
+        token,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 21, method: "tools/call",
+          params: { name: "storage_read", arguments: { path: "dedup/mcp-file.txt" } },
+        }),
+      });
+      const readBody = await readRes.json() as any;
+      expect(readBody.result.isError).toBeFalsy();
+      expect(readBody.result.content[0].text).toContain("mcp dedup test");
+    });
+  });
+
   // ── Path validation ────────────────────────────────────────────────
   describe("Path validation", () => {
     it("rejects paths with null bytes via uploads", async () => {
