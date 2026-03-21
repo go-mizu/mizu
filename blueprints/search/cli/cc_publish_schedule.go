@@ -562,6 +562,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	logLine(fmt.Sprintf("  Binary:      %s", searchBin))
 
 	// ── Initial cleanup ──────────────────────────────────────────────────────
+	schedStart := time.Now()
 	committed := ccSchedReadCommitted(statsCSV, cfg.CrawlID)
 	ccCleanupLeftovers(cfg.CrawlID, committed, logLine)
 	logLine("")
@@ -836,8 +837,13 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		// Line 5: latest HF commit from watcher.
 		if hasWatcherStatus && watcherStatus.CommitNumber > 0 {
 			ago := time.Since(watcherStatus.Timestamp).Round(time.Second)
-			logLine(fmt.Sprintf("  HF     | #%d: %q  +%d shards  (%s ago)",
-				watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit, ago))
+			if watcherStatus.Timestamp.Before(schedStart) {
+				logLine(fmt.Sprintf("  HF     | (previous) #%d: %q  +%d shards",
+					watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit))
+			} else {
+				logLine(fmt.Sprintf("  HF     | #%d: %q  +%d shards  (%s ago)",
+					watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit, ago))
+			}
 		}
 
 		// Line 6: running sessions detail.
