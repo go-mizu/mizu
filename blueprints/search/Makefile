@@ -442,6 +442,13 @@ deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS
 	@echo "==> Verifying dashboard is responding..."
 	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
 
+.PHONY: deploy-redis
+deploy-redis: ## Install/configure Redis on remote server (idempotent; SERVER=2 for server2)
+	@echo "==> Deploying install_redis.sh to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SCP) scripts/install_redis.sh $(REMOTE_SSH):~/scripts/install_redis.sh
+	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/install_redis.sh && bash ~/scripts/install_redis.sh'
+
 .PHONY: deploy-cc-watch
 deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
 	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
