@@ -8,6 +8,8 @@ import { register as registerOAuth } from "./routes/oauth";
 import { register as registerCli } from "./routes/cli";
 import { register as registerMagic } from "./routes/magic";
 import { register as registerShare } from "./routes/share";
+import { register as registerDashboard } from "./routes/dashboard";
+import { register as registerBenchmark } from "./routes/benchmark";
 import { getSessionActor } from "./pages/session";
 import { homePage } from "./pages/home";
 import { developersPage } from "./pages/developers";
@@ -16,8 +18,14 @@ import { pricingPage } from "./pages/pricing";
 import { cliPage } from "./pages/cli";
 import { browsePage } from "./pages/browse";
 import { privacyPage } from "./pages/privacy";
-import { CloudflareEngine } from "./storage/cloudflare";
+import { dashboardPage } from "./pages/dashboard";
+import { D1Engine } from "./storage/d1_driver";
+import { DOEngine, StorageDO } from "./storage/do_driver";
+import { HyperdriveEngine } from "./storage/hyperdrive_driver";
+import { NeonEngine } from "./storage/neon_driver";
 import type { Env, Variables } from "./types";
+
+export { StorageDO };
 
 const app = new OpenAPIHono<{ Bindings: Env; Variables: Variables }>();
 
@@ -25,14 +33,22 @@ app.use("*", cors());
 
 // ── Inject storage engine into request context ──────────────────────
 app.use("*", async (c, next) => {
-  const engine = new CloudflareEngine({
-    db: c.env.DB,
+  const r2Config = {
     bucket: c.env.BUCKET,
     r2Endpoint: c.env.R2_ENDPOINT,
     r2AccessKeyId: c.env.R2_ACCESS_KEY_ID,
     r2SecretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
     r2BucketName: c.env.R2_BUCKET_NAME,
-  });
+  };
+  const driver = c.env.STORAGE_DRIVER;
+  const engine =
+    driver === "do" && c.env.STORAGE_DO
+      ? new DOEngine({ ns: c.env.STORAGE_DO!, ...r2Config })
+      : driver === "hyperdrive" && c.env.HYPERDRIVE
+        ? new HyperdriveEngine({ connectionString: c.env.HYPERDRIVE.connectionString, ...r2Config })
+        : driver === "neon" && c.env.POSTGRES_DSN
+          ? new NeonEngine({ connectionString: c.env.POSTGRES_DSN, ...r2Config })
+          : new D1Engine({ db: c.env.DB, ...r2Config });
   c.set("engine", engine);
   await next();
 });
@@ -40,7 +56,8 @@ app.use("*", async (c, next) => {
 // ── Pages (no auth — session read optionally for signed-in state) ───
 app.get("/", async (c) => {
   const actor = await getSessionActor(c);
-  return c.html(homePage(actor));
+  if (actor) return c.redirect("/dashboard", 302);
+  return c.html(homePage(null));
 });
 app.get("/developers", async (c) => {
   const actor = await getSessionActor(c);
@@ -55,6 +72,7 @@ app.get("/cli", async (c) => {
 });
 app.get("/browse", browsePage as any);
 app.get("/browse/*", browsePage as any);
+app.get("/dashboard", dashboardPage as any);
 
 // ── Storage API routes (/files/*) ────────────────────────────────────
 registerFiles(app);
@@ -69,6 +87,8 @@ registerMcp(app);
 registerOAuth(app);
 registerCli(app);
 registerMagic(app);
+registerDashboard(app);
+registerBenchmark(app);
 
 // ── OpenAPI spec (auto-generated from route definitions) ────────────
 app.doc("/openapi.json", {

@@ -26,7 +26,7 @@ export function homePage(actor: string | null = null): string {
   const heroSignedIn = `
 <div class="hero-greeting">Welcome back, <strong>${displayName}</strong></div>
 <div class="hero-actions">
-  <a href="/browse" class="btn btn--primary"><span class="btn-icon">&gt;_</span> Go to my files</a>
+  <a href="/dashboard" class="btn btn--primary"><span class="btn-icon">&gt;_</span> Go to Dashboard</a>
 </div>`;
 
   const heroSignedOut = `
@@ -492,6 +492,7 @@ async function signIn(){
     const res=await fetch('/auth/magic-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
     const data=await res.json();
     if(!res.ok) throw new Error(data.message||'Something went wrong. Please try again.');
+    if(data.link){window.location.href=data.link;return}
     document.getElementById('signin-form').innerHTML='<div class="prompt-success">Check your inbox! We sent you a sign-in link.</div>'
   }catch(err){
     errEl.textContent=err.message;btn.disabled=false;input.disabled=false;

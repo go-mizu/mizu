@@ -137,24 +137,29 @@ export function register(app: App) {
 
     // Send email via Resend
     const html = magicLinkEmail(link, actor.slice(2), origin);
+    console.log("[magic] Sending magic link to:", email, "actor:", actor, "link:", link);
     try {
+      const payload = {
+        from: `${SITE_NAME} <noreply@liteio.dev>`,
+        to: [email],
+        subject: `Your sign-in link for Storage`,
+        html,
+      };
+      console.log("[magic] Resend payload (no html):", JSON.stringify({ ...payload, html: `[${html.length} chars]` }));
+
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${c.env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          from: `${SITE_NAME} <noreply@liteio.dev>`,
-          to: [email],
-          subject: `Your sign-in link for Storage`,
-          html,
-        }),
+        body: JSON.stringify(payload),
       });
 
+      const resBody = await res.text();
+      console.log("[magic] Resend response:", res.status, resBody);
+
       if (!res.ok) {
-        const err = await res.text();
-        console.error("[magic] Resend error:", res.status, err);
         // Clean up the token we just created since email failed
         await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
         return c.json({ error: "email_failed", message: "Could not send email. Please try again." }, 500);
@@ -163,6 +168,11 @@ export function register(app: App) {
       console.error("[magic] Failed to send email:", e);
       await c.env.DB.prepare("DELETE FROM magic_tokens WHERE token = ?").bind(token).run();
       return c.json({ error: "email_failed", message: "Could not send email. Please try again." }, 500);
+    }
+
+    // In dev mode, return the link directly for testing
+    if (c.env.DEV_MODE === "1") {
+      return c.json({ message: "Magic link sent.", link }, 200);
     }
 
     // Always return the same generic message (prevents user enumeration)
@@ -208,7 +218,7 @@ export function register(app: App) {
 
     // Support return_to for OAuth flow (only allow same-origin paths)
     const url = new URL(c.req.url);
-    let redirectTo = "/";
+    let redirectTo = "/dashboard";
     const returnTo = url.searchParams.get("return_to");
     if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
       redirectTo = returnTo;
