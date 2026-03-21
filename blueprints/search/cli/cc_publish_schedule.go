@@ -273,8 +273,8 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 	// Load average too high: other processes are contending.
 	loadAvg := readLoadAvg1()
 	if loadAvg > 0 {
-		overloadThreshold := float64(hw.CPUCores) * 3
-		highThreshold := float64(hw.CPUCores) * 2
+		overloadThreshold := float64(hw.CPUCores) * 4
+		highThreshold := float64(hw.CPUCores) * 2.5
 
 		if loadAvg > overloadThreshold {
 			// Severely overloaded — shed load proportionally.

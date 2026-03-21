@@ -3,7 +3,7 @@
 # Designed to run from cron every 30 minutes.
 #
 # Checks:
-#   open-index/draft   — CC publish watcher; expects a commit within 3 hours
+#   open-index/open-markdown   — CC publish watcher; expects a commit within 3 hours
 #   open-index/arctic  — Arctic backward sweep; expects a commit within 8 hours
 #
 # Exits 0 always (cron-safe). Logs to $HOME/log/hf_check.log.
@@ -76,7 +76,7 @@ check_repo() {
 log "INFO" "=== HF commit check ==="
 
 # Collect results
-draft_result=$(check_repo "open-index/draft"  10800 "CC watcher")    # 3h
+draft_result=$(check_repo "open-index/open-markdown"  10800 "CC watcher")    # 3h
 arctic_result=$(check_repo "open-index/arctic" 28800 "Arctic backward") # 8h
 
 # Write status JSON

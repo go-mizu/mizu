@@ -81,7 +81,7 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), comma-separated list, or all (pipeline mode)")
 	cmd.Flags().StringVar(&repoRoot, "repo-root", "", "Local export repo root (default: $HOME/data/common-crawl/{crawl}/export/repo)")
-	cmd.Flags().StringVar(&repoID, "repo", "open-index/draft", "Hugging Face dataset repo ID")
+	cmd.Flags().StringVar(&repoID, "repo", "open-index/open-markdown", "Hugging Face dataset repo ID")
 	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists (manual mode only)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
 	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download, pack, export shards (writes parquets locally; use --watch to push)")
@@ -1097,13 +1097,13 @@ Every row in a Parquet file is one web page. Along with the markdown body, we pr
 from datasets import load_dataset
 
 # stream the entire dataset
-ds = load_dataset("open-index/draft", name="%[1]s", split="train", streaming=True)
+ds = load_dataset("open-index/open-markdown", name="%[1]s", split="train", streaming=True)
 for doc in ds:
     print(doc["url"], len(doc["markdown"]))
 
 # load a single shard into memory
 ds = load_dataset(
-    "open-index/draft",
+    "open-index/open-markdown",
     data_files="data/%[1]s/00000.parquet",
     split="train",
 )
@@ -1115,7 +1115,7 @@ ds = load_dataset(
 from huggingface_hub import snapshot_download
 
 folder = snapshot_download(
-    "open-index/draft",
+    "open-index/open-markdown",
     repo_type="dataset",
     local_dir="./open-index/",
     allow_patterns="data/%[1]s/*",
@@ -1128,7 +1128,7 @@ For faster downloads, install %[3]spip install huggingface_hub[hf_transfer]%[3]s
 
 %[2]ssql
 SELECT url, host, markdown_length
-FROM read_parquet('hf://datasets/open-index/draft/data/%[1]s/*.parquet')
+FROM read_parquet('hf://datasets/open-index/open-markdown/data/%[1]s/*.parquet')
 WHERE host = 'en.wikipedia.org'
 LIMIT 10;
 %[2]s
@@ -1137,7 +1137,7 @@ LIMIT 10;
 
 ## Dataset Description
 
-- **Homepage and Repository:** [https://huggingface.co/datasets/open-index/draft](https://huggingface.co/datasets/open-index/draft)
+- **Homepage and Repository:** [https://huggingface.co/datasets/open-index/open-markdown](https://huggingface.co/datasets/open-index/open-markdown)
 - **Point of Contact:** please create a discussion on the Community tab
 - **License:** Open Data Commons Attribution License (ODC-By) v1.0
 
@@ -1242,7 +1242,7 @@ The dataset is released under the **Open Data Commons Attribution License (ODC-B
 
 ### Contact
 
-Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
+Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/open-markdown/discussions) for questions, feedback, or issues.
 `,
 		c,               // [1] crawlID
 		cb,              // [2] triple backtick
