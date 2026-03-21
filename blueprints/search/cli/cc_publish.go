@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/arctic"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
 	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
 )
@@ -346,10 +347,18 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	return nil
 }
 
-// ccRunPipeline downloads, packs, and exports shards to local .parquet files.
+// ccRunPipeline downloads and converts shards directly to .parquet files.
 // It does NOT push to HuggingFace — run `--watch` in a separate session for that.
 // Parquets are written atomically (via .parquet.tmp → rename) so the watcher
 // only sees fully-written files. A .meta sidecar carries timing info to the watcher.
+//
+// The direct pipeline merges pack+export into a single step:
+//
+//	.warc.gz → decompress → convert HTML→MD → write parquet (zstd)
+//
+// This eliminates the intermediate .md.warc.gz file and its gzip compression/
+// decompression overhead. If a .md.warc.gz already exists from a previous run,
+// it falls back to the legacy export path.
 func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup, lightConvert, skipErrors bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
@@ -365,7 +374,7 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	skippedCSV := ccSkippedCSVPath(repoRoot)
 
 	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export"))
+	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → parquet (direct)"))
 	fmt.Println()
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %s\n", infoStyle.Render(strconv.Itoa(len(indices))))
@@ -375,18 +384,15 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	// Load committed set once at startup (watcher maintains this via stats.csv).
 	committed := ccLoadCommittedSet(statsCSV, crawlID)
 
-	// Prefetch: pack the next shard in background while exporting the current.
-	// This overlaps network I/O (WARC download) with CPU-bound work (export),
-	// roughly doubling per-session throughput.
+	// Prefetch: download the NEXT shard's raw .warc.gz while processing the current.
+	// This overlaps network I/O with CPU-bound pack+parquet work.
 	type prefetchResult struct {
 		idx          int
+		localPath    string
+		downloaded   bool
 		err          error
-		durDownloadS int64
-		durConvertS  int64
 	}
 	var prefetchCh chan prefetchResult
-
-	// cancelPrefetch cancels any in-flight prefetch goroutine.
 	var prefetchCancel context.CancelFunc
 	defer func() {
 		if prefetchCancel != nil {
@@ -394,14 +400,9 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 	}()
 
-	// startPrefetch kicks off pack for the next shard in background.
-	startPrefetch := func(nextIdx int) {
-		nextShard := fmt.Sprintf("%05d", nextIdx)
-		nextMdWARC := filepath.Join(warcMdDir, nextShard+".md.warc.gz")
-		nextParquet := filepath.Join(dataDir, nextShard+".parquet")
-
-		// Don't prefetch if already done.
-		if committed[nextIdx] || fileExists(nextParquet) || fileExists(nextMdWARC) {
+	startPrefetchDownload := func(nextIdx int) {
+		nextParquet := filepath.Join(dataDir, fmt.Sprintf("%05d.parquet", nextIdx))
+		if committed[nextIdx] || fileExists(nextParquet) {
 			return
 		}
 
@@ -410,17 +411,8 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		pfCtx, prefetchCancel = context.WithCancel(ctx)
 
 		go func() {
-			rawExists := ccFindRawWARC(crawlID, nextIdx) != ""
-			t0 := time.Now()
-			packErr := runCCWarcPack(pfCtx, crawlID, strconv.Itoa(nextIdx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, nextShard)
-			elapsed := int64(time.Since(t0).Seconds())
-			r := prefetchResult{idx: nextIdx, err: packErr}
-			if rawExists {
-				r.durConvertS = elapsed
-			} else {
-				r.durDownloadS = elapsed
-			}
-			prefetchCh <- r
+			localPath, downloaded, dlErr := ccEnsureRawWARC(pfCtx, crawlID, nextIdx)
+			prefetchCh <- prefetchResult{idx: nextIdx, localPath: localPath, downloaded: downloaded, err: dlErr}
 		}()
 	}
 
@@ -432,11 +424,10 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		shard := fmt.Sprintf("%05d", idx)
 		mdWARCPath := filepath.Join(warcMdDir, shard+".md.warc.gz")
 		parquetPath := filepath.Join(dataDir, shard+".parquet")
-		tmpPath := parquetPath + ".tmp"
 
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
-		// Skip: already committed to HF (watcher updated stats.csv).
+		// Skip: already committed to HF.
 		if committed[idx] {
 			fmt.Printf("  [%s] already committed, skipping\n", labelStyle.Render(shard))
 			fmt.Println()
@@ -451,115 +442,148 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		// Clean up orphaned .tmp from a previous crash.
+		tmpPath := parquetPath + ".tmp"
 		if fileExists(tmpPath) {
 			_ = os.Remove(tmpPath)
 		}
 
-		var durDownloadS, durConvertS, durExportS int64
+		var durDownloadS, durConvertS int64
 
-		// Check if prefetch already packed this shard.
-		prefetched := false
+		// Legacy fallback: if .md.warc.gz exists from a prior run, export it.
+		if fileExists(mdWARCPath) {
+			fmt.Printf("  [%s] legacy: exporting existing .md.warc.gz\n", labelStyle.Render(shard))
+			t0 := time.Now()
+			rows, _, _, exportErr := exportWARCMdShardToParquet(mdWARCPath, parquetPath, nil)
+			if exportErr != nil {
+				if skipErrors {
+					fmt.Printf("  [%s] export error (skipping): %v\n", labelStyle.Render(shard), exportErr)
+					ccRecordSkip(skippedCSV, crawlID, idx, "export", exportErr)
+					fmt.Println()
+					continue
+				}
+				return fmt.Errorf("export %d: %w", idx, exportErr)
+			}
+			durExportS := int64(time.Since(t0).Seconds())
+			fmt.Printf("  [%s] exported %s docs  %s\n", labelStyle.Render(shard), infoStyle.Render(ccFmtInt64(rows)), successStyle.Render("done"))
+			peakRSS := int64(warcmd.ReadRSSMB())
+			metaData, _ := json.Marshal(ccShardMeta{DurExportS: durExportS, PeakRSSMB: peakRSS})
+			_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
+			if cleanup {
+				_ = os.Remove(mdWARCPath)
+			}
+			fmt.Println()
+			continue
+		}
+
+		// ── Direct pipeline: download → pack → parquet in one step ──
+
+		// Check if prefetch downloaded this shard's raw WARC.
+		var rawWARCPath string
+		prefetchedDownload := false
 		if prefetchCh != nil {
 			select {
 			case pf := <-prefetchCh:
 				if pf.idx == idx && pf.err == nil {
-					prefetched = true
-					durDownloadS = pf.durDownloadS
-					durConvertS = pf.durConvertS
-					fmt.Printf("  [%s] prefetched (pack done in background)\n", labelStyle.Render(shard))
+					rawWARCPath = pf.localPath
+					prefetchedDownload = true
+					if pf.downloaded {
+						fmt.Printf("  [%s] raw WARC prefetched\n", labelStyle.Render(shard))
+					}
 				} else if pf.idx == idx && pf.err != nil {
-					// Prefetch failed — fall through to normal pack.
-					fmt.Printf("  [%s] prefetch failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
+					fmt.Printf("  [%s] prefetch download failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
 				}
 			default:
-				// Prefetch not done yet or for different shard — ignore.
+				// Prefetch not done yet — ignore.
 			}
 			prefetchCh = nil
 			prefetchCancel = nil
 		}
 
-		// Pack if md.warc.gz is missing and not prefetched.
-		if !prefetched && !fileExists(mdWARCPath) {
-			rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
-			fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
+		// Ensure raw .warc.gz is available.
+		if rawWARCPath == "" {
 			t0 := time.Now()
-			if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
+			path, downloaded, dlErr := ccEnsureRawWARC(ctx, crawlID, idx)
+			if dlErr != nil {
 				if skipErrors {
-					fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
-					ccRecordSkip(skippedCSV, crawlID, idx, "pack", packErr)
+					fmt.Printf("  [%s] download error (skipping): %v\n", labelStyle.Render(shard), dlErr)
+					ccRecordSkip(skippedCSV, crawlID, idx, "pack", dlErr)
 					fmt.Println()
 					continue
 				}
-				return fmt.Errorf("pack %d: %w", idx, packErr)
+				return fmt.Errorf("download %d: %w", idx, dlErr)
 			}
-			elapsed := int64(time.Since(t0).Seconds())
-			if rawWARCExists {
-				durConvertS = elapsed
-			} else {
-				durDownloadS = elapsed
+			rawWARCPath = path
+			if downloaded {
+				durDownloadS = int64(time.Since(t0).Seconds())
 			}
-		} else if !prefetched {
-			fmt.Printf("  [%s] md.warc.gz exists, skipping pack\n", labelStyle.Render(shard))
+		} else if prefetchedDownload {
+			// Download time was overlapped with previous shard processing.
+			durDownloadS = 0
 		}
 
-		if cleanup {
-			if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
-				_ = os.Remove(rawPath)
-				fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
-			}
-		}
-
-		// Start prefetching the NEXT shard while we export the current one.
-		// This overlaps network download (I/O) with parquet export (CPU).
+		// Start prefetching NEXT shard download while we pack+parquet the current.
 		if i+1 < len(indices) {
-			startPrefetch(indices[i+1])
+			startPrefetchDownload(indices[i+1])
 		}
 
-		// Export to .tmp then atomically rename to .parquet.
-		fmt.Printf("  [%s] exporting  ", labelStyle.Render(shard))
-		t0 := time.Now()
-		rows, _, _, exportErr := exportWARCMdShardToParquet(mdWARCPath, tmpPath, func(n int64, elapsed time.Duration) {
-			secs := elapsed.Seconds()
-			rate := float64(n) / secs
-			if secs < 0.1 {
-				rate = 0
+		// Direct pack → parquet (merged pipeline).
+		fmt.Printf("  [%s] packing  ", labelStyle.Render(shard))
+		packCfg := warcmd.PackConfig{
+			InputFiles:   []string{rawWARCPath},
+			Workers:      0,
+			Force:        true,
+			LightConvert: lightConvert,
+			StatusCode:   200,
+			MIMEFilter:   "text/html",
+			MaxBodySize:  512 * 1024,
+		}
+
+		progressFn := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
+			rate := float64(0)
+			if elapsed.Seconds() > 0 {
+				rate = float64(done) / elapsed.Seconds()
 			}
-			fmt.Printf("\r  [%s] exporting  %s docs  %s/s  %s",
+			fmt.Printf("\r  [%s] packing  in=%s  out=%s  err=%s  %.0f/s  %s",
 				labelStyle.Render(shard),
-				infoStyle.Render(ccFmtInt64(n)),
-				infoStyle.Render(fmt.Sprintf("%.0f", rate)),
-				elapsed.Round(time.Second),
-			)
-		})
-		if exportErr != nil {
-			_ = os.Remove(tmpPath)
-			fmt.Println()
+				infoStyle.Render(ccFmtInt64(total)),
+				infoStyle.Render(ccFmtInt64(done)),
+				infoStyle.Render(ccFmtInt64(errors)),
+				rate,
+				elapsed.Round(time.Millisecond))
+		}
+
+		rows, _, _, packStats, directErr := packDirectToParquet(ctx, packCfg, parquetPath, progressFn)
+		fmt.Printf("\r\033[K")
+
+		if directErr != nil {
 			if skipErrors {
-				fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
-				ccRecordSkip(skippedCSV, crawlID, idx, "export", exportErr)
+				fmt.Printf("  [%s] pack error (skipping): %v\n", labelStyle.Render(shard), directErr)
+				ccRecordSkip(skippedCSV, crawlID, idx, "pack", directErr)
 				fmt.Println()
 				continue
 			}
-			return fmt.Errorf("export %d: %w", idx, exportErr)
-		}
-		durExportS = int64(time.Since(t0).Seconds())
-
-		// Atomic rename: watcher only sees complete files.
-		if renameErr := os.Rename(tmpPath, parquetPath); renameErr != nil {
-			_ = os.Remove(tmpPath)
-			if skipErrors {
-				fmt.Printf("  [%s] %s rename error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), renameErr)
-				ccRecordSkip(skippedCSV, crawlID, idx, "rename", renameErr)
-				fmt.Println()
-				continue
-			}
-			return fmt.Errorf("rename %d: %w", idx, renameErr)
+			return fmt.Errorf("pack %d: %w", idx, directErr)
 		}
 
-		fmt.Printf("\r  [%s] exported   %s docs  %s\n",
+		if packStats != nil {
+			durConvertS = int64(packStats.Duration.Seconds())
+		}
+
+		// Get parquet size.
+		pqSize := int64(0)
+		if fi, statErr := os.Stat(parquetPath); statErr == nil {
+			pqSize = fi.Size()
+		}
+		rate := float64(0)
+		if packStats != nil && packStats.Duration.Seconds() > 0 {
+			rate = float64(rows) / packStats.Duration.Seconds()
+		}
+		fmt.Printf("  [%s] done  %s docs  %s  %.0f/s  peak=%s\n",
 			labelStyle.Render(shard),
 			infoStyle.Render(ccFmtInt64(rows)),
-			successStyle.Render("done"),
+			infoStyle.Render(formatBytes(pqSize)),
+			rate,
+			infoStyle.Render(formatBytes(int64(packStats.PeakMemMB*1024*1024))),
 		)
 
 		// Write .meta sidecar with timing and memory for the watcher.
@@ -567,14 +591,15 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		metaData, _ := json.Marshal(ccShardMeta{
 			DurDownloadS: durDownloadS,
 			DurConvertS:  durConvertS,
-			DurExportS:   durExportS,
 			PeakRSSMB:    peakRSS,
 		})
 		_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
 
-		// Aggressive cleanup: delete md.warc.gz after successful export.
+		// Cleanup raw .warc.gz.
 		if cleanup {
-			_ = os.Remove(mdWARCPath)
+			if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+				_ = os.Remove(rawPath)
+			}
 		}
 
 		fmt.Println()
@@ -731,6 +756,50 @@ func ccListCommittedShards(ctx context.Context, crawlID, repoRoot, repoID string
 func ccDefaultWARCMdConfig(crawlID string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "data", "common-crawl", crawlID, "warc_md")
+}
+
+// ccEnsureRawWARC ensures the raw .warc.gz for the given file index is downloaded.
+// Returns the local path and whether a download was needed (for timing).
+func ccEnsureRawWARC(ctx context.Context, crawlID string, idx int) (localPath string, downloaded bool, err error) {
+	// Check if already on disk.
+	if existing := ccFindRawWARC(crawlID, idx); existing != "" {
+		return existing, false, nil
+	}
+
+	// Need to download — resolve manifest and fetch.
+	resolvedID, _, resolveErr := ccResolveCrawlID(ctx, crawlID)
+	if resolveErr != nil {
+		return "", false, fmt.Errorf("resolving crawl: %w", resolveErr)
+	}
+
+	client := cc.NewClient("", 4)
+	paths, dlErr := client.DownloadManifest(ctx, resolvedID, "warc.paths.gz")
+	if dlErr != nil {
+		return "", false, fmt.Errorf("manifest: %w", dlErr)
+	}
+	if idx < 0 || idx >= len(paths) {
+		return "", false, fmt.Errorf("file index %d out of range (0–%d)", idx, len(paths)-1)
+	}
+
+	cfg := warcmd.DefaultConfig(resolvedID)
+	warcDir := cfg.WARCDir()
+	if mkErr := os.MkdirAll(warcDir, 0o755); mkErr != nil {
+		return "", false, mkErr
+	}
+
+	localPath = filepath.Join(warcDir, filepath.Base(paths[idx]))
+	if dlErr := downloadWithProgress(ctx, client, paths[idx], localPath); dlErr != nil {
+		return "", false, fmt.Errorf("downloading %s: %w", filepath.Base(localPath), dlErr)
+	}
+
+	// Write sidecar so ccFindRawWARC finds it next time.
+	home, _ := os.UserHomeDir()
+	warcMdDir := filepath.Join(home, "data", "common-crawl", resolvedID, "warc_md")
+	_ = os.MkdirAll(warcMdDir, 0o755)
+	sidecarPath := filepath.Join(warcMdDir, fmt.Sprintf("%05d.warc.path", idx))
+	_ = os.WriteFile(sidecarPath, []byte(localPath), 0o644)
+
+	return localPath, true, nil
 }
 
 // ccFindRawWARC finds the raw .warc.gz file for a given file index.
@@ -1041,9 +1110,9 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 
 				var etaStr string
 				if etaHours >= 24 {
-					etaStr = fmt.Sprintf("**%s** (~%.0f days)", etaDone.Format("January 2, 2006"), etaHours/24)
+					etaStr = fmt.Sprintf("**%s** (%.0f days)", etaDone.Format("January 2, 2006"), etaHours/24)
 				} else {
-					etaStr = fmt.Sprintf("**%s** (~%.1f hours)", etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
+					etaStr = fmt.Sprintf("**%s** (%.1f hours)", etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
 				}
 
 				// Build progress section with hardware context.
@@ -1053,8 +1122,9 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 					totals.ShardsPerHour, ccFmtInt64(int64(totals.Shards)), ccFmtInt64(projFiles), pctDone))
 				sb.WriteString(fmt.Sprintf("Estimated completion: %s\n\n", etaStr))
 
-				// Hardware snapshot.
-				hw := arctic.DetectHardware("")
+				// Hardware snapshot (use home dir for disk detection).
+				homeDir, _ := os.UserHomeDir()
+				hw := arctic.DetectHardware(homeDir)
 				sb.WriteString(fmt.Sprintf("**Current server:** %d CPU cores, %.0f GB RAM (%.1f GB available), %.0f GB disk free\n\n",
 					runtime.NumCPU(), hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskFreeGB))
 
@@ -1070,11 +1140,11 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 				var tenEtaStr string
 				if tenEtaHours >= 24 {
 					tenEtaDone := time.Now().Add(time.Duration(tenEtaHours * float64(time.Hour)))
-					tenEtaStr = fmt.Sprintf("%s (~%.0f days)", tenEtaDone.Format("January 2, 2006"), tenEtaHours/24)
+					tenEtaStr = fmt.Sprintf("%s (%.0f days)", tenEtaDone.Format("January 2, 2006"), tenEtaHours/24)
 				} else {
-					tenEtaStr = fmt.Sprintf("~%.1f hours", tenEtaHours)
+					tenEtaStr = fmt.Sprintf("%.1f hours", tenEtaHours)
 				}
-				sb.WriteString(fmt.Sprintf("**With 10 identical servers:** ~%.0f shards/hour → %s",
+				sb.WriteString(fmt.Sprintf("**With 10 identical servers:** %.0f shards/hour → %s",
 					tenServerRate, tenEtaStr))
 
 				progressLine = sb.String()
