@@ -17,6 +17,7 @@ export interface Env {
   STORAGE_DRIVER?: string; // "d1" (default) | "do" | "hyperdrive" | "neon"
   HYPERDRIVE?: Hyperdrive; // Cloudflare Hyperdrive binding (PostgreSQL proxy)
   POSTGRES_DSN?: string; // Direct PostgreSQL connection string (for Neon driver)
+  POSTGRES_EC1_DSN?: string; // Neon EU (eu-central-1) connection string
   DEV_MODE?: string; // "1" to return magic link in response (for testing)
 }
 

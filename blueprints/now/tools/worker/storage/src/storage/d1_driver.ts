@@ -268,6 +268,41 @@ export class D1Engine implements StorageEngine {
     });
   }
 
+  /** Benchmark-only: run write SQL transaction without R2 blob ops. */
+  async benchWriteMeta(actor: string, path: string, size: number, contentType: string): Promise<void> {
+    const s = await this.ensureShard(actor);
+    const addr = "bench_" + Date.now().toString(16);
+    const now = Date.now();
+    const name = path.split("/").pop() || path;
+
+    const oldFile = await this.db
+      .prepare(`SELECT addr FROM f_${s} WHERE path = ?`)
+      .bind(path)
+      .first<{ addr: string | null }>();
+
+    const tx = await this.nextTx(actor);
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO e_${s} (tx, action, path, addr, size, type, msg, ts) VALUES (?, 'write', ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(tx, path, addr, size, contentType, `bench meta ${path}`, now),
+      this.db
+        .prepare(
+          `INSERT INTO f_${s} (path, name, size, type, addr, tx, tx_time, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ` +
+            `ON CONFLICT (path) DO UPDATE SET name=excluded.name, size=excluded.size, type=excluded.type, addr=excluded.addr, tx=excluded.tx, tx_time=excluded.tx_time, updated_at=excluded.updated_at`,
+        )
+        .bind(path, name, size, contentType, addr, tx, now, now),
+      this.db
+        .prepare(
+          `INSERT INTO b_${s} (addr, size, ref_count, created_at) VALUES (?, ?, 1, ?) ` +
+            `ON CONFLICT (addr) DO UPDATE SET ref_count = ref_count + 1`,
+        )
+        .bind(addr, size, now),
+    ]);
+  }
+
   // ── write ────────────────────────────────────────────────────────
 
   async write(

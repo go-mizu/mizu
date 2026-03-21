@@ -7,6 +7,7 @@ import type { App } from "../types";
 import { D1Engine } from "../storage/d1_driver";
 import { NeonEngine } from "../storage/neon_driver";
 import { HyperdriveEngine } from "../storage/hyperdrive_driver";
+import { PgEngineBase, type QueryFn } from "../storage/pg_base";
 import type { StorageEngine } from "../storage/engine";
 
 interface BenchResult {
@@ -76,6 +77,10 @@ export function register(app: App) {
           if (!c.env.POSTGRES_DSN) return c.json({ error: "POSTGRES_DSN not configured" }, 400);
           engine = new NeonEngine({ connectionString: c.env.POSTGRES_DSN, ...r2Config });
           break;
+        case "neon_eu":
+          if (!c.env.POSTGRES_EC1_DSN) return c.json({ error: "POSTGRES_EC1_DSN not configured" }, 400);
+          engine = new NeonEngine({ connectionString: c.env.POSTGRES_EC1_DSN, ...r2Config });
+          break;
         case "hyperdrive":
           if (!c.env.HYPERDRIVE) return c.json({ error: "HYPERDRIVE not configured" }, 400);
           engine = new HyperdriveEngine({ connectionString: c.env.HYPERDRIVE.connectionString, ...r2Config });
@@ -103,6 +108,17 @@ export function register(app: App) {
           await engine.write(actor, `bench/f-${wi}.txt`, data.buffer as ArrayBuffer, "text/plain");
         }, N_WRITE),
       );
+
+      // ── Write Meta (SQL only, no R2) ────────────────────────────
+      const hasBenchMeta = "benchWriteMeta" in engine;
+      if (hasBenchMeta) {
+        let wmi = 0;
+        results.push(
+          await measure("write_meta", async () => {
+            await (engine as any).benchWriteMeta(actor, `bench/wm-${wmi++}.txt`, 64, "text/plain");
+          }, N_WRITE),
+        );
+      }
 
       // ── Head ───────────────────────────────────────────────────
       results.push(

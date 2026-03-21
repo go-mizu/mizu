@@ -148,6 +148,49 @@ export abstract class PgEngineBase implements StorageEngine {
   /** Execute writes in a transaction. Callback receives a query fn bound to the tx. */
   protected abstract transaction<R>(fn: (q: QueryFn) => Promise<R>): Promise<R>;
 
+  /** Benchmark-only: run write SQL transaction without R2 blob ops. */
+  async benchWriteMeta(actor: string, path: string, size: number, contentType: string): Promise<void> {
+    await this.ensureSchema();
+    const addr = "bench_" + Date.now().toString(16);
+    const now = Date.now();
+    const name = path.split("/").pop() || path;
+
+    await this.transaction(async (q) => {
+      await q("SELECT addr FROM stg_files WHERE owner = $1 AND path = $2", [actor, path]);
+
+      const txRows = await q<{ next_tx: number }>(
+        `INSERT INTO stg_tx (actor, next_tx) VALUES ($1, 1)
+         ON CONFLICT (actor) DO UPDATE SET next_tx = stg_tx.next_tx + 1
+         RETURNING next_tx`,
+        [actor],
+      );
+      const tx = txRows[0].next_tx;
+
+      await q(
+        `INSERT INTO stg_events (tx, actor, action, path, addr, size, type, msg, ts)
+         VALUES ($1, $2, 'write', $3, $4, $5, $6, $7, $8)`,
+        [tx, actor, path, addr, size, contentType, `bench meta ${path}`, now],
+      );
+
+      await q(
+        `INSERT INTO stg_files (owner, path, name, size, type, addr, tx, tx_time, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+         ON CONFLICT (owner, path) DO UPDATE SET
+           name=EXCLUDED.name, size=EXCLUDED.size, type=EXCLUDED.type,
+           addr=EXCLUDED.addr, tx=EXCLUDED.tx, tx_time=EXCLUDED.tx_time,
+           updated_at=EXCLUDED.updated_at`,
+        [actor, path, name, size, contentType, addr, tx, now],
+      );
+
+      await q(
+        `INSERT INTO stg_blobs (addr, actor, size, ref_count, created_at)
+         VALUES ($1, $2, $3, 1, $4)
+         ON CONFLICT (addr, actor) DO UPDATE SET ref_count = stg_blobs.ref_count + 1`,
+        [addr, actor, size, now],
+      );
+    });
+  }
+
   /** Ensure PostgreSQL schema exists (idempotent). */
   async ensureSchema(): Promise<void> {
     if (schemaReady) return;
