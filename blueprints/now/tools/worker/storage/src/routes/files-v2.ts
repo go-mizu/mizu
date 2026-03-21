@@ -48,7 +48,7 @@ async function searchFiles(c: C) {
   const actor = c.get("actor");
   const prefix = c.get("prefix");
 
-  const names = await getCachedNames(c.env.DB, actor);
+  const names = await getCachedNames(engine(c), actor);
   const tokens = query.split(/\s+/);
   const hits: { path: string; name: string; score: number }[] = [];
 
@@ -100,7 +100,13 @@ async function moveFile(c: C) {
     return err(c, "forbidden", "Path not allowed");
   }
 
-  const result = await engine(c).move(actor, from, to, body.message);
+  let result;
+  try {
+    result = await engine(c).move(actor, from, to, body.message);
+  } catch (e: any) {
+    if (e?.message?.includes("not found")) return err(c, "not_found", "Source file not found");
+    throw e;
+  }
 
   invalidateCache(actor);
   audit(c, "mv", `${from} → ${to}`);
@@ -191,7 +197,13 @@ async function completeUpload(c: C) {
   if (pfxErr) return pfxErr;
 
   const actor = c.get("actor");
-  const result = await engine(c).confirmUpload(actor, path, body.message);
+  let result;
+  try {
+    result = await engine(c).confirmUpload(actor, path, body.message);
+  } catch (e: any) {
+    if (e?.message?.includes("not found")) return err(c, "not_found", "Upload not found in storage");
+    throw e;
+  }
 
   const name = path.split("/").pop()!;
   invalidateCache(actor);
@@ -358,6 +370,66 @@ async function filesWildcard(c: C) {
   return err(c, "bad_request", "Method not allowed");
 }
 
+// ── POST /files/upload-url ─── fetch a URL and store it ─────────────
+async function uploadFromUrl(c: C) {
+  const actor = c.get("actor");
+  const body = await c.req.json<{ url: string; path?: string }>();
+
+  if (!body.url) return err(c, "bad_request", "url is required");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(body.url);
+  } catch {
+    return err(c, "bad_request", "Invalid URL");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return err(c, "bad_request", "Only HTTP/HTTPS URLs supported");
+  }
+
+  const response = await fetch(body.url, {
+    headers: { "User-Agent": "Storage/1.0" },
+    redirect: "follow",
+  });
+
+  if (!response.ok) {
+    return err(c, "bad_request", `Failed to fetch URL: ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "application/octet-stream";
+  const data = await response.arrayBuffer();
+
+  let targetPath = body.path;
+  if (!targetPath) {
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    targetPath = segments.pop() || "download";
+  }
+
+  const pathErr = validatePath(targetPath);
+  if (pathErr) return err(c, "bad_request", pathErr);
+
+  const pfxErr = checkPrefix(c, targetPath);
+  if (pfxErr) return pfxErr;
+
+  const result = await engine(c).write(
+    actor,
+    targetPath,
+    data,
+    contentType.split(";")[0].trim(),
+    `Upload from URL: ${body.url}`,
+  );
+
+  audit(c, "write", targetPath);
+  return c.json({
+    path: targetPath,
+    size: data.byteLength,
+    type: contentType,
+    tx: result.tx,
+    time: result.time,
+  }, 201);
+}
+
 // ── Registration ────────────────────────────────────────────────────
 export function register(app: App) {
   app.get("/files", auth, listFiles);
@@ -367,6 +439,7 @@ export function register(app: App) {
   app.post("/files/move", auth, moveFile);
   app.post("/files/mkdir", auth, mkdirHandler);
   app.post("/files/share", auth, shareFile);
+  app.post("/files/upload-url", auth, uploadFromUrl);
   app.post("/files/uploads", auth, initiateUpload);
   app.post("/files/uploads/complete", auth, completeUpload);
   app.post("/files/uploads/multipart", auth, initiateMultipart);

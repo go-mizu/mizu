@@ -34,6 +34,12 @@ export function register(app: App) {
       return c.json({ error: "unauthorized", message: "Invalid or expired share link" }, 401);
     }
 
+    // Track view count in background
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("UPDATE share_links SET views = COALESCE(views, 0) + 1 WHERE token = ?")
+        .bind(token).run(),
+    );
+
     const engine = c.get("engine");
     const ttl = Math.max(1, Math.floor((row.expires_at - Date.now()) / 1000));
     const url = await engine.presignRead(row.actor, row.path, Math.min(ttl, 3600));

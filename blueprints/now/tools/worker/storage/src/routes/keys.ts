@@ -130,12 +130,21 @@ export function register(app: App) {
   app.openapi(listKeysRoute, async (c) => {
     const actor = c.get("actor");
     const { results } = await c.env.DB.prepare(
-      "SELECT id, name, prefix, expires_at, created_at FROM api_keys WHERE actor = ? ORDER BY created_at DESC",
+      "SELECT id, name, prefix, expires_at, created_at, last_accessed FROM api_keys WHERE actor = ? ORDER BY created_at DESC",
     )
       .bind(actor)
       .all();
 
-    return c.json({ keys: (results || []) as any }, 200);
+    return c.json({
+      keys: (results || []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        prefix: r.prefix,
+        expires_at: r.expires_at,
+        created_at: r.created_at,
+        last_accessed: r.last_accessed || null,
+      })),
+    }, 200);
   });
 
   app.openapi(deleteKeyRoute, async (c) => {

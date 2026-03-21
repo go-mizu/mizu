@@ -42,10 +42,10 @@ export async function auth(c: C, next: Next) {
   // Try API key (hash-based lookup)
   const hash = await sha256(token);
   const key = await c.env.DB.prepare(
-    "SELECT actor, prefix, expires_at FROM api_keys WHERE token_hash = ?",
+    "SELECT id, actor, prefix, expires_at FROM api_keys WHERE token_hash = ?",
   )
     .bind(hash)
-    .first<{ actor: string; prefix: string; expires_at: number | null }>();
+    .first<{ id: string; actor: string; prefix: string; expires_at: number | null }>();
 
   if (key) {
     if (key.expires_at && Date.now() > key.expires_at) {
@@ -53,6 +53,11 @@ export async function auth(c: C, next: Next) {
     }
     c.set("actor", key.actor);
     c.set("prefix", key.prefix || "");
+    // Track last accessed time in background
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("UPDATE api_keys SET last_accessed = ? WHERE id = ?")
+        .bind(Date.now(), key.id).run(),
+    );
     return next();
   }
 
