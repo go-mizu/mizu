@@ -300,11 +300,20 @@ function highlightCode(code, lang) {
 
 /* ── Markdown renderer ────────────────────────────────────────────── */
 function renderMarkdown(md) {
-  var codeBlocks = [], inlineCodes = [];
+  var maths = [], codeBlocks = [], inlineCodes = [];
+  function saveMath(m) { maths.push(m); return '%%%MATH_' + (maths.length - 1) + '%%%'; }
   function saveCode(_, lang, code) { codeBlocks.push({lang: lang, code: code}); return '%%%CODE_' + (codeBlocks.length - 1) + '%%%'; }
   function saveInline(_, code) { inlineCodes.push(code); return '%%%IC_' + (inlineCodes.length - 1) + '%%%'; }
+  // 1. Fenced code blocks
   md = md.replace(/```(\w*)\n([\s\S]*?)```/g, saveCode);
+  // 2. Inline code (before math so `$x$` in code is protected)
   md = md.replace(/`([^`]+)`/g, saveInline);
+  // 3. Math: display ($$, \[) then inline ($, \()
+  md = md.replace(/\$\$([\s\S]*?)\$\$/g, saveMath);
+  md = md.replace(/\\\[([\s\S]*?)\\\]/g, saveMath);
+  md = md.replace(/\$([^\$\n]+?)\$/g, saveMath);
+  md = md.replace(/\\\((.+?)\\\)/g, saveMath);
+
   var html = md
     .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
     .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
@@ -335,8 +344,118 @@ function renderMarkdown(md) {
     var code = lang ? highlightCode(cb.code.trim(), lang) : h(cb.code.trim());
     return '<div class="md-code-block"' + (cb.lang ? ' data-lang="' + h(cb.lang) + '"' : '') + '><code>' + code + '</code></div>';
   });
+  // Restore math as HTML-escaped text (KaTeX auto-render will process in DOM)
+  html = html.replace(/%%%MATH_(\d+)%%%/g, function(_, i) { return h(maths[parseInt(i)]); });
   return html;
 }
+
+/* ── KaTeX post-render ────────────────────────────────────────────── */
+function postRenderMath() {
+  var el = document.querySelector('.preview-md');
+  if (!el || !window.renderMathInElement) return;
+  try {
+    window.renderMathInElement(el, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false},
+      ],
+      throwOnError: false,
+    });
+  } catch (e) {}
+}
+
+/* ── Lazy script loader ────────────────────────────────────────────── */
+var _loadingScripts = {};
+function loadScript(url, globalName) {
+  if (window[globalName]) return Promise.resolve();
+  if (_loadingScripts[url]) return _loadingScripts[url];
+  _loadingScripts[url] = new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = url;
+    s.onload = function() { delete _loadingScripts[url]; resolve(); };
+    s.onerror = function() { delete _loadingScripts[url]; reject(new Error('Failed to load ' + globalName)); };
+    document.head.appendChild(s);
+  });
+  return _loadingScripts[url];
+}
+
+var MAMMOTH_URL = 'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js';
+var SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+
+/* ── DOCX preview (Mammoth.js) ───────────────────────────────────── */
+function loadDocxPreview(item) {
+  var container = document.getElementById('pv-docx');
+  if (!container) return;
+  Promise.all([
+    loadScript(MAMMOTH_URL, 'mammoth'),
+    resolveFileUrl(item._fullPath).then(function(url) { return fetch(url); }).then(function(r) {
+      if (!r.ok) throw new Error('fetch failed');
+      return r.arrayBuffer();
+    })
+  ]).then(function(results) {
+    var buf = results[1];
+    return window.mammoth.convertToHtml({ arrayBuffer: buf });
+  }).then(function(result) {
+    if (!document.getElementById('pv-docx')) return;
+    container.innerHTML = result.value;
+  }).catch(function() {
+    if (!document.getElementById('pv-docx')) return;
+    container.innerHTML = '<div class="preview-error"><p>Could not render document</p>' +
+      '<button class="d-filter" style="margin-top:12px" onclick="fbDownload(\'' + qe(item._fullPath) + '\')">' + IC.download + ' Download instead</button></div>';
+  });
+}
+
+/* ── XLSX preview (SheetJS) ──────────────────────────────────────── */
+var xlsxState = { wb: null, activeSheet: 0 };
+
+function loadXlsxPreview(item) {
+  var container = document.getElementById('pv-xlsx');
+  if (!container) return;
+  xlsxState = { wb: null, activeSheet: 0 };
+  Promise.all([
+    loadScript(SHEETJS_URL, 'XLSX'),
+    resolveFileUrl(item._fullPath).then(function(url) { return fetch(url); }).then(function(r) {
+      if (!r.ok) throw new Error('fetch failed');
+      return r.arrayBuffer();
+    })
+  ]).then(function(results) {
+    var buf = results[1];
+    xlsxState.wb = window.XLSX.read(new Uint8Array(buf), { type: 'array' });
+    if (!document.getElementById('pv-xlsx')) return;
+    renderXlsxSheet();
+  }).catch(function() {
+    if (!document.getElementById('pv-xlsx')) return;
+    container.innerHTML = '<div class="preview-error"><p>Could not render spreadsheet</p>' +
+      '<button class="d-filter" style="margin-top:12px" onclick="fbDownload(\'' + qe(item._fullPath) + '\')">' + IC.download + ' Download instead</button></div>';
+  });
+}
+
+function renderXlsxSheet() {
+  var container = document.getElementById('pv-xlsx');
+  if (!container || !xlsxState.wb) return;
+  var wb = xlsxState.wb;
+  var names = wb.SheetNames;
+  var idx = xlsxState.activeSheet;
+  var ws = wb.Sheets[names[idx]];
+  var tableHtml = window.XLSX.utils.sheet_to_html(ws, { editable: false });
+
+  var tabs = '';
+  if (names.length > 1) {
+    tabs = '<div class="xlsx-tabs">';
+    names.forEach(function(name, i) {
+      tabs += '<button class="xlsx-tab' + (i === idx ? ' xlsx-tab--active' : '') + '" onclick="switchXlsxSheet(' + i + ')">' + h(name) + '</button>';
+    });
+    tabs += '</div>';
+  }
+  container.innerHTML = tabs + '<div class="preview-xlsx-table">' + tableHtml + '</div>';
+}
+
+window.switchXlsxSheet = function(i) {
+  xlsxState.activeSheet = i;
+  renderXlsxSheet();
+};
 
 function csvToTable(csv) {
   var rows = csv.trim().split('\n').map(function(r) {
@@ -1090,7 +1209,10 @@ function openPreview(path, itemOverride) {
   history.replaceState(null, '', '#files/' + item._fullPath);
 
   var ft = fileType(item);
-  if (ft === 'code' || ft === 'text' || ft === 'sheet' || ft === 'markdown') {
+  var n = (item.name || '').toLowerCase();
+  // Binary spreadsheet formats — don't fetch as text
+  var isBinarySheet = ft === 'sheet' && !/\.(csv|tsv)$/i.test(n);
+  if (!isBinarySheet && (ft === 'code' || ft === 'text' || ft === 'sheet' || ft === 'markdown')) {
     renderPreview();
     fetchTextContent(item._fullPath).then(function(t) {
       S.previewContent = t; renderPreview();
@@ -1167,6 +1289,13 @@ function renderPreview() {
       var iframe = $('pv-pdf');
       if (iframe) resolveFileUrl(item._fullPath).then(function(url) { iframe.src = url; });
     }, 0);
+  } else if (ft === 'doc' && /\.docx$/i.test(item.name || '')) {
+    body = '<div class="preview-docx" id="pv-docx"><div class="dash-loading"><span class="spinner"></span></div></div>';
+    setTimeout(function() { loadDocxPreview(item); }, 0);
+  } else if (ft === 'sheet' && S.previewContent === null) {
+    // Binary spreadsheet (xlsx/xls/ods) — render with SheetJS
+    body = '<div class="preview-xlsx" id="pv-xlsx"><div class="dash-loading"><span class="spinner"></span></div></div>';
+    setTimeout(function() { loadXlsxPreview(item); }, 0);
   } else if (ft === 'image') {
     body = '<img class="preview-img" id="pv-img" src="" alt="' + name + '">';
     setTimeout(function() {
@@ -1244,6 +1373,11 @@ function renderPreview() {
       '<div class="pv-bar-right">' + '<span class="pv-info">' + meta + '</span>' + mdToggle + nav + acts + '</div>' +
     '</div>' +
     '<div class="pv-body">' + body + '</div></div>';
+
+  // Render math in markdown preview
+  if (ft === 'markdown' && S.mdView === 'preview') {
+    setTimeout(postRenderMath, 0);
+  }
 }
 
 window.setMdView = function(v) { S.mdView = v; renderPreview(); };
