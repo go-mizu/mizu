@@ -367,6 +367,9 @@
   content:attr(data-lang);position:absolute;top:8px;right:12px;
   font-size:10px;color:var(--text-3);letter-spacing:.5px;text-transform:uppercase;
 }
+.preview-md .katex-display{margin:20px 0;overflow-x:auto;overflow-y:hidden;padding:4px 0}
+.preview-md .katex{font-size:1.05em}
+.preview-md .katex-display>.katex{font-size:1.15em}
 
 /* Text preview */
 .preview-text{
@@ -383,6 +386,52 @@
   font-size:11px;white-space:nowrap;
 }
 .preview-table th{background:var(--surface-alt);font-weight:600;position:sticky;top:0}
+
+/* DOCX preview */
+.preview-docx{
+  font-size:14px;line-height:1.8;color:var(--text-2);
+  padding:24px;border:1px solid var(--border);background:var(--surface);
+  overflow-x:auto;min-height:200px;
+}
+.preview-docx h1{font-size:24px;font-weight:700;color:var(--text);margin:24px 0 12px;letter-spacing:-.5px}
+.preview-docx h2{font-size:18px;font-weight:600;color:var(--text);margin:20px 0 10px}
+.preview-docx h3{font-size:15px;font-weight:600;color:var(--text);margin:16px 0 8px}
+.preview-docx p{margin:8px 0}
+.preview-docx ul,.preview-docx ol{margin:8px 0;padding-left:24px}
+.preview-docx li{margin:4px 0}
+.preview-docx table{width:100%;border:1px solid var(--border);border-collapse:collapse;margin:12px 0}
+.preview-docx th,.preview-docx td{padding:8px 12px;border:1px solid var(--border);font-size:13px;text-align:left}
+.preview-docx th{background:var(--surface-alt);font-weight:600;color:var(--text)}
+.preview-docx a{color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+.preview-docx img{max-width:100%;border:1px solid var(--border);margin:8px 0}
+.preview-docx strong{color:var(--text)}
+.preview-docx blockquote{border-left:3px solid var(--border);padding:8px 16px;margin:12px 0;color:var(--text-3);font-style:italic}
+
+/* XLSX/spreadsheet preview */
+.preview-xlsx{border:1px solid var(--border);background:var(--surface);min-height:200px}
+.xlsx-tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  background:var(--surface-alt);overflow-x:auto;
+}
+.xlsx-tab{
+  padding:8px 16px;border:none;background:none;font-family:'JetBrains Mono',monospace;
+  font-size:11px;color:var(--text-3);cursor:pointer;white-space:nowrap;
+  border-right:1px solid var(--border);transition:color .15s,background .15s;
+}
+.xlsx-tab:hover{color:var(--text);background:var(--surface)}
+.xlsx-tab--active{color:var(--text);background:var(--surface);font-weight:600}
+.preview-xlsx-table{overflow-x:auto;max-height:70vh;overflow-y:auto}
+.preview-xlsx-table table{width:100%;border-collapse:collapse}
+.preview-xlsx-table td,.preview-xlsx-table th{
+  padding:6px 10px;border:1px solid var(--border);font-family:'JetBrains Mono',monospace;
+  font-size:11px;white-space:nowrap;
+}
+.preview-xlsx-table th{background:var(--surface-alt);font-weight:600;position:sticky;top:0;z-index:1}
+.preview-xlsx-table tr:nth-child(even) td{background:var(--surface-alt)}
+
+/* Preview error */
+.preview-error{padding:40px 24px;text-align:center;color:var(--text-3)}
+.preview-error p{margin:0 0 8px;font-size:13px}
 
 /* Image preview */
 .preview-img{max-width:100%;max-height:60vh;border:1px solid var(--border);display:block;margin:0 auto}
