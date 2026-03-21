@@ -33,8 +33,11 @@ var bodyBufPool = sync.Pool{
 	},
 }
 
-// maxPackWorkers caps the number of parallel converter workers to limit peak
-// memory. ConvertLight is ~1ms, so 8 workers easily saturate I/O throughput.
+// maxPackWorkers caps the number of parallel converter workers. With the
+// sequential reader path (RunPack), the single-threaded gzip reader is the
+// bottleneck, not the converters. 8 workers provide 8000 conversions/s which
+// far exceeds the reader's ~500 records/s throughput. Keeping this low
+// reduces system-wide CPU contention when multiple sessions run concurrently.
 const maxPackWorkers = 8
 
 // PackConfig configures the pack pipeline: .warc.gz → .md.warc.gz
@@ -81,11 +84,53 @@ type PackStats struct {
 	Duration      time.Duration
 }
 
+// PackRecord is an exported record produced by the pack pipeline.
+// Used by RunPackDirect to stream results to callers without intermediate WARC files.
+type PackRecord struct {
+	TargetURI string
+	Date      string
+	RefersTo  string // original WARC-Record-ID
+	Markdown  string
+	HTMLLen   int
+}
+
+// PackWriterFunc receives converted records from the pack pipeline.
+// Called from a single goroutine — does not need to be thread-safe.
+// Return non-nil error to abort the pipeline.
+type PackWriterFunc func(PackRecord) error
+
 // RunPack executes the pack pipeline: read .warc.gz → convert HTML→Markdown → write .md.warc.gz.
 //
 // Architecture: reader goroutine → N converter workers → single writer goroutine.
 // Records are NOT guaranteed to be in input order (parallel conversion reorders).
 func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*PackStats, error) {
+	if !cfg.Force {
+		if _, err := os.Stat(cfg.OutputPath); err == nil {
+			return &PackStats{Skipped: 1}, nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.OutputPath), 0o755); err != nil {
+		return nil, err
+	}
+
+	// Use internal pipeline with WARC file writer.
+	return runPackPipeline(ctx, cfg, nil, progressFn)
+}
+
+// RunPackDirect executes the pack pipeline and calls writerFn for each converted
+// record instead of writing to a .md.warc.gz file. This eliminates intermediate
+// WARC serialization, gzip compression, and disk I/O — the caller writes directly
+// to the target format (e.g., parquet).
+//
+// cfg.OutputPath is ignored. The caller is responsible for file creation/cleanup.
+func RunPackDirect(ctx context.Context, cfg PackConfig, writerFn PackWriterFunc, progressFn ProgressFunc) (*PackStats, error) {
+	return runPackPipeline(ctx, cfg, writerFn, progressFn)
+}
+
+// runPackPipeline is the shared reader→converter→writer pipeline.
+// If writerFn is nil, results are written as WARC to cfg.OutputPath.
+// If writerFn is non-nil, results are passed to the callback (direct mode).
+func runPackPipeline(ctx context.Context, cfg PackConfig, writerFn PackWriterFunc, progressFn ProgressFunc) (*PackStats, error) {
 	if len(cfg.InputFiles) == 0 {
 		return &PackStats{}, nil
 	}
@@ -105,20 +150,14 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 		cfg.MaxBodySize = 512 * 1024
 	}
 
-	if !cfg.Force {
-		if _, err := os.Stat(cfg.OutputPath); err == nil {
-			return &PackStats{Skipped: 1}, nil
-		}
-	}
-
-	if err := os.MkdirAll(filepath.Dir(cfg.OutputPath), 0o755); err != nil {
-		return nil, err
-	}
-
 	// GOGC=200: 2× live heap. Higher values waste memory as GC headroom;
 	// pack is I/O-bound so the extra GC pauses are hidden by disk/network waits.
 	prevGOGC := debug.SetGCPercent(200)
 	defer debug.SetGCPercent(prevGOGC)
+
+	// GOMEMLIMIT: hard ceiling prevents OOM kills (see pack_parallel.go).
+	prevMemLimit := debug.SetMemoryLimit(600 << 20) // 600 MiB
+	defer debug.SetMemoryLimit(prevMemLimit)
 
 	var stats PackStats
 	start := time.Now()
@@ -177,7 +216,7 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 	// ── Converter workers ───────────────────────────────────────────────────
 	convertFn := mdpkg.Convert
 	if cfg.LightConvert {
-		convertFn = mdpkg.ConvertLight
+		convertFn = mdpkg.ConvertUltraLight // tokenizer-based, no DOM tree
 	} else if cfg.FastConvert {
 		convertFn = mdpkg.ConvertFast
 	}
@@ -220,7 +259,13 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 
 	// ── Writer goroutine ────────────────────────────────────────────────────
 	go func() {
-		writerDone <- packWriteFile(cfg.OutputPath, resultCh, &stats)
+		if writerFn != nil {
+			// Direct mode: pass results to caller's writer function.
+			writerDone <- packWriteDirect(resultCh, &stats, writerFn)
+		} else {
+			// WARC mode: write to .md.warc.gz file.
+			writerDone <- packWriteFile(cfg.OutputPath, resultCh, &stats)
+		}
 	}()
 
 	// Wait for pipeline
@@ -245,6 +290,27 @@ func RunPack(ctx context.Context, cfg PackConfig, progressFn ProgressFunc) (*Pac
 		return &stats, ctx.Err()
 	}
 	return &stats, nil
+}
+
+// packWriteDirect streams results to a caller-provided writer function.
+func packWriteDirect(results <-chan packResult, stats *PackStats, writerFn PackWriterFunc) error {
+	for res := range results {
+		if !res.hasContent || len(res.markdown) == 0 {
+			continue
+		}
+		if err := writerFn(PackRecord{
+			TargetURI: res.targetURI,
+			Date:      res.date,
+			RefersTo:  res.refersTo,
+			Markdown:  res.markdown,
+			HTMLLen:   res.htmlLen,
+		}); err != nil {
+			return err
+		}
+		atomic.AddInt64(&stats.OutputRecords, 1)
+		atomic.AddInt64(&stats.WriteBytes, int64(len(res.markdown)))
+	}
+	return nil
 }
 
 // packReadFile reads a single .warc.gz and sends matching HTML records to itemCh.
