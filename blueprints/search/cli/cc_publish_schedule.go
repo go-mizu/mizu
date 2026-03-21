@@ -629,9 +629,12 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	if ws, ok := ccReadWatcherStatus(cfg.RepoRoot); ok {
 		lastSeenHFCommit = ws.CommitNumber // baseline: don't count old commits
 	}
-	initPending := countPendingParquets()
+	// Baseline pending: old parquets from previous sessions that may get
+	// deleted by watcher cleanup. Subtract from sessionPacked so those
+	// deletions don't make the rate go negative.
+	baselinePending := countPendingParquets()
 	rateHistory = append(rateHistory, rateSnapshot{
-		sessionPacked: initPending, sessionCommits: 0,
+		sessionPacked: 0, sessionCommits: 0,
 		downloading: countDownloading(), time: time.Now(),
 	})
 
@@ -747,11 +750,15 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			lastSeenHFCommit = watcherStatus.CommitNumber
 		}
 
-		// Session-local packed: sessionCommitted + pending parquets.
+		// Session-local packed: sessionCommitted + (pending - baseline).
+		// baseline subtracted so old pending from previous sessions that get
+		// cleaned up don't create negative rates.
 		// When watcher commits N: sessionCommitted+N, pending-N → net zero.
 		// When pipeline creates 1 new parquet: pending+1 → net +1.
-		// So delta of sessionPacked = actual new parquets produced.
-		sessionPacked := sessionCommitted + pending
+		sessionPacked := sessionCommitted + pending - baselinePending
+		if sessionPacked < 0 {
+			sessionPacked = 0
+		}
 
 		// Record this round's snapshot for sliding-window rate calculation.
 		rateHistory = append(rateHistory, rateSnapshot{
@@ -810,11 +817,11 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		// Line 2: throughput rates (always shown).
 		if packRate > 0 || commitRate > 0 {
-			logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (+%d)",
+			logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (%+d)",
 				packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted,
 				downloading, lastRoundDownload))
 		} else {
-			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (+%d)",
+			logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (%+d)",
 				len(rateHistory)-1, 5, downloading, lastRoundDownload))
 		}
 
