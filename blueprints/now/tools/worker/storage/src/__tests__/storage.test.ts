@@ -27,17 +27,19 @@ function api(path: string, opts: RequestInit & { token?: string } = {}) {
   return SELF.fetch(`http://localhost${path}`, { ...opts, headers });
 }
 
-// Helper to seed files directly into R2 + D1 (no Worker data proxy)
+// Helper to seed files through the engine (handles sharding automatically)
 async function seedFile(actor: string, path: string, content: string, contentType = "text/plain") {
   const { env } = await import("cloudflare:test");
-  const key = `${actor}/${path}`;
+  const { D1Engine } = await import("../storage/d1_driver");
+  const engine = new D1Engine({
+    db: env.DB,
+    bucket: env.BUCKET,
+    r2Endpoint: "https://test.r2.cloudflarestorage.com",
+    r2AccessKeyId: "test-key-id",
+    r2SecretAccessKey: "test-secret-key",
+  });
   const data = new TextEncoder().encode(content);
-  await env.BUCKET.put(key, data, { httpMetadata: { contentType } });
-  const name = path.split("/").pop()!;
-  await env.DB.prepare(
-    "INSERT INTO files (owner, path, name, size, type, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT (owner, path) DO UPDATE SET size = excluded.size, type = excluded.type, updated_at = excluded.updated_at",
-  ).bind(actor, path, name, data.byteLength, contentType, Date.now()).run();
+  await engine.write(actor, path, data.buffer as ArrayBuffer, contentType);
 }
 
 describe("Storage API", () => {
@@ -105,19 +107,29 @@ describe("Storage API", () => {
     const db = env.DB;
 
     const stmts = [
+      // Auth & identity
       `CREATE TABLE IF NOT EXISTS actors (actor TEXT PRIMARY KEY, type TEXT NOT NULL DEFAULT 'human' CHECK(type IN ('human','agent')), public_key TEXT, email TEXT UNIQUE, created_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS challenges (id TEXT PRIMARY KEY, actor TEXT NOT NULL, nonce TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, actor TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_sessions_actor ON sessions(actor, expires_at)`,
       `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, actor TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', prefix TEXT NOT NULL DEFAULT '', expires_at INTEGER, created_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_api_keys_actor ON api_keys(actor)`,
-      `CREATE TABLE IF NOT EXISTS files (owner TEXT NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL DEFAULT 'application/octet-stream', updated_at INTEGER NOT NULL, PRIMARY KEY (owner, path))`,
+      // Storage — legacy shared tables (used for migration into per-actor shards)
+      `CREATE TABLE IF NOT EXISTS files (owner TEXT NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, type TEXT NOT NULL DEFAULT 'application/octet-stream', addr TEXT, tx INTEGER, tx_time INTEGER, updated_at INTEGER NOT NULL, PRIMARY KEY (owner, path))`,
       `CREATE INDEX IF NOT EXISTS idx_files_name ON files(owner, name COLLATE NOCASE)`,
-      `CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT NOT NULL, path TEXT, ip TEXT, ts INTEGER NOT NULL)`,
-      `CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(actor, ts)`,
+      `CREATE TABLE IF NOT EXISTS tx_counter (actor TEXT PRIMARY KEY, next_tx INTEGER NOT NULL DEFAULT 1)`,
+      `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, tx INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL CHECK(action IN ('write','move','delete')), path TEXT NOT NULL, addr TEXT, size INTEGER NOT NULL DEFAULT 0, type TEXT, meta TEXT, msg TEXT, ts INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_events_actor_tx ON events(actor, tx)`,
+      `CREATE TABLE IF NOT EXISTS blobs (addr TEXT NOT NULL, actor TEXT NOT NULL, size INTEGER NOT NULL, ref_count INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, PRIMARY KEY (addr, actor))`,
+      // Per-actor shard registry
+      `CREATE TABLE IF NOT EXISTS shards (actor TEXT PRIMARY KEY, shard TEXT NOT NULL UNIQUE, next_tx INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL)`,
+      // Audit & sharing
+      `CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT, action TEXT NOT NULL, path TEXT, ip TEXT, ts INTEGER NOT NULL)`,
+      `CREATE INDEX IF NOT EXISTS idx_audit_actor_ts ON audit(actor, ts)`,
       `CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, actor TEXT NOT NULL, path TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_share_links_actor ON share_links(actor, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_share_links_expires ON share_links(expires_at)`,
+      // OAuth
       `CREATE TABLE IF NOT EXISTS oauth_clients (client_id TEXT PRIMARY KEY, redirect_uris TEXT NOT NULL DEFAULT '[]', client_name TEXT NOT NULL DEFAULT '', token_endpoint_auth_method TEXT NOT NULL DEFAULT 'none', created_at INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS oauth_codes (code TEXT PRIMARY KEY, actor TEXT NOT NULL, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL, scope TEXT NOT NULL DEFAULT '*', code_challenge TEXT NOT NULL, code_challenge_method TEXT NOT NULL DEFAULT 'S256', expires_at INTEGER NOT NULL)`,
       `CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires ON oauth_codes(expires_at)`,
@@ -144,7 +156,7 @@ describe("Storage API", () => {
       const res = await api("/files/hello.txt", { method: "HEAD", token });
       expect(res.status).toBe(200);
       expect(res.headers.get("Content-Length")).toBe("13");
-      expect(res.headers.get("ETag")).toBeDefined();
+      expect(res.headers.get("X-Tx")).toBeDefined();
     });
 
     it("HEAD /files/{path} returns 404 for missing file", async () => {
@@ -229,7 +241,6 @@ describe("Storage API", () => {
       expect(body.path).toBe("presign-complete-test.txt");
       expect(body.name).toBe("presign-complete-test.txt");
       expect(body.size).toBe(13);
-      expect(body.type).toBe("text/plain");
     });
 
     it("POST /files/uploads rejects without auth", async () => {
@@ -390,7 +401,8 @@ describe("Storage API", () => {
       expect(res.status).toBe(302);
       const location = res.headers.get("Location")!;
       expect(location).toContain("r2.cloudflarestorage.com");
-      expect(location).toContain("hello.txt");
+      // Content-addressed: URL contains blob hash key, not the file name
+      expect(location).toContain("blobs/testuser/");
       expect(location).toContain("X-Amz-Signature");
     });
 

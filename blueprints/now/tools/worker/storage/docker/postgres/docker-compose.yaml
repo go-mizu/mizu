@@ -1,0 +1,177 @@
+# ── Self-hosted PostgreSQL 18 for Storage Worker ─────────────────────
+#
+# Production-ready setup with:
+#   - TLS (self-signed, auto-generated on first boot)
+#   - SCRAM-SHA-256 authentication
+#   - PgBouncer connection pooler (transaction mode)
+#   - Tuned for 12 GB RAM VPS
+#   - Automated daily backups
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f postgres
+#
+# Connection strings:
+#   Direct:   postgres://storage:${POSTGRES_PASSWORD}@host:5432/storage?sslmode=require
+#   Pooled:   postgres://storage:${POSTGRES_PASSWORD}@host:6432/storage?sslmode=disable
+#
+# For Cloudflare Hyperdrive, use the direct (5432) connection with SSL.
+
+services:
+  # ── TLS certificate generator (runs once) ──────────────────────────
+  init-certs:
+    image: postgres:18
+    container_name: storage-init-certs
+    restart: "no"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        if [ -f /certs/server.crt ] && [ -f /certs/server.key ]; then
+          echo "init-certs: certificates already exist, skipping."
+          exit 0
+        fi
+        echo "init-certs: generating self-signed TLS certificate..."
+        openssl req -new -x509 -days 3650 -nodes \
+          -subj "/CN=storage-postgres/O=storage/C=US" \
+          -addext "subjectAltName=DNS:storage-postgres,DNS:localhost,IP:127.0.0.1" \
+          -keyout /certs/server.key \
+          -out /certs/server.crt 2>/dev/null
+        chmod 600 /certs/server.key
+        chmod 644 /certs/server.crt
+        chown 999:999 /certs/server.key /certs/server.crt
+        echo "init-certs: done."
+    volumes:
+      - certs:/certs
+
+  # ── PostgreSQL 18 ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:18
+    container_name: storage-postgres
+    restart: unless-stopped
+    depends_on:
+      init-certs:
+        condition: service_completed_successfully
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: storage
+      POSTGRES_USER: storage
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    command: >
+      postgres
+      -c ssl=on
+      -c ssl_cert_file=/certs/server.crt
+      -c ssl_key_file=/certs/server.key
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
+      -c maintenance_work_mem=512MB
+      -c work_mem=32MB
+      -c max_connections=100
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c wal_buffers=64MB
+      -c checkpoint_completion_target=0.9
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c hba_file=/etc/pg_hba.conf
+      -c password_encryption=scram-sha-256
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_statement=ddl
+      -c log_min_duration_statement=1000
+      -c idle_in_transaction_session_timeout=60000
+      -c statement_timeout=30000
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - certs:/certs:ro
+      - ./pg_hba.conf:/etc/pg_hba.conf:ro
+    shm_size: "256m"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U storage -d storage"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    networks:
+      - storage-net
+
+  # ── PgBouncer (connection pooler) ──────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: storage-pgbouncer
+    restart: unless-stopped
+    ports:
+      - "6432:5432"
+    environment:
+      DATABASE_URL: postgres://storage:${POSTGRES_PASSWORD}@postgres:5432/storage
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "200"
+      DEFAULT_POOL_SIZE: "20"
+      MIN_POOL_SIZE: "5"
+      RESERVE_POOL_SIZE: "5"
+      SERVER_TLS_SSLMODE: require
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - storage-net
+
+  # ── Automated daily backups ────────────────────────────────────────
+  backup:
+    image: postgres:18
+    container_name: storage-backup
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Backup service started. Running daily at 03:00 UTC."
+        while true; do
+          NEXT=$$(date -d "tomorrow 03:00" +%s 2>/dev/null || date -v+1d -v3H -v0M -v0S +%s)
+          NOW=$$(date +%s)
+          SLEEP=$$((NEXT - NOW))
+          [ "$$SLEEP" -lt 0 ] && SLEEP=86400
+          sleep "$$SLEEP"
+          STAMP=$$(date +%Y%m%d_%H%M%S)
+          echo "[$$STAMP] Starting backup..."
+          PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump -h postgres -U storage -d storage -Fc -Z6 \
+            -f "/backups/storage_$$STAMP.dump" && \
+          echo "[$$STAMP] Backup complete." || \
+          echo "[$$STAMP] Backup FAILED."
+          find /backups -name "storage_*.dump" -mtime +30 -delete 2>/dev/null
+        done
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - storage-net
+
+volumes:
+  pgdata:
+    driver: local
+  certs:
+    driver: local
+  backups:
+    driver: local
+
+networks:
+  storage-net:
+    name: storage-net
