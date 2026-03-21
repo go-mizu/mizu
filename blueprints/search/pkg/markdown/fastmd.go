@@ -13,7 +13,14 @@ import (
 // full DOM traversals and the html-to-markdown plugin overhead.
 func fastMarkdown(node *html.Node) string {
 	var b strings.Builder
-	b.Grow(4096)
+	// Pre-allocate based on subtree text size (markdown is ~20-30% of HTML).
+	// Falls back to 4 KB if the node has no measurable text.
+	textLen, _ := estimateTextLen(node)
+	grow := textLen / 3
+	if grow < 4096 {
+		grow = 4096
+	}
+	b.Grow(grow)
 	walkNode(&b, node, false)
 	out := b.String()
 	return collapseBlankLines(strings.TrimSpace(out))
@@ -293,4 +300,22 @@ func getAttr(n *html.Node, key string) string {
 		}
 	}
 	return ""
+}
+
+// estimateTextLen quickly counts text bytes in a node subtree for Builder pre-allocation.
+func estimateTextLen(n *html.Node) (int, int) {
+	total := 0
+	nodes := 0
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			total += len(n.Data)
+		}
+		nodes++
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return total, nodes
 }
