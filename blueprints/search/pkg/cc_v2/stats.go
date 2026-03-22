@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // StatsRow holds per-shard statistics for stats.csv.
@@ -176,6 +177,7 @@ func mergeStatsFromRemote(localPath string, remoteCSV []byte, crawlID string) {
 // so we scale document/byte estimates using per-shard averages when needed.
 func generateREADME(crawlID string, rows []StatsRow, committedCount int) string {
 	var totalRows, totalHTML, totalMD, totalPQ int64
+	var totalDlS, totalPackS, totalPushS int64
 	csvShards := 0
 	for _, r := range rows {
 		if r.CrawlID == crawlID {
@@ -184,6 +186,9 @@ func generateREADME(crawlID string, rows []StatsRow, committedCount int) string 
 			totalHTML += r.HTMLBytes
 			totalMD += r.MDBytes
 			totalPQ += r.PqBytes
+			totalDlS += r.DurDlS
+			totalPackS += r.DurPackS
+			totalPushS += r.DurPushS
 		}
 	}
 
@@ -204,6 +209,39 @@ func generateREADME(crawlID string, rows []StatsRow, committedCount int) string 
 	docsStr := fmtInt(totalRows)
 	if shards > csvShards {
 		docsStr = "~" + docsStr
+	}
+
+	// Size/reduction sentence.
+	sizeInfo := ""
+	if totalHTML > 0 && totalMD > 0 {
+		pctReduction := float64(totalHTML-totalMD) / float64(totalHTML) * 100
+		prefix := ""
+		if shards > csvShards {
+			prefix = "~"
+		}
+		sizeInfo = fmt.Sprintf(" Processed %s%s of raw HTML into %s%s of clean Markdown — a **%.1f%% reduction**.",
+			prefix, FmtBytes(totalHTML), prefix, FmtBytes(totalMD), pctReduction)
+	}
+
+	// Timing section (only when we have timing data from stats.csv).
+	timingSection := ""
+	if csvShards > 0 && (totalDlS+totalPackS+totalPushS) > 0 {
+		avgDlS := totalDlS / int64(csvShards)
+		avgPackS := totalPackS / int64(csvShards)
+		avgPushS := totalPushS / int64(csvShards)
+		maxS := totalDlS
+		for _, v := range []int64{totalPackS, totalPushS} {
+			if v > maxS {
+				maxS = v
+			}
+		}
+		timingSection = "\n### Processing Times\n\nPipeline timings across " +
+			strconv.Itoa(csvShards) + " shards of " + crawlID + ":\n\n" +
+			"```\n" +
+			timingBar("Download (raw WARC)                 ", totalDlS, avgDlS, maxS) +
+			timingBar("Convert  (HTML → Markdown → Parquet)", totalPackS, avgPackS, maxS) +
+			timingBar("Publish  (HuggingFace)              ", totalPushS, avgPushS, maxS) +
+			"```\n"
 	}
 
 	return fmt.Sprintf(`---
@@ -230,6 +268,8 @@ Common Crawl HTML pages converted to clean Markdown.
 | Markdown | %s |
 | Parquet (zstd) | %s |
 
+The dataset currently includes crawl **%s** with **%s documents** across **%d shards**.%s
+%s
 ## Format
 
 Each row in the parquet files contains:
@@ -256,7 +296,49 @@ ds = load_dataset("open-index/open-markdown", data_files="data/%s/*.parquet")
 ## License
 
 Open Data Commons Attribution License (ODC-By).
-`, crawlID, shards, docsStr, FmtBytes(totalHTML), FmtBytes(totalMD), FmtBytes(totalPQ), crawlID)
+`, crawlID, shards, docsStr, FmtBytes(totalHTML), FmtBytes(totalMD), FmtBytes(totalPQ),
+		crawlID, docsStr, shards, sizeInfo, timingSection, crawlID)
+}
+
+// timingBar renders one row of the ASCII bar chart.
+func timingBar(label string, totalS, avgS, maxS int64) string {
+	const barWidth = 24
+	filled := 0
+	if maxS > 0 && totalS > 0 {
+		filled = int(float64(totalS) / float64(maxS) * barWidth)
+		if filled < 1 {
+			filled = 1
+		}
+		if filled > barWidth {
+			filled = barWidth
+		}
+	}
+	bar := ""
+	for i := 0; i < barWidth; i++ {
+		if i < filled {
+			bar += "█"
+		} else {
+			bar += "░"
+		}
+	}
+	return fmt.Sprintf("%s  %s  total %-12s  avg %s\n", label, bar, fmtDuration(totalS), fmtDuration(avgS))
+}
+
+func fmtDuration(secs int64) string {
+	if secs <= 0 {
+		return "—"
+	}
+	d := time.Duration(secs) * time.Second
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm %ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
 }
 
 func fmtInt(n int64) string {
