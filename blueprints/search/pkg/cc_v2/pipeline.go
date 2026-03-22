@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
@@ -18,8 +19,8 @@ type PackFunc func(ctx context.Context, cfg warcmd.PackConfig, parquetPath strin
 	progressFn warcmd.ProgressFunc) (rows, htmlBytes, mdBytes int64, stats *warcmd.PackStats, err error)
 
 // Pipeline downloads WARC files and converts them to parquet shards.
-// Each shard is processed sequentially: download → pack → mark ready.
-// No prefetch, no concurrent downloads — simple and race-free.
+// Uses 1-ahead prefetch: downloads next WARC while packing current one.
+// This overlaps download and pack for ~2x throughput vs sequential.
 type Pipeline struct {
 	cfg        PipelineConfig
 	store      Store
@@ -44,7 +45,15 @@ func NewPipeline(cfg PipelineConfig, store Store, packFn PackFunc) *Pipeline {
 	}
 }
 
-// Run processes all configured shard indices.
+// prefetchResult holds the result of a background download.
+type prefetchResult struct {
+	idx      int
+	warcPath string
+	durDl    time.Duration
+	err      error
+}
+
+// Run processes all configured shard indices with 1-ahead prefetch.
 func (p *Pipeline) Run(ctx context.Context) error {
 	// Ensure directories exist.
 	for _, dir := range []string{p.warcDir, p.parquetDir} {
@@ -66,43 +75,111 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		"Redis":   fmt.Sprintf("%v", p.store.Available()),
 	})
 
-	for i, idx := range p.cfg.Indices {
+	// Build work list: filter out already committed/ready shards up front.
+	var work []int
+	for _, idx := range p.cfg.Indices {
+		if p.store.IsCommitted(ctx, idx) {
+			continue
+		}
+		shard := fmt.Sprintf("%05d", idx)
+		pqPath := filepath.Join(p.parquetDir, shard+".parquet")
+		if fileExists(pqPath) {
+			continue
+		}
+		work = append(work, idx)
+	}
+	p.log.Info("work", "total", len(p.cfg.Indices), "todo", len(work),
+		"skipped", len(p.cfg.Indices)-len(work))
+
+	if len(work) == 0 {
+		p.log.Info("pipeline complete", "shards", 0)
+		return nil
+	}
+
+	// ── Prefetch loop ────────────────────────────────────────────────
+	// Start downloading work[0] immediately, then for each shard:
+	//   1. Wait for current download to finish
+	//   2. Start downloading next shard in background
+	//   3. Pack current shard (overlaps with next download)
+	//   4. Mark ready
+
+	var prefetchMu sync.Mutex
+	var prefetchWg sync.WaitGroup
+	var prefetchRes *prefetchResult
+
+	// startPrefetch kicks off a download in the background.
+	startPrefetch := func(idx int) {
+		prefetchMu.Lock()
+		prefetchRes = nil
+		prefetchMu.Unlock()
+
+		prefetchWg.Add(1)
+		go func() {
+			defer prefetchWg.Done()
+			warcPath, durDl, err := p.download(ctx, idx)
+			prefetchMu.Lock()
+			prefetchRes = &prefetchResult{idx: idx, warcPath: warcPath, durDl: durDl, err: err}
+			prefetchMu.Unlock()
+		}()
+	}
+
+	for i, idx := range work {
 		if ctx.Err() != nil {
+			prefetchWg.Wait()
 			return ctx.Err()
 		}
 
-		shard := fmt.Sprintf("%05d", idx)
-		p.log.Info("start", "shard", idx, "progress", fmt.Sprintf("%d/%d", i+1, len(p.cfg.Indices)))
+		p.log.Info("start", "shard", idx, "progress", fmt.Sprintf("%d/%d", i+1, len(work)))
 
-		// 1. Skip if already committed or ready.
-		if p.store.IsCommitted(ctx, idx) {
-			p.log.Info("skip", "shard", idx, "reason", "committed")
-			continue
-		}
-		pqPath := filepath.Join(p.parquetDir, shard+".parquet")
-		if fileExists(pqPath) {
-			p.log.Info("skip", "shard", idx, "reason", "parquet exists")
-			continue
-		}
-
-		// 2. Claim the shard (distributed lock).
+		// Claim the shard (distributed lock).
 		if !p.store.Claim(ctx, idx) {
 			p.log.Info("skip", "shard", idx, "reason", "claimed by another")
 			continue
 		}
 
-		// 3. Download WARC.
-		warcPath, durDl, err := p.download(ctx, idx)
-		if err != nil {
-			p.store.Release(ctx, idx)
-			if p.cfg.SkipErrors {
-				p.log.Warn("download failed, skipping", "shard", idx, "err", err)
-				continue
-			}
-			return fmt.Errorf("shard %d download: %w", idx, err)
+		// Get the WARC (either from prefetch or direct download).
+		var warcPath string
+		var durDl time.Duration
+		var dlErr error
+
+		prefetchMu.Lock()
+		pf := prefetchRes
+		prefetchMu.Unlock()
+
+		if pf != nil && pf.idx == idx {
+			// Prefetch already completed for this shard.
+			prefetchWg.Wait()
+			warcPath, durDl, dlErr = pf.warcPath, pf.durDl, pf.err
+		} else {
+			// No prefetch available — wait for any in-flight, then download directly.
+			prefetchWg.Wait()
+			warcPath, durDl, dlErr = p.download(ctx, idx)
 		}
 
-		// 4. Pack to parquet (atomic write via .tmp).
+		if dlErr != nil {
+			p.store.Release(ctx, idx)
+			if p.cfg.SkipErrors {
+				p.log.Warn("download failed, skipping", "shard", idx, "err", dlErr)
+				continue
+			}
+			return fmt.Errorf("shard %d download: %w", idx, dlErr)
+		}
+
+		// Start prefetching the NEXT shard while we pack this one.
+		if i+1 < len(work) {
+			nextIdx := work[i+1]
+			// Only prefetch if not already committed and claimable.
+			if !p.store.IsCommitted(ctx, nextIdx) {
+				shard := fmt.Sprintf("%05d", nextIdx)
+				pqPath := filepath.Join(p.parquetDir, shard+".parquet")
+				if !fileExists(pqPath) {
+					startPrefetch(nextIdx)
+				}
+			}
+		}
+
+		// Pack to parquet (runs while next download is in progress).
+		pqPath := filepath.Join(p.parquetDir, fmt.Sprintf("%05d.parquet", idx))
 		stats, err := p.pack(ctx, idx, warcPath, pqPath)
 		if err != nil {
 			p.store.Release(ctx, idx)
@@ -110,18 +187,20 @@ func (p *Pipeline) Run(ctx context.Context) error {
 				p.log.Warn("pack failed, skipping", "shard", idx, "err", err)
 				continue
 			}
+			prefetchWg.Wait()
 			return fmt.Errorf("shard %d pack: %w", idx, err)
 		}
 		stats.DurDlS = int64(durDl.Seconds())
 
-		// 5. Mark ready — watcher will pick it up and handle cleanup.
+		// Mark ready — watcher will pick it up and handle cleanup.
 		p.store.MarkReady(ctx, idx, pqPath, warcPath, stats)
 		p.log.Info("ready", "shard", idx, "rows", stats.Rows,
 			"size", FmtBytes(stats.PqBytes), "dl", durDl.Round(time.Second),
 			"pack", time.Duration(stats.DurPackS)*time.Second)
 	}
 
-	p.log.Info("pipeline complete", "shards", len(p.cfg.Indices))
+	prefetchWg.Wait()
+	p.log.Info("pipeline complete", "shards", len(work))
 	return nil
 }
 
