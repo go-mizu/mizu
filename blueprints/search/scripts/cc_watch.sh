@@ -2,8 +2,8 @@
 # cc_watch.sh — Keep the HF publish watcher running, restarting on failure.
 #
 # Run inside a dedicated screen session on each server:
-#   server1: screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"
-#   server2: screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"
+#   server1: screen -dmS cc_watcher bash -c "bash ~/scripts/cc_watch.sh; exec bash"
+#   server2: screen -dmS cc_watcher bash -c "bash ~/scripts/cc_watch.sh; exec bash"
 #
 # Or via Makefile:
 #   make deploy-cc-watch          # deploy script + start on server1

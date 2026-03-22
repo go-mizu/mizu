@@ -450,9 +450,9 @@ deploy-redis: ## Install/configure Redis on remote server (idempotent; SERVER=2 
 	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/install_redis.sh && bash ~/scripts/install_redis.sh'
 
 .PHONY: deploy-cc-watch
-deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
+deploy-cc-watch: ## Deploy cc_watch.sh and (re)start cc_watcher screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
 	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts ~/log'
 	@$(SCP) scripts/cc_watch.sh $(REMOTE_SSH):~/scripts/cc_watch.sh
 	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/cc_watch.sh'
 	@if [ -n "$(HF_TOKEN)" ]; then \
@@ -460,22 +460,22 @@ deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SER
 		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
 	fi
 	@echo "==> Stopping existing watcher sessions on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; screen -S cc_watcher -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_watcher -X quit 2>/dev/null; screen -S g_watch -X quit 2>/dev/null; true'
 	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; pkill -f hf_commit.py 2>/dev/null; true'
 	@sleep 1
-	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
+	@echo "==> Starting cc_watcher on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS cc_watcher -L -Logfile $$HOME/log/cc_watcher.log bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
 	@sleep 2
-	@echo "==> Verifying g_watch is running on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_watch && echo "g_watch started" || { echo "ERROR: g_watch not found"; exit 1; }'
+	@echo "==> Verifying cc_watcher is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_watcher && echo "cc_watcher started" || { echo "ERROR: cc_watcher not found"; exit 1; }'
 
 .PHONY: remote-cc-watch-attach
-remote-cc-watch-attach: ## Attach to g_watch screen session on remote server
-	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_watch'
+remote-cc-watch-attach: ## Attach to cc_watcher screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_watcher'
 
 .PHONY: remote-cc-watch-kill
-remote-cc-watch-kill: ## Kill g_watch screen session on remote server
-	@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+remote-cc-watch-kill: ## Kill cc_watcher screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S cc_watcher -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
 	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
 
 .PHONY: remote-cc-watch-log
@@ -491,23 +491,69 @@ CC_SCHED_END   ?= 9999
 # Adjust via COMMIT_INTERVAL env var in cc_watch.sh or --commit-interval flag.
 
 .PHONY: deploy-cc-sched
-deploy-cc-sched: ## (Re)start g_sched using Go --schedule on remote server (SERVER=2 for server2)
+deploy-cc-sched: ## (Re)start cc_sched using Go --schedule on remote server (SERVER=2 for server2)
 	@echo "==> Stopping existing scheduler sessions on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; screen -S cc_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_sched -X quit 2>/dev/null; screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
 	@sleep 1
-	@echo "==> Starting g_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
-	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
+	@echo "==> Starting cc_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS cc_sched -L -Logfile $$HOME/log/cc_sched.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
 	@sleep 2
-	@echo "==> Verifying g_sched is running on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_sched && echo "g_sched started" || { echo "ERROR: g_sched not found"; exit 1; }'
+	@echo "==> Verifying cc_sched is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_sched && echo "cc_sched started" || { echo "ERROR: cc_sched not found"; exit 1; }'
 
 .PHONY: remote-cc-sched-log
-remote-cc-sched-log: ## Tail cc_schedule log on remote server
-	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_schedule_$(CC_SCHED_START)_$(CC_SCHED_END).log'
+remote-cc-sched-log: ## Tail cc_sched log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_sched.log'
 
 .PHONY: remote-cc-sched-attach
-remote-cc-sched-attach: ## Attach to g_sched screen session on remote server
-	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_sched'
+remote-cc-sched-attach: ## Attach to cc_sched screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_sched'
+
+# ── CC v2 Pipeline ─────────────────────────────────────────────────────────
+# New simplified pipeline (no WARC races, distributed locking, single source of truth).
+# Uses cc_v2 publish --watch and cc_v2 publish --schedule.
+
+CC_V2_SCHED_START ?= 0
+CC_V2_SCHED_END   ?= 9999
+
+.PHONY: deploy-cc-v2-watch
+deploy-cc-v2-watch: ## Deploy and start cc_v2 watcher on remote (SERVER=2)
+	@echo "==> Stopping existing cc_v2 watcher on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_v2_watcher -X quit 2>/dev/null; pkill -f "cc_v2 publish --watch" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting cc_v2 watcher on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/log && screen -dmS cc_v2_watcher -L -Logfile $$HOME/log/cc_watcher.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.hf_token ] && export HF_TOKEN=$$(cat $$HOME/.hf_token); [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc_v2 publish --watch --commit-interval 90; exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_v2_watcher && echo "cc_v2_watcher started" || { echo "ERROR: cc_v2_watcher not found"; exit 1; }'
+
+.PHONY: deploy-cc-v2-sched
+deploy-cc-v2-sched: ## Deploy and start cc_v2 scheduler on remote (SERVER=2)
+	@echo "==> Stopping existing cc_v2 scheduler on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_v2_sched -X quit 2>/dev/null; pkill -f "cc_v2 publish --schedule" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting cc_v2 scheduler on $(REMOTE_SSH) (range $(CC_V2_SCHED_START)–$(CC_V2_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/log && screen -dmS cc_v2_sched -L -Logfile $$HOME/log/cc_sched.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc_v2 publish --schedule --start $(CC_V2_SCHED_START) --end $(CC_V2_SCHED_END); exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_v2_sched && echo "cc_v2_sched started" || { echo "ERROR: cc_v2_sched not found"; exit 1; }'
+
+.PHONY: remote-cc-v2-watch-log
+remote-cc-v2-watch-log: ## Tail cc_v2 watcher log
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watcher.log'
+
+.PHONY: remote-cc-v2-sched-log
+remote-cc-v2-sched-log: ## Tail cc_v2 scheduler log
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_sched.log'
+
+.PHONY: remote-cc-v2-watch-attach
+remote-cc-v2-watch-attach: ## Attach to cc_v2 watcher screen
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_v2_watcher'
+
+.PHONY: remote-cc-v2-sched-attach
+remote-cc-v2-sched-attach: ## Attach to cc_v2 scheduler screen
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_v2_sched'
+
+.PHONY: deploy-cc-v2
+deploy-cc-v2: deploy-linux deploy-cc-v2-watch deploy-cc-v2-sched ## Build, deploy binary, start cc_v2 watcher + scheduler
 
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)

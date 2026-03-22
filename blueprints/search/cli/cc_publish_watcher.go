@@ -540,7 +540,6 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 	// by runCCWarcPack. CC filenames (e.g. CC-MAIN-...-00044.warc.gz) do not contain
 	// the file index, so filename-based matching doesn't work. The sidecar records the
 	// actual path for each shard index, making cleanup reliable.
-	home, _ := os.UserHomeDir()
 	if entries, err := os.ReadDir(warcMdDir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
@@ -567,60 +566,11 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 		}
 	}
 
-	// Pass 3: brute-force raw WARC dir — delete any .warc.gz not currently open by
-	// any process and older than 10 minutes (safely orphaned from crashed pipelines).
-	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
-	openFiles := ccOpenFiles()
-	if entries, err := os.ReadDir(warcDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".warc.gz") {
-				continue
-			}
-			fullPath := filepath.Join(warcDir, e.Name())
-			if openFiles[fullPath] {
-				continue // currently in use by a pipeline
-			}
-			fi, err := e.Info()
-			if err != nil || time.Since(fi.ModTime()) < 10*time.Minute {
-				continue // too recent — may still be downloading
-			}
-			if rmErr := os.Remove(fullPath); rmErr == nil {
-				n++
-			}
-		}
-	}
+	// Note: no brute-force WARC cleanup here. Pipeline's --cleanup flag
+	// handles WARC deletion after successful packing. Aggressive deletion
+	// races with pipelines that have downloaded but not yet packed a WARC.
 
 	return n
-}
-
-// ccOpenFiles returns a set of absolute file paths currently held open by any process.
-// Uses /proc/*/fd symlinks (Linux only); returns empty map on other platforms.
-func ccOpenFiles() map[string]bool {
-	open := make(map[string]bool)
-	procs, err := os.ReadDir("/proc")
-	if err != nil {
-		return open
-	}
-	for _, pe := range procs {
-		if !pe.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(pe.Name()); err != nil {
-			continue
-		}
-		fdDir := filepath.Join("/proc", pe.Name(), "fd")
-		fds, err := os.ReadDir(fdDir)
-		if err != nil {
-			continue
-		}
-		for _, fd := range fds {
-			target, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
-			if err == nil && target != "" {
-				open[target] = true
-			}
-		}
-	}
-	return open
 }
 
 // ccNewestChartTime returns the mtime of the most recently modified PNG in repoRoot/charts/,
