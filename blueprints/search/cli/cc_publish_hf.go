@@ -199,12 +199,12 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		return "", fmt.Errorf("uv not found")
 	}
 
-	// Per-upload timeout: 40 min. Python's SIGALRM can't interrupt Rust FFI
+	// Per-upload timeout: 60 min. Python's SIGALRM can't interrupt Rust FFI
 	// (xet), so this Go-side timeout with process-group SIGKILL is the primary
-	// recovery mechanism. Batch cap (10 files, ~650 MB raw) — cold xet cache
-	// at 216 kB/s needs ~25 min; warm cache is much faster. 40 min gives
-	// comfortable headroom while still catching genuine hangs.
-	uploadTimeout := 40 * time.Minute
+	// recovery mechanism. Batch cap (20 files, ~600 MB raw) — cold xet cache
+	// at 216 kB/s needs ~25 min; warm cache is much faster. 60 min gives
+	// comfortable headroom for larger batches while catching genuine hangs.
+	uploadTimeout := 60 * time.Minute
 	uploadCtx, uploadCancel := context.WithTimeout(ctx, uploadTimeout)
 	defer uploadCancel()
 
@@ -224,19 +224,22 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 	// buffers to 16 GB, thrashes memory).
 	cmd.Env = append(os.Environ(),
 		"HF_HUB_VERBOSITY=warning",
-		// Pin upload concurrency to a fixed value suited for ~11 GB servers.
-		// Adaptive concurrency defaults start at 1 and ramp slowly; pinning
-		// at 8 starts at full speed without oversaturating memory.
-		"HF_XET_FIXED_UPLOAD_CONCURRENCY=8",
+		// Pin upload concurrency to a safe value for ~12 GB servers that may
+		// be running other memory-heavy processes (arctic ~5 GB, DuckDB, etc.).
+		// 4 threads avoids the OOM that 8 threads caused: with arctic consuming
+		// 5+ GB, 8 concurrent xet upload threads + 8 GB shard cache = OOM kill.
+		"HF_XET_FIXED_UPLOAD_CONCURRENCY=4",
 		// Increase per-request retry budget so transient failures recover.
 		"HF_XET_CLIENT_RETRY_MAX_ATTEMPTS=7",
 		"HF_XET_CLIENT_RETRY_MAX_DURATION=600s",
 		// Generous read timeout — large shard uploads can take a while.
 		"HF_XET_CLIENT_READ_TIMEOUT=300s",
 		"HF_XET_CLIENT_CONNECT_TIMEOUT=120s",
-		// Increase shard cache so re-uploads after a stall skip already-
-		// uploaded chunks (deduplication).
-		"HF_XET_SHARD_CACHE_SIZE_LIMIT=8000000000",
+		// Keep shard cache small to avoid OOM on 12 GB servers. 1.5 GB leaves
+		// ~4 GB headroom when arctic (~5 GB) and DuckDB (~1 GB) are co-running.
+		// Previously 8 GB caused systematic OOM kills of hf_commit.py, losing
+		// months of arctic submissions and stalling cc_watcher commits.
+		"HF_XET_SHARD_CACHE_SIZE_LIMIT=1500000000",
 		// Xet diagnostics — written to file so they don't pollute stderr.
 		"RUST_LOG=info",
 		"HF_XET_LOG_FILE=/tmp/xet_upload.log",
@@ -266,6 +269,39 @@ func (c *hfClient) createCommitPython(ctx context.Context, repoID, message strin
 		return "", fmt.Errorf("python commit: %s", result.Error)
 	}
 	return result.CommitURL, nil
+}
+
+// listDir returns all file paths recursively under pathPrefix in the repo at "main".
+// Uses the HF tree API: GET /api/datasets/{repo}/tree/main/{path}?recursive=true
+// Returns nil (no error) if the path does not exist on HF.
+func (c *hfClient) listDir(ctx context.Context, repoID, pathPrefix string) ([]string, error) {
+	url := fmt.Sprintf("%s/api/datasets/%s/tree/main/%s?recursive=true", hfHubURL, repoID, pathPrefix)
+	resp, err := c.req(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listDir %s: %w", pathPrefix, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 404 {
+		return nil, nil // path doesn't exist; not an error
+	}
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("listDir %s HTTP %d: %s", pathPrefix, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var entries []struct {
+		Type string `json:"type"` // "file" or "directory"
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("listDir %s decode: %w", pathPrefix, err)
+	}
+	var files []string
+	for _, e := range entries {
+		if e.Type == "file" {
+			files = append(files, e.Path)
+		}
+	}
+	return files, nil
 }
 
 // createCommit uploads all files and creates a single commit via Python/xet (uv + huggingface_hub).

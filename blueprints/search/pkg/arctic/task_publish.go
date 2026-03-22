@@ -263,6 +263,10 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 					}
 					// NON-FATAL: skip this month, log, continue pipeline.
 					logf("pipeline: SKIP [%s] %s — download failed: %v", job.YM.String(), job.Type, err)
+					RecordFailure(t.cfg.FailuresCSVPath(), FailureRow{
+						Year: job.YM.Year, Month: job.YM.Month, Type: job.Type,
+						Stage: "download", Error: err.Error(), FailedAt: time.Now().UTC(),
+					})
 					t.ls.Update(func(s *StateSnapshot) { s.Stats.Skipped++ })
 					continue
 				}
@@ -339,6 +343,10 @@ func (t *PipelineTask) runPipeline(ctx context.Context, emit func(*PublishState)
 					}
 					// NON-FATAL: skip this month, log, continue pipeline.
 					logf("pipeline: SKIP [%s] %s — process failed: %v", job.YM.String(), job.Type, err)
+					RecordFailure(t.cfg.FailuresCSVPath(), FailureRow{
+						Year: job.YM.Year, Month: job.YM.Month, Type: job.Type,
+						Stage: "process", Error: err.Error(), FailedAt: time.Now().UTC(),
+					})
 					t.ls.Update(func(s *StateSnapshot) { s.Stats.Skipped++ })
 					continue
 				}

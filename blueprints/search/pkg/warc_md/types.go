@@ -1,7 +1,6 @@
 package warc_md
 
 import (
-	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -44,13 +43,16 @@ type MarkdownItem struct {
 	HasContent bool
 }
 
-// trackPeakMem samples runtime.MemStats.Sys every 2s and returns a getter for
-// the peak MB seen so far. Close stop to terminate the background goroutine.
+// trackPeakMem samples real RSS (VmRSS on Linux, MemStats.Sys elsewhere)
+// every 2s and returns a getter for the peak MB seen so far.
+// Close stop to terminate the background goroutine.
 func trackPeakMem(stop <-chan struct{}) func() float64 {
 	var peakMB int64
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	atomic.StoreInt64(&peakMB, int64(ms.Sys>>20))
+	mb := int64(readRSSMB())
+	if mb < 1 {
+		mb = 1
+	}
+	atomic.StoreInt64(&peakMB, mb)
 
 	go func() {
 		t := time.NewTicker(2 * time.Second)
@@ -58,8 +60,7 @@ func trackPeakMem(stop <-chan struct{}) func() float64 {
 		for {
 			select {
 			case <-t.C:
-				runtime.ReadMemStats(&ms)
-				mb := int64(ms.Sys >> 20)
+				mb := int64(readRSSMB())
 				for {
 					old := atomic.LoadInt64(&peakMB)
 					if old >= mb {
@@ -75,4 +76,9 @@ func trackPeakMem(stop <-chan struct{}) func() float64 {
 		}
 	}()
 	return func() float64 { return float64(atomic.LoadInt64(&peakMB)) }
+}
+
+// ReadRSSMB is exported for use by the scheduler to read live RSS of running sessions.
+func ReadRSSMB() float64 {
+	return readRSSMB()
 }

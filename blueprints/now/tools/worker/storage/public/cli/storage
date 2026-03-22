@@ -1,0 +1,1303 @@
+#!/usr/bin/env bash
+# storage — CLI for Storage
+# https://storage.liteio.dev/cli
+#
+# Usage: storage <command> [options] [args]
+# Run 'storage help' for full reference.
+
+set -euo pipefail
+
+VERSION="1.0.0"
+DEFAULT_ENDPOINT="https://storage.liteio.dev"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/storage"
+TOKEN_FILE="$CONFIG_DIR/token"
+CONFIG_FILE="$CONFIG_DIR/config"
+
+# ── Color & formatting ───────────────────────────────────────────────────
+
+_tty=0
+if [[ -t 1 ]]; then _tty=1; fi
+
+_color=1
+if [[ -n "${NO_COLOR:-}" ]] || [[ "${TERM:-}" == "dumb" ]] || [[ $_tty -eq 0 ]]; then
+  _color=0
+fi
+
+# Parse --no-color early from args
+for _a in "$@"; do
+  [[ "$_a" == "--no-color" ]] && _color=0
+done
+
+_bold=""  _dim=""  _reset=""  _red=""  _green=""  _yellow=""  _blue=""  _cyan=""
+if [[ $_color -eq 1 ]]; then
+  _bold=$'\033[1m'    _dim=$'\033[2m'     _reset=$'\033[0m'
+  _red=$'\033[31m'    _green=$'\033[32m'   _yellow=$'\033[33m'
+  _blue=$'\033[34m'   _cyan=$'\033[36m'
+fi
+
+# ── Globals ──────────────────────────────────────────────────────────────
+
+ENDPOINT="$DEFAULT_ENDPOINT"
+TOKEN=""
+BUCKET="${STORAGE_BUCKET:-}"
+JSON_OUTPUT=0
+QUIET=0
+
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+die() {
+  echo "${_red}error:${_reset} $1" >&2
+  [[ -n "${2:-}" ]] && echo "  $2" >&2
+  [[ -n "${3:-}" ]] && echo "  $3" >&2
+  exit "${4:-1}"
+}
+
+info() {
+  if [[ $QUIET -eq 1 ]]; then return; fi
+  echo "  ${_green}${1}${_reset} ${2:-}" >&2
+}
+
+warn() {
+  echo "${_yellow}warning:${_reset} $1" >&2
+}
+
+# Human-friendly file size
+human_size() {
+  local bytes=$1
+  if [[ $bytes -ge 1073741824 ]]; then
+    printf "%.1f GB" "$(echo "scale=1; $bytes / 1073741824" | bc 2>/dev/null || echo "$bytes")"
+  elif [[ $bytes -ge 1048576 ]]; then
+    printf "%.1f MB" "$(echo "scale=1; $bytes / 1048576" | bc 2>/dev/null || echo "$bytes")"
+  elif [[ $bytes -ge 1024 ]]; then
+    printf "%.1f KB" "$(echo "scale=1; $bytes / 1024" | bc 2>/dev/null || echo "$bytes")"
+  else
+    printf "%d B" "$bytes"
+  fi
+}
+
+# Relative time from epoch ms
+relative_time() {
+  local ts_ms=$1
+  local now_s
+  now_s=$(date +%s)
+  local ts_s=$((ts_ms / 1000))
+  local diff=$((now_s - ts_s))
+  if [[ $diff -lt 60 ]]; then echo "just now"
+  elif [[ $diff -lt 3600 ]]; then echo "$((diff / 60))m ago"
+  elif [[ $diff -lt 86400 ]]; then echo "$((diff / 3600))h ago"
+  elif [[ $diff -lt 604800 ]]; then echo "$((diff / 86400))d ago"
+  else echo "$((diff / 604800))w ago"
+  fi
+}
+
+# Parse duration string to seconds: 30m, 1h, 12h, 1d, 7d
+parse_duration() {
+  local input=$1
+  local num="${input%[smhd]}"
+  local unit="${input##*[0-9]}"
+  case "$unit" in
+    s) echo "$num" ;;
+    m) echo "$((num * 60))" ;;
+    h) echo "$((num * 3600))" ;;
+    d) echo "$((num * 86400))" ;;
+    *) echo "$num" ;;  # assume seconds
+  esac
+}
+
+# ── JSON helpers (no jq dependency for core ops) ─────────────────────────
+
+# Extract a string value from JSON: json_val '{"key":"val"}' key
+json_val() {
+  local json=$1 key=$2
+  # Try jq first if available
+  if command -v jq &>/dev/null; then
+    echo "$json" | jq -r ".$key // empty" 2>/dev/null
+    return
+  fi
+  # Regex fallback for simple string values
+  local val
+  val=$(echo "$json" | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1)
+  echo "$val"
+}
+
+# Extract a number value from JSON
+json_num() {
+  local json=$1 key=$2
+  if command -v jq &>/dev/null; then
+    echo "$json" | jq -r ".$key // empty" 2>/dev/null
+    return
+  fi
+  local val
+  val=$(echo "$json" | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -1)
+  echo "$val"
+}
+
+# Pretty-print JSON if jq is available
+json_pretty() {
+  if command -v jq &>/dev/null; then
+    jq '.' 2>/dev/null
+  else
+    cat
+  fi
+}
+
+# ── Config loading ───────────────────────────────────────────────────────
+
+load_config() {
+  # Load config file
+  if [[ -f "$CONFIG_FILE" ]]; then
+    while IFS='=' read -r key val; do
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      key=$(echo "$key" | tr -d '[:space:]')
+      val=$(echo "$val" | tr -d '[:space:]')
+      case "$key" in
+        endpoint) [[ "$ENDPOINT" == "$DEFAULT_ENDPOINT" ]] && ENDPOINT="$val" ;;
+        bucket) [[ -z "$BUCKET" ]] && BUCKET="$val" ;;
+      esac
+    done < "$CONFIG_FILE"
+  fi
+
+  # Environment overrides
+  if [[ -n "${STORAGE_ENDPOINT:-}" ]]; then ENDPOINT="$STORAGE_ENDPOINT"; fi
+  if [[ -n "${STORAGE_BUCKET:-}" ]]; then BUCKET="$STORAGE_BUCKET"; fi
+}
+
+# ── Token resolution ────────────────────────────────────────────────────
+
+resolve_token() {
+  # Already set via --token flag
+  if [[ -n "$TOKEN" ]]; then return; fi
+
+  # Environment variable
+  if [[ -n "${STORAGE_TOKEN:-}" ]]; then
+    TOKEN="$STORAGE_TOKEN"
+    return
+  fi
+
+  # Token file
+  if [[ -f "$TOKEN_FILE" ]]; then
+    TOKEN=$(cat "$TOKEN_FILE")
+    return
+  fi
+}
+
+require_token() {
+  resolve_token
+  if [[ -z "$TOKEN" ]]; then
+    die "not authenticated" \
+      "No token found in --token flag, \$STORAGE_TOKEN, or $TOKEN_FILE" \
+      "Run '${_bold}storage login${_reset}' to authenticate" 3
+  fi
+}
+
+# ── HTTP helpers ─────────────────────────────────────────────────────────
+
+# Core curl wrapper
+_curl() {
+  local method=$1 path=$2
+  shift 2
+
+  local url="${ENDPOINT}${path}"
+  local -a args=(-s -S -w '\n%{http_code}' -X "$method")
+
+  if [[ -n "$TOKEN" ]]; then
+    args+=(-H "Authorization: Bearer $TOKEN")
+  fi
+
+  args+=("$@")
+  args+=("$url")
+
+  local output
+  output=$(curl "${args[@]}" 2>&1) || {
+    die "network error" \
+      "Could not reach $ENDPOINT" \
+      "Check your internet connection and try again" 7
+  }
+
+  # Split body and status code
+  local http_code
+  http_code=$(echo "$output" | tail -1)
+  local body
+  body=$(echo "$output" | sed '$d')
+
+  # Check for errors
+  case "$http_code" in
+    2[0-9][0-9]) ;; # success
+    401)
+      local msg
+      msg=$(json_val "$body" "message" 2>/dev/null || echo "")
+      die "authentication failed" \
+        "${msg:-Token is invalid or expired}" \
+        "Run '${_bold}storage login${_reset}' to re-authenticate" 3
+      ;;
+    403)
+      die "permission denied" \
+        "$(json_val "$body" "message" 2>/dev/null || echo "Insufficient permissions")" \
+        "Check your API key scopes" 6
+      ;;
+    404)
+      die "not found" \
+        "$(json_val "$body" "message" 2>/dev/null || echo "Resource not found")" "" 4
+      ;;
+    409)
+      die "conflict" \
+        "$(json_val "$body" "message" 2>/dev/null || echo "Resource already exists")" "" 5
+      ;;
+    *)
+      local errmsg
+      errmsg=$(json_val "$body" "message" 2>/dev/null || echo "HTTP $http_code")
+      die "request failed ($http_code)" "$errmsg" "" 1
+      ;;
+  esac
+
+  echo "$body"
+}
+
+# Download a file (streams bytes, no JSON parsing)
+_curl_download() {
+  local path=$1 dest=$2
+  shift 2
+
+  local url="${ENDPOINT}${path}"
+  local -a args=(-s -S -f -w '%{http_code}')
+
+  if [[ -n "$TOKEN" ]]; then
+    args+=(-H "Authorization: Bearer $TOKEN")
+  fi
+
+  # Progress bar for TTY
+  if [[ $_tty -eq 1 ]] && [[ $QUIET -eq 0 ]]; then
+    args+=("--progress-bar")
+  fi
+
+  if [[ "$dest" == "-" ]]; then
+    curl "${args[@]}" "$@" "$url" 2>/dev/null || {
+      die "download failed" "Could not download from $path" "" 1
+    }
+  else
+    local dir
+    dir=$(dirname "$dest")
+    [[ -d "$dir" ]] || mkdir -p "$dir"
+    curl "${args[@]}" "$@" -o "$dest" "$url" 2>/dev/null || {
+      die "download failed" "Could not download from $path" "" 1
+    }
+  fi
+}
+
+# Upload a file (streams bytes)
+_curl_upload() {
+  local method=$1 path=$2 file=$3
+  shift 3
+
+  local url="${ENDPOINT}${path}"
+  local -a args=(-s -S -w '\n%{http_code}' -X "$method")
+
+  if [[ -n "$TOKEN" ]]; then
+    args+=(-H "Authorization: Bearer $TOKEN")
+  fi
+
+  # Auto-detect content type
+  local content_type="${CONTENT_TYPE:-}"
+  if [[ -z "$content_type" ]] && [[ "$file" != "-" ]]; then
+    content_type=$(file --mime-type -b "$file" 2>/dev/null || echo "application/octet-stream")
+  fi
+  if [[ -z "$content_type" ]]; then content_type="application/octet-stream"; fi
+  args+=(-H "Content-Type: $content_type")
+
+  # Progress bar for TTY with large files
+  if [[ $_tty -eq 1 ]] && [[ $QUIET -eq 0 ]] && [[ "$file" != "-" ]]; then
+    local file_size
+    file_size=$(wc -c < "$file" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    if [[ $file_size -gt 1048576 ]]; then
+      args+=("--progress-bar")
+    fi
+  fi
+
+  if [[ "$file" == "-" ]]; then
+    args+=(--data-binary @-)
+  else
+    args+=(-T "$file")
+  fi
+
+  args+=("$@" "$url")
+
+  local output
+  output=$(curl "${args[@]}" 2>&1) || {
+    die "upload failed" "Could not upload to $path" "" 1
+  }
+
+  local http_code
+  http_code=$(echo "$output" | tail -1)
+  local body
+  body=$(echo "$output" | sed '$d')
+
+  case "$http_code" in
+    2[0-9][0-9]) ;;
+    401) die "authentication failed" "Token is invalid or expired" "Run '${_bold}storage login${_reset}'" 3 ;;
+    403) die "permission denied" "$(json_val "$body" "message" 2>/dev/null || echo "")" "" 6 ;;
+    413) die "file too large" "$(json_val "$body" "message" 2>/dev/null || echo "File exceeds size limit")" "" 1 ;;
+    *) die "upload failed ($http_code)" "$(json_val "$body" "message" 2>/dev/null || echo "")" "" 1 ;;
+  esac
+
+  echo "$body"
+}
+
+# ── Commands ─────────────────────────────────────────────────────────────
+
+cmd_login() {
+  local email=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --email|-e) email="$2"; shift 2 ;;
+      *) email="$1"; shift ;;
+    esac
+  done
+
+  if [[ -z "$email" ]]; then
+    if [[ $_tty -eq 0 ]]; then
+      die "email required" "Use: storage login --email you@example.com" "" 2
+    fi
+    printf "${_bold}email:${_reset} " >&2
+    read -r email
+  fi
+
+  [[ -z "$email" ]] && die "email required" "" "" 2
+
+  info "Sending" "magic link to $email..."
+
+  local resp
+  resp=$(_curl POST /auth/magic-link \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$email\"}")
+
+  info "Check inbox" "Magic link sent to $email"
+  echo "" >&2
+  echo "  After clicking the link, copy the token and run:" >&2
+  echo "  ${_bold}storage token <your-token>${_reset}" >&2
+}
+
+cmd_token() {
+  local token="${1:-}"
+  if [[ -z "$token" ]]; then
+    # Show current token info
+    resolve_token
+    if [[ -n "$TOKEN" ]]; then
+      local source="unknown"
+      if [[ -n "${STORAGE_TOKEN:-}" ]]; then source="\$STORAGE_TOKEN"
+      elif [[ -f "$TOKEN_FILE" ]]; then source="$TOKEN_FILE"
+      fi
+      echo "${_dim}source:${_reset} $source"
+      echo "${_dim}token:${_reset}  ${TOKEN:0:12}..."
+    else
+      die "no token configured" "Run '${_bold}storage login${_reset}' to authenticate" "" 3
+    fi
+    return
+  fi
+
+  mkdir -p "$CONFIG_DIR"
+  echo "$token" > "$TOKEN_FILE"
+  chmod 600 "$TOKEN_FILE"
+  info "Saved" "Token stored in $TOKEN_FILE"
+}
+
+cmd_logout() {
+  if [[ -f "$TOKEN_FILE" ]]; then
+    rm -f "$TOKEN_FILE"
+    info "Logged out" "Token removed from $TOKEN_FILE"
+  else
+    info "Already" "logged out"
+  fi
+}
+
+cmd_ls() {
+  require_token
+
+  local bucket="" prefix="" limit=100 search=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit|-l) limit="$2"; shift 2 ;;
+      --search|-s) search="$2"; shift 2 ;;
+      --*) shift ;;
+      *)
+        if [[ -z "$bucket" ]]; then bucket="$1"
+        elif [[ -z "$prefix" ]]; then prefix="$1"
+        fi
+        shift ;;
+    esac
+  done
+
+  if [[ -z "$bucket" ]]; then
+    # List buckets
+    local resp
+    resp=$(_curl GET /bucket)
+
+    if [[ $JSON_OUTPUT -eq 1 ]]; then
+      echo "$resp" | json_pretty
+      return
+    fi
+
+    if command -v jq &>/dev/null; then
+      local count
+      count=$(echo "$resp" | jq 'length')
+      if [[ "$count" == "0" ]]; then
+        info "No buckets" "Create one with: storage bucket create <name>"
+        return
+      fi
+      printf "${_bold}%-16s %6s %10s  %-6s  %s${_reset}\n" "NAME" "FILES" "SIZE" "PUBLIC" "CREATED"
+      echo "$resp" | jq -r '.[] | [.name, (.object_count // 0 | tostring), (.total_size // 0 | tostring), (if .public == 1 then "yes" else "no" end), (.created_at // 0 | tostring)] | @tsv' | \
+        while IFS=$'\t' read -r name obj_count total_size public created_at; do
+          local size_str
+          size_str=$(human_size "$total_size")
+          local time_str
+          time_str=$(relative_time "$created_at")
+          printf "%-16s %6s %10s  %-6s  %s\n" "$name" "$obj_count" "$size_str" "$public" "$time_str"
+        done
+    else
+      echo "$resp"
+    fi
+  else
+    # List objects in bucket
+    local body="{\"limit\":$limit"
+    if [[ -n "$prefix" ]]; then body="$body,\"prefix\":\"$prefix\""; fi
+    if [[ -n "$search" ]]; then body="$body,\"search\":\"$search\""; fi
+    body="$body,\"sort_by\":{\"column\":\"name\",\"order\":\"asc\"}}"
+
+    local resp
+    resp=$(_curl POST "/object/list/$bucket" \
+      -H "Content-Type: application/json" \
+      -d "$body")
+
+    if [[ $JSON_OUTPUT -eq 1 ]]; then
+      echo "$resp" | json_pretty
+      return
+    fi
+
+    if command -v jq &>/dev/null; then
+      local count
+      count=$(echo "$resp" | jq 'length')
+      if [[ "$count" == "0" ]]; then
+        info "Empty" "No objects in $bucket${prefix:+/$prefix}"
+        return
+      fi
+      printf "${_bold}%-30s %10s  %-24s  %s${_reset}\n" "PATH" "SIZE" "TYPE" "MODIFIED"
+      echo "$resp" | jq -r '.[] | [.path, (.size // 0 | tostring), (.content_type // "-"), (.updated_at // 0 | tostring)] | @tsv' | \
+        while IFS=$'\t' read -r path size content_type updated_at; do
+          local size_str
+          size_str=$(human_size "$size")
+          local time_str
+          time_str=$(relative_time "$updated_at")
+          printf "%-30s %10s  %-24s  %s\n" "$path" "$size_str" "$content_type" "$time_str"
+        done
+    else
+      echo "$resp"
+    fi
+  fi
+}
+
+cmd_put() {
+  require_token
+
+  local file="" dest="" bucket_name="" content_type_flag=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --type|-T) content_type_flag="$2"; shift 2 ;;
+      --bucket|-b) bucket_name="$2"; shift 2 ;;
+      --*) shift ;;
+      *)
+        if [[ -z "$file" ]]; then file="$1"
+        elif [[ -z "$dest" ]]; then dest="$1"
+        fi
+        shift ;;
+    esac
+  done
+
+  [[ -z "$file" ]] && die "file required" "Usage: storage put <file> [bucket/path]" "" 2
+
+  # Resolve bucket and path
+  if [[ -n "$dest" ]]; then
+    # dest might be "bucket" or "bucket/path"
+    if [[ "$dest" == */* ]]; then
+      bucket_name="${dest%%/*}"
+      local obj_path="${dest#*/}"
+    else
+      bucket_name="$dest"
+    fi
+  fi
+
+  if [[ -z "$bucket_name" ]]; then bucket_name="${BUCKET:-default}"; fi
+
+  # Determine object path
+  local obj_path="${obj_path:-}"
+  if [[ -z "$obj_path" ]]; then
+    if [[ "$file" == "-" ]]; then
+      die "path required" "When reading from stdin, specify a destination path" \
+        "Usage: echo data | storage put - bucket/filename.txt" 2
+    fi
+    obj_path=$(basename "$file")
+  fi
+
+  # Set content type
+  if [[ -n "$content_type_flag" ]]; then CONTENT_TYPE="$content_type_flag"; fi
+
+  # Check file exists (unless stdin)
+  if [[ "$file" != "-" ]] && [[ ! -f "$file" ]]; then
+    die "file not found" "$file does not exist" "" 4
+  fi
+
+  local resp
+  resp=$(_curl_upload PUT "/object/$bucket_name/$obj_path" "$file")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  local size
+  size=$(json_num "$resp" "size")
+  local size_str=""
+  if [[ -n "$size" ]]; then size_str=" ($(human_size "$size"))"; fi
+
+  info "Uploaded" "$obj_path${size_str} to $bucket_name"
+}
+
+cmd_get() {
+  require_token
+
+  local src="" dest="" public=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --public|-p) public=1; shift ;;
+      --*) shift ;;
+      *)
+        if [[ -z "$src" ]]; then src="$1"
+        elif [[ -z "$dest" ]]; then dest="$1"
+        fi
+        shift ;;
+    esac
+  done
+
+  [[ -z "$src" ]] && die "path required" "Usage: storage get <bucket/path> [local-path]" "" 2
+
+  # Parse bucket/path
+  local bucket_name obj_path
+  if [[ "$src" == */* ]]; then
+    bucket_name="${src%%/*}"
+    obj_path="${src#*/}"
+  else
+    die "invalid path" "Use bucket/path format: storage get docs/file.txt" "" 2
+  fi
+
+  # Determine download URL
+  local url_path
+  if [[ $public -eq 1 ]]; then
+    url_path="/object/public/$bucket_name/$obj_path"
+  else
+    url_path="/object/$bucket_name/$obj_path"
+  fi
+
+  # Determine destination
+  if [[ -z "$dest" ]]; then
+    dest=$(basename "$obj_path")
+  fi
+
+  _curl_download "$url_path" "$dest"
+
+  if [[ "$dest" != "-" ]] && [[ $QUIET -eq 0 ]]; then
+    local size_str=""
+    if [[ -f "$dest" ]]; then
+      local file_size
+      file_size=$(wc -c < "$dest" | tr -d '[:space:]')
+      size_str=" ($(human_size "$file_size"))"
+    fi
+    info "Downloaded" "$(basename "$obj_path")${size_str}"
+  fi
+}
+
+cmd_cat() {
+  local src="${1:-}"
+  [[ -z "$src" ]] && die "path required" "Usage: storage cat <bucket/path>" "" 2
+  shift
+  cmd_get "$src" "-" "$@"
+}
+
+cmd_rm() {
+  require_token
+
+  local paths=() recursive=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --recursive|-r) recursive=1; shift ;;
+      --*) shift ;;
+      *) paths+=("$1"); shift ;;
+    esac
+  done
+
+  [[ ${#paths[@]} -eq 0 ]] && die "path required" "Usage: storage rm <bucket/path...>" "" 2
+
+  # Group paths by bucket
+  local bucket_name=""
+  local obj_paths=()
+
+  for p in "${paths[@]}"; do
+    if [[ "$p" != */* ]]; then
+      die "invalid path" "Use bucket/path format: storage rm docs/file.txt" "" 2
+    fi
+    local b="${p%%/*}"
+    local op="${p#*/}"
+
+    if [[ -z "$bucket_name" ]]; then
+      bucket_name="$b"
+    elif [[ "$bucket_name" != "$b" ]]; then
+      die "mixed buckets" "All paths must be in the same bucket for batch delete" "" 2
+    fi
+    obj_paths+=("$op")
+  done
+
+  # If recursive and path ends with /, list and delete all
+  if [[ $recursive -eq 1 ]] && [[ ${#obj_paths[@]} -eq 1 ]]; then
+    local prefix="${obj_paths[0]}"
+    # List all objects with prefix
+    local list_resp
+    list_resp=$(_curl POST "/object/list/$bucket_name" \
+      -H "Content-Type: application/json" \
+      -d "{\"prefix\":\"$prefix\",\"limit\":1000}")
+
+    if command -v jq &>/dev/null; then
+      local count
+      count=$(echo "$list_resp" | jq 'length')
+      if [[ "$count" == "0" ]]; then
+        info "Nothing" "to delete"
+        return
+      fi
+
+      if [[ $_tty -eq 1 ]] && [[ $QUIET -eq 0 ]]; then
+        printf "This will delete ${_bold}$count${_reset} objects. Continue? [y/N] " >&2
+        read -r confirm
+        [[ "$confirm" != [yY]* ]] && exit 0
+      fi
+
+      # Build paths array
+      local del_paths
+      del_paths=$(echo "$list_resp" | jq '[.[].path]')
+      _curl POST "/object/$bucket_name" \
+        -H "Content-Type: application/json" \
+        -d "{\"paths\":$del_paths}" > /dev/null
+
+      info "Deleted" "$count objects from $bucket_name"
+    else
+      die "jq required" "Recursive delete requires jq to be installed" "" 1
+    fi
+    return
+  fi
+
+  # Build JSON paths array
+  local paths_json="["
+  local first=1
+  for op in "${obj_paths[@]}"; do
+    [[ $first -eq 0 ]] && paths_json="$paths_json,"
+    paths_json="$paths_json\"$op\""
+    first=0
+  done
+  paths_json="$paths_json]"
+
+  _curl POST "/object/$bucket_name" \
+    -H "Content-Type: application/json" \
+    -d "{\"paths\":$paths_json}" > /dev/null
+
+  # Note: the API uses DELETE /object/:bucket with body for batch delete,
+  # but some implementations accept POST. Let's use DELETE.
+  # Actually the API uses DELETE /object/:bucket with body {paths: [...]}
+  # Let's adjust:
+
+  if [[ ${#obj_paths[@]} -eq 1 ]]; then
+    info "Deleted" "${bucket_name}/${obj_paths[0]}"
+  else
+    info "Deleted" "${#obj_paths[@]} objects from $bucket_name"
+  fi
+}
+
+cmd_mv() {
+  require_token
+
+  local from="${1:-}" to="${2:-}"
+  [[ -z "$from" ]] && die "source required" "Usage: storage mv <bucket/from> <bucket/to>" "" 2
+  [[ -z "$to" ]] && die "destination required" "Usage: storage mv <bucket/from> <bucket/to>" "" 2
+
+  local bucket_from="${from%%/*}" path_from="${from#*/}"
+  local bucket_to="${to%%/*}" path_to="${to#*/}"
+
+  if [[ "$bucket_from" != "$bucket_to" ]]; then
+    die "cross-bucket move" "Both paths must be in the same bucket" \
+      "Use 'storage cp' + 'storage rm' for cross-bucket moves" 2
+  fi
+
+  local resp
+  resp=$(_curl POST /object/move \
+    -H "Content-Type: application/json" \
+    -d "{\"bucket\":\"$bucket_from\",\"from\":\"$path_from\",\"to\":\"$path_to\"}")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  info "Moved" "$path_from -> $path_to"
+}
+
+cmd_cp() {
+  require_token
+
+  local from="${1:-}" to="${2:-}"
+  [[ -z "$from" ]] && die "source required" "Usage: storage cp <bucket/from> <bucket/to>" "" 2
+  [[ -z "$to" ]] && die "destination required" "Usage: storage cp <bucket/from> <bucket/to>" "" 2
+
+  local bucket_from="${from%%/*}" path_from="${from#*/}"
+  local bucket_to="${to%%/*}" path_to="${to#*/}"
+
+  if [[ "$bucket_from" != "$bucket_to" ]]; then
+    die "cross-bucket copy" "Both paths must be in the same bucket" "" 2
+  fi
+
+  local resp
+  resp=$(_curl POST /object/copy \
+    -H "Content-Type: application/json" \
+    -d "{\"bucket\":\"$bucket_from\",\"from\":\"$path_from\",\"to\":\"$path_to\"}")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  info "Copied" "$path_from -> $path_to"
+}
+
+cmd_share() {
+  require_token
+
+  local src="" expires="1h"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --expires|-x) expires="$2"; shift 2 ;;
+      --*) shift ;;
+      *) src="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$src" ]] && die "path required" "Usage: storage share <bucket/path> [--expires 1h]" "" 2
+
+  local bucket_name="${src%%/*}"
+  local obj_path="${src#*/}"
+  local expires_sec
+  expires_sec=$(parse_duration "$expires")
+
+  local resp
+  resp=$(_curl POST "/object/sign/$bucket_name" \
+    -H "Content-Type: application/json" \
+    -d "{\"path\":\"$obj_path\",\"expires_in\":$expires_sec}")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  local signed_url
+  signed_url=$(json_val "$resp" "signed_url")
+
+  echo "${ENDPOINT}${signed_url}"
+  [[ $QUIET -eq 0 ]] && info "Expires" "in $expires" >&2
+}
+
+cmd_info() {
+  require_token
+
+  local src="${1:-}"
+  [[ -z "$src" ]] && die "path required" "Usage: storage info <bucket/path>" "" 2
+
+  local bucket_name="${src%%/*}"
+  local obj_path="${src#*/}"
+
+  local resp
+  resp=$(_curl GET "/object/info/$bucket_name/$obj_path")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  if command -v jq &>/dev/null; then
+    local name size content_type created_at updated_at
+    name=$(echo "$resp" | jq -r '.name // "-"')
+    size=$(echo "$resp" | jq -r '.size // 0')
+    content_type=$(echo "$resp" | jq -r '.content_type // "-"')
+    created_at=$(echo "$resp" | jq -r '.created_at // 0')
+    updated_at=$(echo "$resp" | jq -r '.updated_at // 0')
+
+    printf "${_dim}%-12s${_reset} %s\n" "Path:" "$obj_path"
+    printf "${_dim}%-12s${_reset} %s\n" "Bucket:" "$bucket_name"
+    printf "${_dim}%-12s${_reset} %s\n" "Size:" "$(human_size "$size")"
+    printf "${_dim}%-12s${_reset} %s\n" "Type:" "$content_type"
+    printf "${_dim}%-12s${_reset} %s\n" "Created:" "$(relative_time "$created_at")"
+    printf "${_dim}%-12s${_reset} %s\n" "Modified:" "$(relative_time "$updated_at")"
+  else
+    echo "$resp"
+  fi
+}
+
+cmd_search() {
+  require_token
+
+  local query="" bucket_name="" mime_type=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bucket|-b) bucket_name="$2"; shift 2 ;;
+      --type|-t) mime_type="$2"; shift 2 ;;
+      --*) shift ;;
+      *) query="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$query" ]] && [[ -z "$mime_type" ]] && \
+    die "query required" "Usage: storage search <query> [--bucket <name>] [--type <mime>]" "" 2
+
+  if [[ -z "$bucket_name" ]]; then
+    # Search across all buckets — list buckets first then search each
+    local buckets_resp
+    buckets_resp=$(_curl GET /bucket)
+
+    if ! command -v jq &>/dev/null; then
+      die "jq required" "Cross-bucket search requires jq" "" 1
+    fi
+
+    local bucket_names
+    bucket_names=$(echo "$buckets_resp" | jq -r '.[].name')
+
+    if [[ $JSON_OUTPUT -eq 0 ]]; then
+      printf "${_bold}%-12s %-30s %10s  %s${_reset}\n" "BUCKET" "PATH" "SIZE" "TYPE"
+    fi
+
+    local all_results="[]"
+    while IFS= read -r bname; do
+      [[ -z "$bname" ]] && continue
+      local params="bucket=$bname"
+      if [[ -n "$query" ]]; then params="$params&query=$query"; fi
+      if [[ -n "$mime_type" ]]; then params="$params&type=$mime_type"; fi
+
+      local resp
+      resp=$(_curl GET "/drive/search?$params" 2>/dev/null || echo "[]")
+
+      if [[ $JSON_OUTPUT -eq 1 ]]; then
+        all_results=$(echo "$all_results $resp" | jq -s 'add')
+      else
+        echo "$resp" | jq -r '.[]? | [.path, (.size // 0 | tostring), (.content_type // "-")] | @tsv' 2>/dev/null | \
+          while IFS=$'\t' read -r path size content_type; do
+            printf "%-12s %-30s %10s  %s\n" "$bname" "$path" "$(human_size "$size")" "$content_type"
+          done
+      fi
+    done <<< "$bucket_names"
+
+    if [[ $JSON_OUTPUT -eq 1 ]]; then echo "$all_results" | json_pretty; fi
+  else
+    # Search in specific bucket
+    local qs="query=${query:-}"
+    if [[ -n "$mime_type" ]]; then qs="$qs&type=$mime_type"; fi
+
+    local resp
+    resp=$(_curl GET "/drive/search?bucket=$bucket_name&$qs")
+
+    if [[ $JSON_OUTPUT -eq 1 ]]; then
+      echo "$resp" | json_pretty
+      return
+    fi
+
+    if command -v jq &>/dev/null; then
+      printf "${_bold}%-12s %-30s %10s  %s${_reset}\n" "BUCKET" "PATH" "SIZE" "TYPE"
+      echo "$resp" | jq -r '.[]? | [.path, (.size // 0 | tostring), (.content_type // "-")] | @tsv' | \
+        while IFS=$'\t' read -r path size content_type; do
+          printf "%-12s %-30s %10s  %s\n" "$bucket_name" "$path" "$(human_size "$size")" "$content_type"
+        done
+    else
+      echo "$resp"
+    fi
+  fi
+}
+
+cmd_stats() {
+  require_token
+
+  local resp
+  resp=$(_curl GET /drive/stats)
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  if command -v jq &>/dev/null; then
+    local bucket_count obj_count total_size quota
+    bucket_count=$(echo "$resp" | jq -r '.bucket_count // 0')
+    obj_count=$(echo "$resp" | jq -r '.object_count // 0')
+    total_size=$(echo "$resp" | jq -r '.total_size // 0')
+    quota=$(echo "$resp" | jq -r '.quota // 5368709120')
+
+    local pct=0
+    if [[ $quota -gt 0 ]]; then pct=$(echo "scale=1; $total_size * 100 / $quota" | bc 2>/dev/null || echo "?"); fi
+
+    printf "${_dim}%-14s${_reset} %s\n" "Buckets:" "$bucket_count"
+    printf "${_dim}%-14s${_reset} %s\n" "Objects:" "$obj_count"
+    printf "${_dim}%-14s${_reset} %s\n" "Total size:" "$(human_size "$total_size")"
+    printf "${_dim}%-14s${_reset} %s (%s%% used)\n" "Quota:" "$(human_size "$quota")" "$pct"
+  else
+    echo "$resp"
+  fi
+}
+
+cmd_bucket() {
+  local subcmd="${1:-}"
+  shift 2>/dev/null || true
+
+  case "$subcmd" in
+    create|new) cmd_bucket_create "$@" ;;
+    rm|delete) cmd_bucket_delete "$@" ;;
+    *)
+      die "unknown bucket command: $subcmd" \
+        "Available: create, rm" \
+        "Run '${_bold}storage bucket create --help${_reset}' for details" 2
+      ;;
+  esac
+}
+
+cmd_bucket_create() {
+  require_token
+
+  local name="" public=0 size_limit="" types=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --public) public=1; shift ;;
+      --size-limit) size_limit="$2"; shift 2 ;;
+      --types) types="$2"; shift 2 ;;
+      --*) shift ;;
+      *) name="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$name" ]] && die "name required" "Usage: storage bucket create <name> [--public]" "" 2
+
+  local body="{\"name\":\"$name\",\"public\":$( [[ $public -eq 1 ]] && echo "true" || echo "false" )"
+
+  if [[ -n "$size_limit" ]]; then
+    # Parse size string like 5MB, 10MB
+    local limit_bytes
+    case "$size_limit" in
+      *GB|*gb) limit_bytes=$((${size_limit%[GgBb]*} * 1073741824)) ;;
+      *MB|*mb) limit_bytes=$((${size_limit%[MmBb]*} * 1048576)) ;;
+      *KB|*kb) limit_bytes=$((${size_limit%[KkBb]*} * 1024)) ;;
+      *) limit_bytes="$size_limit" ;;
+    esac
+    body="$body,\"file_size_limit\":$limit_bytes"
+  fi
+
+  if [[ -n "$types" ]]; then
+    # Convert comma-separated to JSON array
+    local types_json="["
+    local first=1
+    IFS=',' read -ra TYPES <<< "$types"
+    for t in "${TYPES[@]}"; do
+      t=$(echo "$t" | tr -d '[:space:]')
+      [[ $first -eq 0 ]] && types_json="$types_json,"
+      types_json="$types_json\"$t\""
+      first=0
+    done
+    types_json="$types_json]"
+    body="$body,\"allowed_mime_types\":$types_json"
+  fi
+
+  body="$body}"
+
+  local resp
+  resp=$(_curl POST /bucket \
+    -H "Content-Type: application/json" \
+    -d "$body")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  local vis="private"
+  if [[ $public -eq 1 ]]; then vis="public"; fi
+  info "Created" "bucket $name ($vis)"
+}
+
+cmd_bucket_delete() {
+  require_token
+
+  local name="" force=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force|-f) force=1; shift ;;
+      --*) shift ;;
+      *) name="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$name" ]] && die "name required" "Usage: storage bucket rm <name> [--force]" "" 2
+
+  # Need bucket ID — list buckets and find it
+  local buckets
+  buckets=$(_curl GET /bucket)
+
+  if ! command -v jq &>/dev/null; then
+    die "jq required" "Bucket delete requires jq" "" 1
+  fi
+
+  local bucket_id
+  bucket_id=$(echo "$buckets" | jq -r ".[] | select(.name == \"$name\") | .id" | head -1)
+  [[ -z "$bucket_id" ]] && die "bucket not found" "No bucket named '$name'" "" 4
+
+  if [[ $force -eq 1 ]]; then
+    _curl POST "/bucket/$bucket_id/empty" > /dev/null 2>&1 || true
+    info "Emptied" "bucket $name"
+  fi
+
+  _curl DELETE "/bucket/$bucket_id" > /dev/null
+
+  info "Deleted" "bucket $name"
+}
+
+cmd_key() {
+  local subcmd="${1:-}"
+  shift 2>/dev/null || true
+
+  case "$subcmd" in
+    create|new) cmd_key_create "$@" ;;
+    ls|list) cmd_key_list "$@" ;;
+    rm|revoke|delete) cmd_key_revoke "$@" ;;
+    *)
+      die "unknown key command: $subcmd" \
+        "Available: create, list, revoke" "" 2
+      ;;
+  esac
+}
+
+cmd_key_create() {
+  require_token
+
+  local name="" scopes="" prefix="" expires=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name|-n) name="$2"; shift 2 ;;
+      --scope|-s) scopes="$2"; shift 2 ;;
+      --prefix|-p) prefix="$2"; shift 2 ;;
+      --expires) expires="$2"; shift 2 ;;
+      --*) shift ;;
+      *) [[ -z "$name" ]] && name="$1"; shift ;;
+    esac
+  done
+
+  [[ -z "$name" ]] && die "name required" "Usage: storage key create <name> [--scope ...]" "" 2
+
+  local body="{\"name\":\"$name\""
+
+  if [[ -n "$scopes" ]]; then
+    local scopes_json="["
+    local first=1
+    IFS=',' read -ra SCOPES <<< "$scopes"
+    for s in "${SCOPES[@]}"; do
+      s=$(echo "$s" | tr -d '[:space:]')
+      [[ $first -eq 0 ]] && scopes_json="$scopes_json,"
+      scopes_json="$scopes_json\"$s\""
+      first=0
+    done
+    scopes_json="$scopes_json]"
+    body="$body,\"scopes\":$scopes_json"
+  fi
+
+  if [[ -n "$prefix" ]]; then body="$body,\"path_prefix\":\"$prefix\""; fi
+  body="$body}"
+
+  local resp
+  resp=$(_curl POST /keys \
+    -H "Content-Type: application/json" \
+    -d "$body")
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  local key
+  key=$(json_val "$resp" "key")
+  echo ""
+  echo "${_bold}API Key:${_reset} $key"
+  echo ""
+  echo "${_dim}Save this key — it won't be shown again.${_reset}"
+  echo "Use it with: ${_cyan}export STORAGE_TOKEN=$key${_reset}"
+}
+
+cmd_key_list() {
+  require_token
+
+  local resp
+  resp=$(_curl GET /keys)
+
+  if [[ $JSON_OUTPUT -eq 1 ]]; then
+    echo "$resp" | json_pretty
+    return
+  fi
+
+  if command -v jq &>/dev/null; then
+    local count
+    count=$(echo "$resp" | jq 'length')
+    if [[ "$count" == "0" ]]; then
+      info "No API keys" "Create one with: storage key create <name>"
+      return
+    fi
+    printf "${_bold}%-8s %-20s %-20s  %s${_reset}\n" "ID" "NAME" "SCOPES" "CREATED"
+    echo "$resp" | jq -r '.[] | [(.id // "-"), (.name // "-"), ((.scopes // ["*"]) | join(",")), (.created_at // 0 | tostring)] | @tsv' | \
+      while IFS=$'\t' read -r id name scopes created_at; do
+        local time_str
+        time_str=$(relative_time "$created_at")
+        printf "%-8s %-20s %-20s  %s\n" "$id" "$name" "$scopes" "$time_str"
+      done
+  else
+    echo "$resp"
+  fi
+}
+
+cmd_key_revoke() {
+  require_token
+
+  local id="${1:-}"
+  [[ -z "$id" ]] && die "key ID required" "Usage: storage key revoke <id>" "" 2
+
+  _curl DELETE "/keys/$id" > /dev/null
+  info "Revoked" "API key $id"
+}
+
+# ── Help ─────────────────────────────────────────────────────────────────
+
+cmd_help() {
+  cat <<HELP
+${_bold}storage${_reset} — CLI for Storage
+${_dim}https://storage.liteio.dev${_reset}
+
+${_bold}USAGE${_reset}
+  storage <command> [options] [args]
+
+${_bold}COMMANDS${_reset}
+  ${_bold}login${_reset}                      Authenticate with email (magic link)
+  ${_bold}logout${_reset}                     Remove saved credentials
+  ${_bold}token${_reset} [<token>]             Show or set authentication token
+
+  ${_bold}ls${_reset} [bucket] [prefix]        List buckets or objects
+  ${_bold}put${_reset} <file> [bucket/path]    Upload a file (or stdin with -)
+  ${_bold}get${_reset} <bucket/path> [dest]    Download a file (or stdout with -)
+  ${_bold}cat${_reset} <bucket/path>           Print file contents to stdout
+  ${_bold}rm${_reset} <bucket/path...>         Delete objects
+  ${_bold}mv${_reset} <from> <to>              Move/rename an object
+  ${_bold}cp${_reset} <from> <to>              Copy an object
+  ${_bold}info${_reset} <bucket/path>          Show object metadata
+  ${_bold}share${_reset} <bucket/path>         Create a signed download URL
+  ${_bold}search${_reset} <query>              Search for objects by name
+  ${_bold}stats${_reset}                      Show storage usage
+
+  ${_bold}bucket create${_reset} <name>        Create a new bucket
+  ${_bold}bucket rm${_reset} <name>            Delete a bucket
+
+  ${_bold}key create${_reset} <name>           Create an API key
+  ${_bold}key list${_reset}                    List API keys
+  ${_bold}key revoke${_reset} <id>             Revoke an API key
+
+${_bold}FLAGS${_reset}
+  --json, -j          JSON output
+  --quiet, -q         Suppress non-essential output
+  --token, -t <tok>   Use specific token
+  --endpoint, -e      API endpoint (default: $DEFAULT_ENDPOINT)
+  --no-color          Disable colors
+  --version, -V       Print version
+  --help, -h          Show this help
+
+${_bold}EXAMPLES${_reset}
+  storage login
+  storage put report.pdf docs
+  storage ls docs
+  storage get docs/report.pdf
+  storage share docs/report.pdf --expires 7d
+  echo "hello" | storage put - docs/hello.txt
+  storage cat docs/data.json | jq '.items'
+
+${_bold}ENV${_reset}
+  STORAGE_TOKEN       API key or session token
+  STORAGE_ENDPOINT    API base URL
+  STORAGE_BUCKET      Default bucket name
+  NO_COLOR            Disable colored output
+
+HELP
+}
+
+cmd_version() {
+  echo "storage $VERSION"
+}
+
+# ── Main ─────────────────────────────────────────────────────────────────
+
+main() {
+  load_config
+
+  # Parse global flags
+  local args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json|-j) JSON_OUTPUT=1; shift ;;
+      --quiet|-q) QUIET=1; shift ;;
+      --token|-t) TOKEN="$2"; shift 2 ;;
+      --endpoint|-e) ENDPOINT="$2"; shift 2 ;;
+      --no-color) shift ;; # already handled above
+      --version|-V) cmd_version; exit 0 ;;
+      --help|-h)
+        if [[ ${#args[@]} -eq 0 ]]; then
+          cmd_help; exit 0
+        fi
+        args+=("$1"); shift ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+
+  if [[ ${#args[@]} -eq 0 ]]; then
+    cmd_help
+    exit 0
+  fi
+
+  local cmd="${args[0]}"
+  local cmd_args=()
+  if [[ ${#args[@]} -gt 1 ]]; then
+    cmd_args=("${args[@]:1}")
+  fi
+
+  case "$cmd" in
+    login)    cmd_login "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    logout)   cmd_logout ;;
+    token)    cmd_token "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    ls|list)  cmd_ls "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    put|upload|push) cmd_put "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    get|download|pull) cmd_get "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    cat|read) cmd_cat "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    rm|delete|del) cmd_rm "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    mv|move|rename) cmd_mv "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    cp|copy)  cmd_cp "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    share|sign) cmd_share "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    info)     cmd_info "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    search|find) cmd_search "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    stats)    cmd_stats ;;
+    bucket)   cmd_bucket "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    key|keys) cmd_key "${cmd_args[@]+"${cmd_args[@]}"}" ;;
+    help)     cmd_help ;;
+    version)  cmd_version ;;
+    *)
+      die "unknown command: $cmd" \
+        "Run '${_bold}storage help${_reset}' for available commands" "" 2
+      ;;
+  esac
+}
+
+main "$@"

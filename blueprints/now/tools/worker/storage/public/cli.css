@@ -1,0 +1,270 @@
+/* ══════════════════════════════════════════════════════════════════════
+   cli.css — CLI page styles
+   Requires base.css loaded first.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout ────────────────────────────────────────────────────────── */
+.wrap{position:relative;z-index:1;max-width:1104px;margin:0 auto;padding:0 48px}
+.label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
+  color:var(--text-3);font-weight:500;text-transform:uppercase;margin-bottom:16px}
+.h2{font-size:28px;font-weight:800;letter-spacing:-.8px;line-height:1.2;margin-bottom:14px}
+.sub{font-size:14px;color:var(--text-2);line-height:1.7;max-width:520px}
+
+/* ── Section ───────────────────────────────────────────────────────── */
+.section{padding:96px 0;background:var(--bg);opacity:0;transform:translateY(24px);transition:opacity .6s ease,transform .6s ease}
+.hero+.section,.hero+.section-divider+.section,.section+.section,.section+.section-divider+.section,.section-divider+.section{margin-top:1px}
+.section.visible{opacity:1;transform:none}
+
+/* ── Hero ──────────────────────────────────────────────────────────── */
+.hero{position:relative;z-index:1;padding:96px 0 48px;background:var(--bg)}
+.hero-inner{max-width:1104px;margin:0 auto;padding:0 48px;
+  display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start}
+.hero-left{}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:10px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;
+  color:var(--text-3);border:1px solid var(--border);padding:6px 14px;
+  margin-bottom:32px;font-weight:500;text-transform:uppercase}
+.hero-eyebrow-dot{width:5px;height:5px;background:var(--green);display:inline-block}
+.hero-title{font-size:42px;font-weight:900;letter-spacing:-2px;line-height:1.1;margin-bottom:18px}
+.hero-title em{font-style:normal;color:var(--text-3)}
+.hero-sub{font-size:15px;color:var(--text-2);line-height:1.7;max-width:400px;margin-bottom:36px}
+
+/* ── Install area ──────────────────────────────────────────────────── */
+.install-section{margin-bottom:28px}
+.install-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
+  color:var(--text-3);font-weight:500;text-transform:uppercase;margin-bottom:10px}
+.install-tabs{display:flex;gap:0;border:1px solid var(--border);border-bottom:none;overflow:hidden}
+.install-tab{font-family:'JetBrains Mono',monospace;font-size:11px;
+  background:none;border:none;border-right:1px solid var(--border);
+  color:var(--text-3);padding:8px 16px;cursor:pointer;transition:all .15s;font-weight:500}
+.install-tab:last-child{border-right:none}
+.install-tab.active{background:var(--ink);color:var(--bg)}
+.install-tab:not(.active):hover{color:var(--text);background:var(--surface-alt)}
+.install-box{display:flex;align-items:center;gap:0;border:1px solid var(--border);
+  background:var(--surface);overflow:hidden}
+.install-box .prompt{font-family:'JetBrains Mono',monospace;font-size:13px;
+  color:var(--text-3);padding:12px 14px;border-right:1px solid var(--border);
+  background:var(--surface-alt);user-select:none;flex-shrink:0}
+.install-box .cmd{font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--text);padding:12px 14px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.copy-btn{font-family:'JetBrains Mono',monospace;font-size:11px;
+  background:none;border:none;border-left:1px solid var(--border);
+  color:var(--text-3);padding:12px 14px;cursor:pointer;transition:all .15s;
+  white-space:nowrap;flex-shrink:0}
+.copy-btn:hover{color:var(--text);background:var(--surface-alt)}
+
+/* ── Download buttons ──────────────────────────────────────────────── */
+.dl-grid{display:flex;gap:0;margin-top:-1px}
+.dl-btn{display:inline-flex;align-items:center;gap:10px;padding:10px 16px;flex:1;
+  border:1px solid var(--border);background:var(--surface);transition:all .15s;
+  text-decoration:none;color:var(--text)}
+.dl-btn+.dl-btn{border-left:none}
+.dl-btn:hover{background:var(--surface-alt)}
+.dl-icon{color:var(--text-3);display:flex;align-items:center}
+.dl-info{display:flex;flex-direction:column;gap:1px}
+.dl-name{font-size:12px;font-weight:600}
+.dl-meta{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3)}
+
+/* ── Hero terminal ─────────────────────────────────────────────────── */
+.hero-term{border:1px solid var(--border);background:var(--surface);overflow:hidden}
+
+/* ── Terminal text coloring ────────────────────────────────────────── */
+.t-prompt{color:var(--text-3);user-select:none}
+.t-cmd{color:var(--text);font-weight:600}
+.t-flag{color:var(--text-2)}
+.t-ok{color:var(--green);font-weight:600}
+.t-url{color:var(--blue)}
+.t-dim{color:var(--text-3)}
+.t-num{color:var(--amber)}
+.t-blank{display:block;height:4px}
+
+/* ── Steps ─────────────────────────────────────────────────────────── */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+  border:1px solid var(--border);overflow:hidden}
+.step{background:var(--bg);padding:24px;border-right:1px solid var(--border)}
+.step:last-child{border-right:none}
+.step-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  font-weight:600;margin-bottom:12px;letter-spacing:1px}
+.step-title{font-size:15px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.step-desc{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:14px}
+.step-cmd{font-family:'JetBrains Mono',monospace;font-size:11.5px;
+  padding:10px 14px;background:var(--surface-alt);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.step-cmd-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step-cmd .t-prompt{margin-right:6px}
+.step-copy{font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:none;border:none;color:var(--text-3);cursor:pointer;transition:color .15s;
+  flex-shrink:0;padding:0}
+.step-copy:hover{color:var(--text)}
+
+/* ── Command grid ──────────────────────────────────────────────────── */
+.cmd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+  border:1px solid var(--border);overflow:hidden}
+.cmd-card{background:var(--bg);padding:24px;border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border);transition:background .15s}
+.cmd-card:nth-child(3n){border-right:none}
+.cmd-card:nth-last-child(-n+3){border-bottom:none}
+.cmd-card:hover{background:var(--surface-alt)}
+.cmd-name{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
+  margin-bottom:4px;color:var(--text)}
+.cmd-desc{font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:10px}
+.cmd-example{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-2);padding:8px 10px;background:var(--surface-alt);
+  border:1px solid var(--border);display:flex;align-items:center;
+  justify-content:space-between;gap:8px}
+.cmd-example-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmd-copy{font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:none;border:none;color:var(--text-3);cursor:pointer;transition:color .15s;
+  flex-shrink:0;padding:0}
+.cmd-copy:hover{color:var(--text)}
+
+/* ── Use case cards ────────────────────────────────────────────────── */
+.uc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0;
+  border:1px solid var(--border);overflow:hidden}
+.uc{background:var(--bg);border-right:1px solid var(--border)}
+.uc:last-child{border-right:none}
+.uc-head{padding:24px 24px 18px}
+.uc-tag{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--text-3);font-weight:500;margin-bottom:10px}
+.uc-title{font-size:15px;font-weight:700;letter-spacing:-.3px;margin-bottom:6px}
+.uc-desc{font-size:13px;color:var(--text-2);line-height:1.6}
+.uc-cmd{font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:12px 16px;border-top:1px solid var(--border);background:var(--surface-alt);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
+.uc-cmd-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.uc-copy{font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:none;border:none;color:var(--text-3);cursor:pointer;transition:color .15s;
+  flex-shrink:0;padding:0}
+.uc-copy:hover{color:var(--text)}
+
+/* ── Auth ──────────────────────────────────────────────────────────── */
+.auth-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;
+  border:1px solid var(--border);overflow:hidden;max-width:720px}
+.auth-card{background:var(--bg);padding:24px}
+.auth-card:first-child{border-right:1px solid var(--border)}
+.auth-badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;
+  border:1px solid var(--border);color:var(--text-3);font-weight:500;letter-spacing:.5px;
+  display:inline-block;margin-bottom:12px;text-transform:uppercase}
+.auth-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.auth-desc{font-size:13px;color:var(--text-2);line-height:1.6;margin-bottom:14px}
+.auth-cmd{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-2);padding:10px 12px;background:var(--surface-alt);
+  border:1px solid var(--border);display:flex;align-items:center;
+  justify-content:space-between;gap:8px}
+.auth-cmd-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.auth-copy{font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:none;border:none;color:var(--text-3);cursor:pointer;transition:color .15s;
+  flex-shrink:0;padding:0}
+.auth-copy:hover{color:var(--text)}
+
+/* ── CTA ───────────────────────────────────────────────────────────── */
+.section--cta{padding:96px 0 48px;margin-top:1px}
+.section--cta .wrap{display:flex;flex-direction:column;align-items:center;text-align:center}
+.cta-prompt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);margin-bottom:16px}
+.cta-title{font-size:32px;font-weight:900;letter-spacing:-1.2px;margin-bottom:12px}
+.cta-sub{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:36px;max-width:400px}
+.cta-actions{display:flex;gap:0;border:1px solid var(--border);overflow:hidden}
+.cta-actions a{font-size:13px;font-weight:600;padding:12px 28px;
+  display:inline-flex;align-items:center;gap:8px;transition:all .15s;
+  color:var(--text-2);text-decoration:none;border-right:1px solid var(--border)}
+.cta-actions a:last-child{border-right:none}
+.cta-actions a:first-child{background:var(--ink);color:var(--bg)}
+.cta-actions a:first-child:hover{opacity:.85}
+.cta-actions a:not(:first-child):hover{background:var(--surface-alt);color:var(--text)}
+
+/* ── Divider ───────────────────────────────────────────────────────── */
+.section-divider{border:none;border-top:1px solid var(--border);margin:0;background:var(--bg);position:relative;z-index:1}
+
+/* ── Token note ────────────────────────────────────────────────────── */
+.token-note{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-top:16px;max-width:720px;line-height:1.7}
+
+/* ── Command section labels ───────────────────────────────────────── */
+.cmd-section-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:2px;
+  text-transform:uppercase;color:var(--text-3);font-weight:500;margin-bottom:12px}
+
+/* ── Command aliases ──────────────────────────────────────────────── */
+.cmd-aliases{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
+  margin-bottom:6px;letter-spacing:.3px}
+
+/* ── Flag table ───────────────────────────────────────────────────── */
+.flag-table{border:1px solid var(--border);overflow:hidden}
+.flag-row{display:grid;grid-template-columns:140px 80px 1fr;border-bottom:1px solid var(--border)}
+.flag-row:last-child{border-bottom:none}
+.flag-header{background:var(--surface-alt);font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-3)}
+.flag-header .flag-col-name,.flag-header .flag-col-short,.flag-header .flag-col-desc{padding:10px 16px}
+.flag-col-name{padding:10px 16px;font-size:13px;border-right:1px solid var(--border)}
+.flag-col-short{padding:10px 16px;font-size:13px;color:var(--text-3);border-right:1px solid var(--border)}
+.flag-col-desc{padding:10px 16px;font-size:13px;color:var(--text-2)}
+.flag-col-name code,.flag-col-short code,.flag-col-desc code{font-size:12px;background:var(--surface-alt);
+  padding:1px 5px;border:1px solid var(--border)}
+
+/* ── Recipe grid ──────────────────────────────────────────────────── */
+.recipe-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.recipe-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-bottom:10px;font-weight:500}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+@media(max-width:1024px){
+  .hero-inner{grid-template-columns:1fr;gap:40px}
+  .steps{grid-template-columns:1fr}
+  .step{border-right:none;border-bottom:1px solid var(--border)}
+  .step:last-child{border-bottom:none}
+  .cmd-grid{grid-template-columns:1fr 1fr}
+  .cmd-card:nth-child(2n){border-right:none}
+  .cmd-card:nth-child(3n){border-right:1px solid var(--border)}
+  .uc-grid{grid-template-columns:1fr}
+  .uc{border-right:none;border-bottom:1px solid var(--border)}
+  .uc:last-child{border-bottom:none}
+  .auth-grid{grid-template-columns:1fr}
+  .auth-card:first-child{border-right:none;border-bottom:1px solid var(--border)}
+  .recipe-grid{grid-template-columns:1fr}
+  .flag-row{grid-template-columns:120px 60px 1fr}
+}
+@media(max-width:768px){
+  .hero-title{font-size:36px;letter-spacing:-1.5px}
+  .h2{font-size:24px}
+  .cmd-grid{grid-template-columns:1fr}
+  .cmd-card{border-right:none!important}
+  .section{padding:48px 0}
+  .dl-grid{flex-direction:column}
+  .dl-btn+.dl-btn{border-left:1px solid var(--border);border-top:none}
+  .dl-btn{min-height:48px}
+  .flag-row{grid-template-columns:120px 60px 1fr}
+}
+@media(max-width:640px){
+  .hero-inner,.wrap{padding:0 20px}
+  .hero{padding:48px 0}
+  .hero-title{font-size:28px;letter-spacing:-1px}
+  .hero-sub{font-size:14px}
+  .install-box .cmd{font-size:11px}
+  .install-tabs{flex-wrap:wrap}
+  .install-tab{min-height:40px}
+  .term-body{padding:14px 16px;font-size:11px}
+  .section--cta{padding:48px 0}
+  .cta-title{font-size:24px}
+  .cta-actions{flex-direction:column;width:100%;max-width:280px}
+  .cta-actions a{justify-content:center;border-right:none;border-bottom:1px solid var(--border);min-height:44px}
+  .cta-actions a:last-child{border-bottom:none}
+  .uc-head{padding:20px}
+  .cmd-card{padding:16px}
+  .step{padding:20px}
+  .step-cmd{font-size:10.5px;overflow-x:auto}
+  .flag-row{grid-template-columns:1fr}
+  .flag-col-name,.flag-col-short{border-right:none;border-bottom:1px solid var(--border)}
+  .flag-col-short:empty{display:none}
+  .flag-header{display:none}
+  .copy-btn{padding:10px 12px}
+}
+@media(max-width:480px){
+  .hero-title{font-size:24px;letter-spacing:-.8px}
+  .hero-eyebrow{font-size:10px;padding:5px 12px}
+  .h2{font-size:22px}
+  .sub{font-size:13px}
+  .cmd-name{font-size:13px}
+  .cmd-desc{font-size:12px}
+  .cmd-example{font-size:10px}
+  .step-title{font-size:14px}
+  .step-desc{font-size:12px}
+}

@@ -17,8 +17,8 @@ SERVER1_USER  ?= tam
 SERVER1_HOST  ?= server
 SERVER2_USER  ?= root
 SERVER2_HOST  ?= server2
-# Pass SERVER=2 to any remote/deploy target to operate on server2
-SERVER        ?= 1
+# Pass SERVER=1 to any remote/deploy target to operate on server1
+SERVER        ?= 2
 REMOTE_USER   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_USER),$(SERVER1_USER))
 REMOTE_HOST   ?= $(if $(filter 2,$(SERVER)),$(SERVER2_HOST),$(SERVER1_HOST))
 REMOTE_SSH     = $(REMOTE_USER)@$(REMOTE_HOST)
@@ -442,33 +442,40 @@ deploy-dashboard: deploy-linux-noble-browser ## Build, deploy, and (re)start FTS
 	@echo "==> Verifying dashboard is responding..."
 	@$(SSH) $(REMOTE_SSH) 'curl -sf http://localhost:$(DASHBOARD_PORT)/api/scrape/list > /dev/null && echo "Dashboard running on port $(DASHBOARD_PORT)" || { echo "ERROR: dashboard not responding"; tail -20 /tmp/dashboard.log; exit 1; }'
 
-.PHONY: deploy-cc-watch
-deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
-	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
+.PHONY: deploy-redis
+deploy-redis: ## Install/configure Redis on remote server (idempotent; SERVER=2 for server2)
+	@echo "==> Deploying install_redis.sh to $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts'
+	@$(SCP) scripts/install_redis.sh $(REMOTE_SSH):~/scripts/install_redis.sh
+	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/install_redis.sh && bash ~/scripts/install_redis.sh'
+
+.PHONY: deploy-cc-watch
+deploy-cc-watch: ## Deploy cc_watch.sh and (re)start cc_watcher screen session (SERVER=2 for server2; HF_TOKEN=hf_... to write ~/.hf_token)
+	@echo "==> Deploying cc_watch.sh to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p ~/scripts ~/log'
 	@$(SCP) scripts/cc_watch.sh $(REMOTE_SSH):~/scripts/cc_watch.sh
 	@$(SSH) $(REMOTE_SSH) 'chmod +x ~/scripts/cc_watch.sh'
 	@if [ -n "$(HF_TOKEN)" ]; then \
 		echo "==> Writing HF_TOKEN to $(REMOTE_SSH):~/.hf_token..."; \
 		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
 	fi
-	@echo "==> Stopping existing g_watch session on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; true'
-	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+	@echo "==> Stopping existing watcher sessions on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_watcher -X quit 2>/dev/null; screen -S g_watch -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; pkill -f hf_commit.py 2>/dev/null; true'
 	@sleep 1
-	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
+	@echo "==> Starting cc_watcher on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS cc_watcher -L -Logfile $$HOME/log/cc_watcher.log bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
 	@sleep 2
-	@echo "==> Verifying g_watch is running on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_watch && echo "g_watch started" || { echo "ERROR: g_watch not found"; exit 1; }'
+	@echo "==> Verifying cc_watcher is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_watcher && echo "cc_watcher started" || { echo "ERROR: cc_watcher not found"; exit 1; }'
 
 .PHONY: remote-cc-watch-attach
-remote-cc-watch-attach: ## Attach to g_watch screen session on remote server
-	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_watch'
+remote-cc-watch-attach: ## Attach to cc_watcher screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_watcher'
 
 .PHONY: remote-cc-watch-kill
-remote-cc-watch-kill: ## Kill g_watch screen session on remote server
-	@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
+remote-cc-watch-kill: ## Kill cc_watcher screen session on remote server
+	@$(SSH) $(REMOTE_SSH) 'screen -S cc_watcher -X quit 2>/dev/null && echo "Killed" || echo "No session found"'
 	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
 
 .PHONY: remote-cc-watch-log
@@ -477,30 +484,76 @@ remote-cc-watch-log: ## Tail cc_watch log on remote server
 
 # CC_SCHED_START / CC_SCHED_END define the file index range for the scheduler.
 # Defaults: server1=0–4999, server2=5000–9999.
-CC_SCHED_START ?= $(if $(filter 2,$(SERVER)),5000,0)
-CC_SCHED_END   ?= $(if $(filter 2,$(SERVER)),9999,4999)
+CC_SCHED_START ?= 0
+CC_SCHED_END   ?= 9999
 # HF rate limit: 128 commits/hour per token across ALL repos (cc, arctic, goodreads, etc.).
 # Default --commit-interval 180 → 20/hour per server, 40/hour total, 88 headroom for other repos.
 # Adjust via COMMIT_INTERVAL env var in cc_watch.sh or --commit-interval flag.
 
 .PHONY: deploy-cc-sched
-deploy-cc-sched: ## (Re)start g_sched using Go --schedule on remote server (SERVER=2 for server2)
-	@echo "==> Stopping existing g_sched on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
+deploy-cc-sched: ## (Re)start cc_sched using Go --schedule on remote server (SERVER=2 for server2)
+	@echo "==> Stopping existing scheduler sessions on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_sched -X quit 2>/dev/null; screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
 	@sleep 1
-	@echo "==> Starting g_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
-	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
+	@echo "==> Starting cc_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS cc_sched -L -Logfile $$HOME/log/cc_sched.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
 	@sleep 2
-	@echo "==> Verifying g_sched is running on $(REMOTE_SSH)..."
-	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_sched && echo "g_sched started" || { echo "ERROR: g_sched not found"; exit 1; }'
+	@echo "==> Verifying cc_sched is running on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_sched && echo "cc_sched started" || { echo "ERROR: cc_sched not found"; exit 1; }'
 
 .PHONY: remote-cc-sched-log
-remote-cc-sched-log: ## Tail cc_schedule log on remote server
-	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_schedule_$(CC_SCHED_START)_$(CC_SCHED_END).log'
+remote-cc-sched-log: ## Tail cc_sched log on remote server
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_sched.log'
 
 .PHONY: remote-cc-sched-attach
-remote-cc-sched-attach: ## Attach to g_sched screen session on remote server
-	@$(SSH) -t $(REMOTE_SSH) 'screen -r g_sched'
+remote-cc-sched-attach: ## Attach to cc_sched screen session on remote server
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_sched'
+
+# ── CC v2 Pipeline ─────────────────────────────────────────────────────────
+# New simplified pipeline (no WARC races, distributed locking, single source of truth).
+# Uses cc_v2 publish --watch and cc_v2 publish --schedule.
+
+CC_V2_SCHED_START ?= 0
+CC_V2_SCHED_END   ?= 9999
+
+.PHONY: deploy-cc-v2-watch
+deploy-cc-v2-watch: ## Deploy and start cc_v2 watcher on remote (SERVER=2)
+	@echo "==> Stopping existing cc_v2 watcher on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_v2_watcher -X quit 2>/dev/null; pkill -f "cc_v2 publish --watch" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting cc_v2 watcher on $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/log && screen -dmS cc_v2_watcher -L -Logfile $$HOME/log/cc_watcher.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.hf_token ] && export HF_TOKEN=$$(cat $$HOME/.hf_token); [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc_v2 publish --watch --commit-interval 90; exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_v2_watcher && echo "cc_v2_watcher started" || { echo "ERROR: cc_v2_watcher not found"; exit 1; }'
+
+.PHONY: deploy-cc-v2-sched
+deploy-cc-v2-sched: ## Deploy and start cc_v2 scheduler on remote (SERVER=2)
+	@echo "==> Stopping existing cc_v2 scheduler on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S cc_v2_sched -X quit 2>/dev/null; pkill -f "cc_v2 publish --schedule" 2>/dev/null; true'
+	@sleep 1
+	@echo "==> Starting cc_v2 scheduler on $(REMOTE_SSH) (range $(CC_V2_SCHED_START)–$(CC_V2_SCHED_END))..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/log && screen -dmS cc_v2_sched -L -Logfile $$HOME/log/cc_sched.log bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc_v2 publish --schedule --start $(CC_V2_SCHED_START) --end $(CC_V2_SCHED_END); exec bash"'
+	@sleep 2
+	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep cc_v2_sched && echo "cc_v2_sched started" || { echo "ERROR: cc_v2_sched not found"; exit 1; }'
+
+.PHONY: remote-cc-v2-watch-log
+remote-cc-v2-watch-log: ## Tail cc_v2 watcher log
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_watcher.log'
+
+.PHONY: remote-cc-v2-sched-log
+remote-cc-v2-sched-log: ## Tail cc_v2 scheduler log
+	@$(SSH) $(REMOTE_SSH) 'tail -f ~/log/cc_sched.log'
+
+.PHONY: remote-cc-v2-watch-attach
+remote-cc-v2-watch-attach: ## Attach to cc_v2 watcher screen
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_v2_watcher'
+
+.PHONY: remote-cc-v2-sched-attach
+remote-cc-v2-sched-attach: ## Attach to cc_v2 scheduler screen
+	@$(SSH) -t $(REMOTE_SSH) 'screen -r cc_v2_sched'
+
+.PHONY: deploy-cc-v2
+deploy-cc-v2: deploy-linux deploy-cc-v2-watch deploy-cc-v2-sched ## Build, deploy binary, start cc_v2 watcher + scheduler
 
 .PHONY: deploy-linux-focal-browser
 deploy-linux-focal-browser: build-linux ## [LEGACY] Deploy Ubuntu 20.04 focal binary with Chrome wrapper (bundled libstdc++)
@@ -644,7 +697,7 @@ remote-hn-tail: ## Tail hn swarm recrawl log on remote
 # Arctic publish (with auto-restart on stall / crash)
 # ---------------------------------------------------------------------------
 ARCTIC_FROM ?= 2005-12
-ARCTIC_STALL ?= 45m
+ARCTIC_STALL ?= 90m
 
 .PHONY: deploy-arctic
 deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run with auto-restart loop (SERVER=2 for server2)
@@ -654,12 +707,14 @@ deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run wit
 	@echo "==> Starting arctic_run with restart loop on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'screen -dmS arctic_run bash -c "\
 		export PATH=$$HOME/bin:\$$PATH; \
+		export TORRENT_STORAGE_DEFAULT_FILE_IO=classic; \
+		export HF_XET_FIXED_UPLOAD_CONCURRENCY=4; \
 		n=0; \
 		while true; do \
 			n=\$$((n+1)); \
 			LOG=$$HOME/log/arctic_run_\$${n}.log; \
 			echo \"[\$$(date)] arctic_run attempt \$$n starting\" >> $$HOME/log/arctic_restart.log; \
-			GOMEMLIMIT=8GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
+			GOMEMLIMIT=6GiB HF_TOKEN=\$$(cat $$HOME/.hf_token) \
 				search arctic publish --from $(ARCTIC_FROM) --max-commit-stall $(ARCTIC_STALL) 2>&1 | tee \$$LOG; \
 			rc=\$$?; \
 			echo \"[\$$(date)] arctic_run exited \$$rc (attempt \$$n)\" >> $$HOME/log/arctic_restart.log; \
@@ -670,6 +725,21 @@ deploy-arctic: deploy-linux-noble ## Build, deploy, and (re)start arctic_run wit
 		exec bash"'
 	@sleep 2
 	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep arctic_run && echo "arctic_run started (restart loop)" || { echo "ERROR: arctic_run not found"; exit 1; }'
+
+.PHONY: deploy-arctic-scripts
+deploy-arctic-scripts: ## Deploy arctic scripts (backward, gaps, watchdog) to remote server
+	@echo "==> Deploying arctic scripts to $(REMOTE_SSH)..."
+	@$(SSH) $(REMOTE_SSH) 'mkdir -p $$HOME/scripts $$HOME/log'
+	@$(SCP) scripts/arctic_backward.sh scripts/arctic_gaps.sh scripts/watchdog.sh scripts/hf_check.sh $(REMOTE_SSH):scripts/
+	@$(SSH) $(REMOTE_SSH) 'chmod +x $$HOME/scripts/*.sh'
+	@echo "==> Installing cron jobs..."
+	@$(SSH) $(REMOTE_SSH) 'crontab -l 2>/dev/null | grep -v arctic_gaps | grep -v watchdog | grep -v hf_check > /tmp/cron_clean; \
+		echo "*/5 * * * * bash $$HOME/scripts/watchdog.sh" >> /tmp/cron_clean; \
+		echo "*/30 * * * * bash $$HOME/scripts/hf_check.sh" >> /tmp/cron_clean; \
+		echo "*/30 * * * * bash $$HOME/scripts/arctic_gaps.sh" >> /tmp/cron_clean; \
+		crontab /tmp/cron_clean; rm /tmp/cron_clean'
+	@echo "==> Cron jobs installed:"
+	@$(SSH) $(REMOTE_SSH) 'crontab -l | grep -E "(watchdog|hf_check|arctic_gaps)"'
 
 .PHONY: remote-arctic-attach
 remote-arctic-attach: ## Attach to arctic_run screen session on remote server
@@ -685,8 +755,15 @@ remote-arctic-tail: ## Tail the most recent arctic log on remote
 	@$(SSH) $(REMOTE_SSH) 'tail -f $$(ls -t $$HOME/log/arctic_run_*.log 2>/dev/null | head -1)'
 
 .PHONY: remote-arctic-status
-remote-arctic-status: ## Show arctic process status and restart history
-	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"'
+remote-arctic-status: ## Show arctic process status, restart history, and gaps
+	@$(SSH) $(REMOTE_SSH) 'echo "=== Process ==="; ps aux | grep "arctic publish" | grep -v grep; \
+		echo ""; echo "=== Restart log ==="; tail -20 $$HOME/log/arctic_restart.log 2>/dev/null || echo "(no restart log)"; \
+		echo ""; echo "=== Gaps status ==="; cat $$HOME/log/arctic_gaps_status.json 2>/dev/null || echo "(no gaps status)"; \
+		echo ""; echo "=== Recent failures ==="; tail -10 $$HOME/data/arctic/repo/failures.csv 2>/dev/null || echo "(no failures)"'
+
+.PHONY: remote-arctic-gaps
+remote-arctic-gaps: ## Run gap detection on remote server
+	@$(SSH) $(REMOTE_SSH) 'bash $$HOME/scripts/arctic_gaps.sh && cat $$HOME/log/arctic_gaps_status.json'
 
 .PHONY: install
 install: build ## Install search binary to $$HOME/bin/search (alias for build)

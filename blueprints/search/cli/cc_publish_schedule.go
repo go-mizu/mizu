@@ -15,15 +15,16 @@ import (
 
 // ccScheduleConfig holds configuration for the CC pipeline scheduler.
 type ccScheduleConfig struct {
-	CrawlID     string
-	RepoRoot    string
-	Start       int
-	End         int
-	MaxSessions int // 0 = auto-detect from hardware
-	ChunkSize   int
-	DonePct     int
-	StallRounds int
-	SearchBin   string
+	CrawlID       string
+	RepoRoot      string
+	Start         int
+	End           int
+	MaxSessions   int     // 0 = auto-detect from hardware
+	RAMPerSession float64 // GB per session for auto-detection (0 = default 1.2)
+	ChunkSize     int
+	DonePct       int
+	StallRounds   int
+	SearchBin     string
 	// GapIndices, when non-nil, enables gap mode: only these specific shard
 	// indices are targeted. Chunks are built from clusters of gap indices and
 	// done-pct is evaluated against gap targets only (not the full range).
@@ -52,33 +53,43 @@ func (b ccBudget) String() string {
 
 // computeCCBudget derives the session budget from hardware profile.
 //
-// Each pipeline session (download → pack → export) peaks at ~2–5 GB observed
-// during WARC parallel offset scanning. Budget 2.5 GB per session.
-// Use available RAM (not total) since background services (lnx, quickwit,
-// llama-server, chrome, docker) consume significant memory.
-// Hard cap at 6 sessions (diminishing returns from disk I/O contention).
-func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
-	const (
-		perSessionGB = 2.5
-		maxCap       = 6
-	)
+// Each pipeline session (download → pack → export) peaks at ~1.5–2.5 GB observed
+// during WARC parallel offset scanning. Budget 1.8 GB per session (measured p95).
+// Use available RAM (not total) since background services consume memory.
+// Hard cap at 12 sessions — with 1.8 GB/session, 12 sessions need ~22 GB,
+// achievable on 32+ GB servers. On 12 GB servers, RAM cap limits to ~4-5 sessions.
+func computeCCBudget(hw arctic.HardwareProfile, ramPerSession float64, maxSessions int) ccBudget {
+	const maxCap = 12
+
+	if ramPerSession <= 0 {
+		ramPerSession = 0.8 // default: 0.8 GB per session (measured avg ~390 MB + headroom)
+	}
+
+	// Manual override: --max-sessions N bypasses auto-detection.
+	if maxSessions > 0 {
+		return ccBudget{MaxSessions: maxSessions, RAMPerSession: ramPerSession, Auto: false}
+	}
 
 	b := ccBudget{
-		RAMPerSession: perSessionGB,
+		RAMPerSession: ramPerSession,
 		Auto:          true,
 	}
 
-	// By RAM: use available RAM (accounts for background services dynamically).
-	// Available RAM already excludes OS caches / other processes.
-	usableRAM := hw.RAMAvailGB
-	if usableRAM < perSessionGB {
-		usableRAM = perSessionGB
+	// By RAM: use total RAM minus a fixed reserve for OS + background services.
+	// Available RAM fluctuates heavily during download bursts (page cache) and
+	// causes unnecessary session shedding. With GOMEMLIMIT set per session,
+	// Go can't grow beyond its limit, so total-based budgeting is safe.
+	const ramReserveGB = 2.5 // OS + arctic + postgres + watcher
+	usableRAM := hw.RAMTotalGB - ramReserveGB
+	if usableRAM < ramPerSession {
+		usableRAM = ramPerSession
 	}
-	b.ByRAM = int(usableRAM / perSessionGB)
+	b.ByRAM = int(usableRAM / ramPerSession)
 
-	// By CPU: each session is a mix of I/O-bound and CPU-bound work.
-	// Allow 1.5 sessions per core (pack is I/O heavy, export is CPU heavy).
-	b.ByCPU = int(float64(hw.CPUCores) * 1.5)
+	// By CPU: the direct pipeline (.warc.gz → parquet) is CPU-intensive.
+	// Each session uses ~1 core during packing (gzip + tokenizer + zstd).
+	// Allow 1 session per core to avoid oversubscription.
+	b.ByCPU = hw.CPUCores
 	if b.ByCPU < 1 {
 		b.ByCPU = 1
 	}
@@ -95,19 +106,12 @@ func computeCCBudget(hw arctic.HardwareProfile) ccBudget {
 		b.MaxSessions = maxCap
 	}
 
-	// Safety: on machines with < 16 GB total, never exceed 3 sessions regardless
-	// of what available RAM says (background services can release cache temporarily,
-	// creating a false sense of headroom that vanishes under load).
-	if hw.RAMTotalGB < 16 && b.MaxSessions > 3 {
-		b.MaxSessions = 3
-	}
-
-	// Environment override.
-	if v := os.Getenv("MIZU_CC_MAX_SESSIONS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			b.MaxSessions = n
-			b.Auto = false
-		}
+	// Safety cap for small-RAM machines. With memory optimizations (pooled buffers,
+	// capped workers, GOGC=200), real per-session RSS is ~300-500 MB. On a 12 GB
+	// machine with 4 GB for OS/arctic, 8 GB is usable → 8/0.6 = ~13 sessions.
+	// CPU cap (cores×1.5) is the real limit on these machines.
+	if hw.RAMTotalGB < 8 && b.MaxSessions > 4 {
+		b.MaxSessions = 4
 	}
 
 	return b
@@ -159,8 +163,8 @@ func (t *ccResourceTracker) throughputPerSession() float64 {
 // isBottlenecked returns true if adding sessions isn't helping throughput.
 // Compares recent throughput-per-session to earlier throughput-per-session.
 func (t *ccResourceTracker) isBottlenecked() bool {
-	if len(t.history) < 10 {
-		return false
+	if len(t.history) < 20 {
+		return false // need ~15 min of data before judging
 	}
 	// Compare first half vs second half of history.
 	mid := len(t.history) / 2
@@ -242,9 +246,11 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 
 	// --- Critical: immediate danger ---
 
-	// RAM critically low: other processes (k8s, arctic, hn) may be competing.
-	if hw.RAMAvailGB < 0.3 {
-		// Emergency: try to get to nRunning-2 (kill at least 2 slots worth of headroom).
+	// RAM critically low: only react to true emergency. With GOMEMLIMIT set
+	// per session (600 MiB), Go can't grow unbounded. Low available RAM during
+	// download bursts is normal (page cache reclamation). Only shed sessions
+	// when genuinely out of memory.
+	if hw.RAMAvailGB < 0.15 {
 		effective = nRunning - 2
 		if effective < 0 {
 			effective = 0
@@ -255,8 +261,8 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 
 	// --- Pressure: approaching limits ---
 
-	// RAM under pressure (< 500 MB available).
-	if hw.RAMAvailGB < 0.5 {
+	// RAM under pressure (< 300 MB available).
+	if hw.RAMAvailGB < 0.3 {
 		effective = nRunning - 1
 		if effective < 1 {
 			effective = 1
@@ -264,17 +270,23 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 		reasons = append(reasons, fmt.Sprintf("ram_low=%.0fMB", hw.RAMAvailGB*1024))
 	}
 
-	// RAM moderately low (< 1 GB available). Don't grow.
-	if hw.RAMAvailGB < 1.0 && effective > nRunning {
+	// RAM moderately low (< 500 MB available). Don't grow.
+	if hw.RAMAvailGB < 0.5 && effective > nRunning {
 		effective = nRunning
 		reasons = append(reasons, fmt.Sprintf("ram_tight=%.1fGB: hold", hw.RAMAvailGB))
 	}
 
-	// Load average too high: other processes are contending.
+	// Load average: pipeline sessions are I/O-heavy (downloads, gzip scanning)
+	// which inflate load average without actually being CPU-bound. Use high
+	// thresholds to avoid shedding sessions that are just doing network I/O.
 	loadAvg := readLoadAvg1()
 	if loadAvg > 0 {
-		overloadThreshold := float64(hw.CPUCores) * 3
-		highThreshold := float64(hw.CPUCores) * 2
+		// Pipeline sessions are heavily I/O-bound (network downloads, gzip
+		// decompression from disk). I/O waits inflate load average without
+		// consuming CPU. With 9 sessions doing parallel gzip scanning, load
+		// averages of 30-50 on 6 cores are normal and not a problem.
+		overloadThreshold := float64(hw.CPUCores) * 15 // 90 on 6 cores
+		highThreshold := float64(hw.CPUCores) * 10     // 60 on 6 cores
 
 		if loadAvg > overloadThreshold {
 			// Severely overloaded — shed load proportionally.
@@ -289,7 +301,7 @@ func dynamicMaxSessions(hw arctic.HardwareProfile, initialMax, nRunning int, tra
 			if newMax < effective {
 				effective = newMax
 			}
-			reasons = append(reasons, fmt.Sprintf("load=%.1f>%d×3: -%d", loadAvg, hw.CPUCores, reduction))
+			reasons = append(reasons, fmt.Sprintf("load=%.1f>%d×8: -%d", loadAvg, hw.CPUCores, reduction))
 		} else if loadAvg > highThreshold && effective > nRunning {
 			// High load — don't grow.
 			effective = nRunning
@@ -510,17 +522,13 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	}
 
 	// ── Hardware detection and budget ────────────────────────────────────────
-	autoMode := cfg.MaxSessions == 0
 	var budget ccBudget
 	var hw arctic.HardwareProfile
 
-	if autoMode {
-		hw = arctic.DetectHardware(cfg.RepoRoot)
-		budget = computeCCBudget(hw)
-		cfg.MaxSessions = budget.MaxSessions
-	} else {
-		budget = ccBudget{MaxSessions: cfg.MaxSessions, Auto: false}
-	}
+	hw = arctic.DetectHardware(cfg.RepoRoot)
+	budget = computeCCBudget(hw, cfg.RAMPerSession, cfg.MaxSessions)
+	cfg.MaxSessions = budget.MaxSessions
+	autoMode := budget.Auto
 	initialMax := cfg.MaxSessions
 
 	statsCSV := ccStatsCSVPath(cfg.RepoRoot)
@@ -533,6 +541,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			gapSet[idx] = true
 		}
 	}
+
+	// Redis integration for rate tracking and state queries.
+	rds := newCCRedis(cfg.CrawlID)
+	useRedis := rds.Available(ctx)
 
 	logLine("=== CC Schedule starting ===")
 	logLine(fmt.Sprintf("  Crawl:       %s", cfg.CrawlID))
@@ -550,10 +562,14 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		logLine(fmt.Sprintf("  Sessions:    %d max (manual)", cfg.MaxSessions))
 	}
 	logLine(fmt.Sprintf("  Done pct:    %d%%", cfg.DonePct))
-	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%dm) with no new commits", cfg.StallRounds, cfg.StallRounds*2))
+	logLine(fmt.Sprintf("  Stall kill:  after %d rounds (~%ds each) with no new commits", cfg.StallRounds, 45))
 	logLine(fmt.Sprintf("  Binary:      %s", searchBin))
+	if useRedis {
+		logLine("  Redis:       connected")
+	}
 
 	// ── Initial cleanup ──────────────────────────────────────────────────────
+	schedStart := time.Now()
 	committed := ccSchedReadCommitted(statsCSV, cfg.CrawlID)
 	ccCleanupLeftovers(cfg.CrawlID, committed, logLine)
 	logLine("")
@@ -571,6 +587,64 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 	// Resource tracker for adaptive throughput/bottleneck detection.
 	tracker := &ccResourceTracker{}
 
+	// If stats.csv has real RSS measurements, use them to refine the budget.
+	if allStats, _ := ccReadStatsCSV(statsCSV); len(allStats) > 0 {
+		csvTotals := ccComputeTotals(allStats, cfg.CrawlID)
+		if csvTotals.AvgRSSMB > 0 {
+			realGB := float64(csvTotals.MaxRSSMB) / 1024.0
+			if realGB > 0.1 && realGB < cfg.RAMPerSession {
+				logLine(fmt.Sprintf("  RSS data:    avg=%d MB, max=%d MB — real usage %.2f GB < budget %.2f GB",
+					csvTotals.AvgRSSMB, csvTotals.MaxRSSMB, realGB, cfg.RAMPerSession))
+			}
+		}
+	}
+
+	// File counting for rate tracking.
+	dataDir := filepath.Join(cfg.RepoRoot, "data", cfg.CrawlID)
+	homeDir, _ := os.UserHomeDir()
+	warcDir := filepath.Join(homeDir, "data", "common-crawl", cfg.CrawlID, "warc")
+	countFiles := func(dir, suffix string) int {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return 0
+		}
+		n := 0
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), suffix) {
+				n++
+			}
+		}
+		return n
+	}
+	countPendingParquets := func() int { return countFiles(dataDir, ".parquet") }
+	countDownloading := func() int { return countFiles(warcDir, ".warc.gz") }
+
+	// Rate tracking via sliding window of per-round deltas.
+	// All counters are session-local to avoid inflation from stats.csv merge.
+	// Pack rate uses sessionCommitted + pending (not totalPacked from stats.csv).
+	// When watcher commits N shards: sessionCommitted+N, pending-N → net 0.
+	// When pipeline creates a new parquet: pending+1 → net +1.
+	type rateSnapshot struct {
+		sessionPacked   int // sessionCommitted + pending parquets (session-local)
+		sessionCommits  int // shards committed to HF since scheduler start
+		downloading     int // raw .warc.gz files on disk
+		time            time.Time
+	}
+	var rateHistory []rateSnapshot
+	lastSeenHFCommit := 0 // watcher CommitNumber last seen
+	sessionCommitted := 0 // shards pushed to HF during this session
+	if ws, ok := ccReadWatcherStatus(cfg.RepoRoot); ok {
+		lastSeenHFCommit = ws.CommitNumber // baseline: don't count old commits
+	}
+	// Baseline pending: old parquets from previous sessions that may get
+	// deleted by watcher cleanup. Subtract from sessionPacked so those
+	// deletions don't make the rate go negative.
+	baselinePending := countPendingParquets()
+	rateHistory = append(rateHistory, rateSnapshot{
+		sessionPacked: 0, sessionCommits: 0,
+		downloading: countDownloading(), time: time.Now(),
+	})
+
 	round := 0
 	for {
 		round++
@@ -582,8 +656,11 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		}
 
 		// Re-detect hardware for dynamic scaling (available RAM, disk change over time).
+		// Recompute budget ceiling so it can scale UP when resources free up.
 		if autoMode {
 			hw = arctic.DetectHardware(cfg.RepoRoot)
+			budget = computeCCBudget(hw, cfg.RAMPerSession, 0)
+			initialMax = budget.MaxSessions
 		}
 
 		// Read committed set.
@@ -639,6 +716,14 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 
 		totalCommitted := len(committed)
 
+		// Read watcher status: single source of truth for HF commit progress.
+		// Use watcher's total_committed when available (it's written after each
+		// successful HF push). Falls back to stats.csv count otherwise.
+		watcherStatus, hasWatcherStatus := ccReadWatcherStatus(cfg.RepoRoot)
+		if hasWatcherStatus && watcherStatus.TotalCommitted > totalCommitted {
+			totalCommitted = watcherStatus.TotalCommitted
+		}
+
 		// Record snapshot for adaptive tracking.
 		loadAvg := readLoadAvg1()
 		tracker.record(ccRoundSnapshot{
@@ -660,25 +745,192 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		nTodo := len(todoKeys)
 		slots := effectiveMax - nRunning
 
-		// Log resource state with throughput metrics.
-		if autoMode {
-			tps := tracker.throughputPerSession()
-			fillRate := tracker.diskFillRate()
-			logLine(fmt.Sprintf("Round %d | hw: %.1fGB RAM (%.1f avail), %.0fGB disk (%.0f free), load %.1f/%d cores",
-				round, hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskTotalGB, hw.DiskFreeGB, loadAvg, hw.CPUCores))
-			throughputInfo := fmt.Sprintf("tps=%.2f commits/round/sess", tps)
-			if fillRate > 0.01 {
-				throughputInfo += fmt.Sprintf(", disk_fill=%.1fGB/round", fillRate)
-			}
-			logLine(fmt.Sprintf("         | budget: %s, effective: %d (%s)",
-				budget, effectiveMax, reason))
-			logLine(fmt.Sprintf("         | %s", throughputInfo))
+		// ── Round summary ────────────────────────────────────────────────────
+		const totalTarget = 100_000
+
+		pending := countPendingParquets()
+		downloading := countDownloading()
+
+		// Detect new HF commits: if CommitNumber increased, add ShardsInCommit.
+		if hasWatcherStatus && watcherStatus.CommitNumber > lastSeenHFCommit {
+			sessionCommitted += watcherStatus.ShardsInCommit
+			lastSeenHFCommit = watcherStatus.CommitNumber
 		}
 
-		logLine(fmt.Sprintf("Round %d | committed=%d | done=%d/%d chunks | running=%d | todo=%d | slots=%d",
-			round, totalCommitted, nDone, len(chunks), nRunning, nTodo, slots))
+		// Session-local packed: sessionCommitted + (pending - baseline).
+		// baseline subtracted so old pending from previous sessions that get
+		// cleaned up don't create negative rates.
+		// When watcher commits N: sessionCommitted+N, pending-N → net zero.
+		// When pipeline creates 1 new parquet: pending+1 → net +1.
+		sessionPacked := sessionCommitted + pending - baselinePending
+		if sessionPacked < 0 {
+			sessionPacked = 0
+		}
+
+		// Record this round's snapshot for sliding-window rate calculation.
+		rateHistory = append(rateHistory, rateSnapshot{
+			sessionPacked: sessionPacked, sessionCommits: sessionCommitted,
+			downloading: downloading, time: time.Now(),
+		})
+		// Keep last 20 rounds (~15 min at 45s/round) for stable window.
+		if len(rateHistory) > 20 {
+			rateHistory = rateHistory[len(rateHistory)-20:]
+		}
+
+		// Compute rates: prefer Redis (accurate, real-time), fall back to sliding window.
+		var packRate, commitRate, downloadRate float64
+		rateSource := ""
+
+		// Re-check Redis availability periodically (connection may have dropped).
+		if round%20 == 0 {
+			useRedis = rds.Available(ctx)
+		}
+
+		if useRedis {
+			// Redis rates use sorted sets with 15-min window — accurate across all processes.
+			packRate = rds.PackRate(ctx, 15*time.Minute)
+			commitRate = rds.CommitRate(ctx, 15*time.Minute)
+			downloadRate = rds.DownloadRate(ctx, 15*time.Minute)
+			if commitRate > 0 {
+				rateSource = "redis"
+			}
+			// Trim old entries periodically (every 10 rounds).
+			if round%10 == 0 {
+				rds.TrimRates(ctx)
+			}
+			// Update hardware state in Redis.
+			rds.SetHardware(ctx, map[string]interface{}{
+				"cpu_cores":    hw.CPUCores,
+				"ram_total_gb": fmt.Sprintf("%.1f", hw.RAMTotalGB),
+				"ram_avail_gb": fmt.Sprintf("%.1f", hw.RAMAvailGB),
+				"disk_free_gb": fmt.Sprintf("%.1f", hw.DiskFreeGB),
+				"load_avg_1":   fmt.Sprintf("%.1f", loadAvg),
+			})
+		} else {
+			// Fallback: file-based sliding window.
+			windowStart := rateHistory[0]
+			windowEnd := rateHistory[len(rateHistory)-1]
+			windowDur := windowEnd.time.Sub(windowStart.time)
+
+			if len(rateHistory) >= 5 && windowDur.Seconds() > 60 {
+				newPacked := windowEnd.sessionPacked - windowStart.sessionPacked
+				if newPacked < 0 {
+					newPacked = 0
+				}
+				packRate = float64(newPacked) / windowDur.Hours()
+
+				// Commit rate from actual HF pushes during this session only.
+				newSessionCommits := windowEnd.sessionCommits - windowStart.sessionCommits
+				if newSessionCommits > 0 {
+					commitRate = float64(newSessionCommits) / windowDur.Hours()
+					rateSource = "hf"
+				}
+			}
+		}
+
+		// Delta since last round (for display).
+		var lastRoundPacked, lastRoundCommitted, lastRoundDownload int
+		if !useRedis && len(rateHistory) >= 2 {
+			windowEnd := rateHistory[len(rateHistory)-1]
+			prev := rateHistory[len(rateHistory)-2]
+			lastRoundPacked = windowEnd.sessionPacked - prev.sessionPacked
+			lastRoundCommitted = windowEnd.sessionCommits - prev.sessionCommits
+			lastRoundDownload = windowEnd.downloading - prev.downloading
+			if lastRoundPacked < 0 {
+				lastRoundPacked = 0
+			}
+		}
+
+		// Redis: read totalCommitted from Redis when available (O(1) vs CSV scan).
+		if useRedis {
+			redisCount := rds.CommittedCount(ctx)
+			if redisCount > totalCommitted {
+				totalCommitted = redisCount
+			}
+			// Note: don't use rds.PendingCount() — the Redis pending list is
+			// append-only (pipeline pushes, watcher never pops) so it grows
+			// stale. The filesystem count (countPendingParquets) is authoritative.
+		}
+
+		// Watcher status: prefer Redis, fall back to file.
+		if useRedis {
+			if ws, ok := rds.GetWatcherStatus(ctx); ok {
+				watcherStatus = ws
+				hasWatcherStatus = true
+			}
+		}
+
+		remaining := totalTarget - totalCommitted
+
+		// Line 1: round header with session counts.
+		scalingNote := ""
+		if reason != "ok" {
+			scalingNote = fmt.Sprintf(" [%s]", reason)
+		}
+		logLine(fmt.Sprintf("Round %d | sessions: %d/%d running, %d queued%s | load %.1f/%d cores | RAM %.1f/%.1fGB",
+			round, nRunning, effectiveMax, nTodo, scalingNote, loadAvg, hw.CPUCores, hw.RAMAvailGB, hw.RAMTotalGB))
+
+		// Line 2: throughput rates (always shown).
+		if packRate > 0 || commitRate > 0 {
+			if useRedis {
+				logLine(fmt.Sprintf("  rate   | pack: %.0f/hr | commit: %.0f/hr [%s] | download: %.0f/hr | pending: %d",
+					packRate, commitRate, rateSource, downloadRate, pending))
+			} else {
+				logLine(fmt.Sprintf("  rate   | pack: %.0f/hr (+%d) | commit: %.0f/hr [%s] (+%d) | downloading: %d (%+d)",
+					packRate, lastRoundPacked, commitRate, rateSource, lastRoundCommitted,
+					downloading, lastRoundDownload))
+			}
+		} else {
+			if useRedis {
+				logLine(fmt.Sprintf("  rate   | warming up (redis) | pending: %d | downloading: %d",
+					pending, downloading))
+			} else {
+				logLine(fmt.Sprintf("  rate   | warming up (%d/%d rounds) | downloading: %d (%+d)",
+					len(rateHistory)-1, 5, downloading, lastRoundDownload))
+			}
+		}
+
+		// Line 3: progress counters.
+		logLine(fmt.Sprintf("  done   | %d committed + %d pending = %d total | %d remaining of %d (%.1f%%)",
+			totalCommitted, pending, totalCommitted+pending, remaining, totalTarget,
+			float64(totalCommitted)/float64(totalTarget)*100))
+
+		// Line 4: ETA based on commit rate, falls back to pack rate.
+		if remaining <= 0 {
+			logLine(fmt.Sprintf("  DONE   | %d/%d shards committed", totalCommitted, totalTarget))
+		} else {
+			etaRate := commitRate
+			if etaRate <= 0 {
+				etaRate = packRate
+			}
+			if etaRate > 0 {
+				etaHours := float64(remaining) / etaRate
+				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				if etaHours >= 24 {
+					logLine(fmt.Sprintf("  ETA    | %.1f days — ~%s", etaHours/24, etaDone.Format("Mon, 02 Jan 2006 15:04")))
+				} else {
+					logLine(fmt.Sprintf("  ETA    | %.1f hours — ~%s", etaHours, etaDone.Format("Mon, 02 Jan 2026 15:04")))
+				}
+			} else {
+				logLine("  ETA    | calculating...")
+			}
+		}
+
+		// Line 5: latest HF commit from watcher.
+		if hasWatcherStatus && watcherStatus.CommitNumber > 0 {
+			ago := time.Since(watcherStatus.Timestamp).Round(time.Second)
+			if watcherStatus.Timestamp.Before(schedStart) {
+				logLine(fmt.Sprintf("  HF     | (previous) #%d: %q  +%d shards",
+					watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit))
+			} else {
+				logLine(fmt.Sprintf("  HF     | #%d: %q  +%d shards  (%s ago)",
+					watcherStatus.CommitNumber, watcherStatus.Message, watcherStatus.ShardsInCommit, ago))
+			}
+		}
+
+		// Line 6: running sessions detail.
 		if len(runningNames) > 0 {
-			logLine("  running: " + strings.Join(runningNames, " "))
+			logLine("  active | " + strings.Join(runningNames, " "))
 		}
 
 		// If we need to shed sessions (effective max < running), kill the most stalled.
@@ -729,9 +981,10 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			return nil
 		}
 
-		// Ramp up gradually: max 2 new sessions per round to avoid
-		// spiking load/memory when many slots open at once.
-		const maxStartPerRound = 2
+		// Ramp up gradually: max 4 new sessions per round to avoid
+		// spiking load/memory when many slots open at once. With 45s rounds
+		// and 12 max sessions, 4/round reaches full capacity in ~2 minutes.
+		const maxStartPerRound = 4
 		started := 0
 		for _, key := range todoKeys {
 			if slots <= 0 || started >= maxStartPerRound {
@@ -752,7 +1005,7 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Minute):
+		case <-time.After(45 * time.Second):
 		}
 	}
 }

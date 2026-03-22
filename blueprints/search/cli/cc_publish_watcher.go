@@ -13,11 +13,47 @@ import (
 	"time"
 )
 
+// ccWatcherStatus is written by the watcher after each successful HF commit.
+// The scheduler reads this as the single source of truth for commit progress.
+type ccWatcherStatus struct {
+	CommitNumber   int       `json:"commit_number"`    // increments each HF commit
+	Message        string    `json:"message"`           // commit message sent to HF
+	CommitURL      string    `json:"commit_url"`        // full URL to commit
+	ShardsInCommit int       `json:"shards_in_commit"`  // parquets in this commit
+	TotalCommitted int       `json:"total_committed"`   // all-time committed shards (from stats.csv)
+	Timestamp      time.Time `json:"timestamp"`         // when this commit happened
+}
+
+func ccWatcherStatusPath(repoRoot string) string {
+	return filepath.Join(repoRoot, "watcher_status.json")
+}
+
+func ccReadWatcherStatus(repoRoot string) (ccWatcherStatus, bool) {
+	data, err := os.ReadFile(ccWatcherStatusPath(repoRoot))
+	if err != nil {
+		return ccWatcherStatus{}, false
+	}
+	var s ccWatcherStatus
+	if err := json.Unmarshal(data, &s); err != nil {
+		return ccWatcherStatus{}, false
+	}
+	return s, true
+}
+
+func ccWriteWatcherStatus(repoRoot string, s ccWatcherStatus) {
+	data, err := json.Marshal(s)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(ccWatcherStatusPath(repoRoot), data, 0o644)
+}
+
 // ccShardMeta is written by the pipeline alongside each parquet to pass timing info to the watcher.
 type ccShardMeta struct {
 	DurDownloadS int64 `json:"dur_download_s"`
 	DurConvertS  int64 `json:"dur_convert_s"`
 	DurExportS   int64 `json:"dur_export_s"`
+	PeakRSSMB    int64 `json:"peak_rss_mb,omitempty"`
 }
 
 // ccUncommittedParquet holds a parquet file not yet committed to HF.
@@ -50,6 +86,9 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 		return err
 	}
 
+	// Redis integration.
+	rds := newCCRedis(crawlID)
+
 	fmt.Println(Banner())
 	fmt.Println(subtitleStyle.Render("CC Watcher: parquet folder → HuggingFace"))
 	fmt.Println()
@@ -63,6 +102,11 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	)
 	if chartsEvery > 0 {
 		fmt.Printf("  Charts    every %s\n", infoStyle.Render(chartsEvery.String()))
+	}
+	if rds.Available(ctx) {
+		fmt.Printf("  Redis     %s\n", successStyle.Render("connected"))
+		// Seed Redis from stats.csv on first run.
+		rds.SeedFromCSV(ctx, statsCSV, crawlID)
 	}
 	fmt.Println()
 
@@ -90,10 +134,16 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 	// Seed to zero so the very first flush (leftover parquets) is never blocked.
 	var lastCommitTime time.Time
 
+	// Commit counter: seed from existing status file so restarts don't reset.
+	commitNum := 0
+	if prev, ok := ccReadWatcherStatus(repoRoot); ok {
+		commitNum = prev.CommitNumber
+	}
+
 	// Flush immediately on startup (handles leftovers from previous runs), then tick.
 	flush := func() {
 		if err := ccWatcherFlush(ctx, hf, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir,
-			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime); err != nil {
+			committed, &lastChartTime, chartsEvery, minCommitInterval, &lastCommitTime, &commitNum, rds); err != nil {
 			fmt.Printf("  [watcher] flush: %v\n", err)
 		}
 	}
@@ -117,7 +167,7 @@ func ccRunWatcher(ctx context.Context, crawlID, repoRoot, repoID string, private
 // minCommitInterval enforces a minimum gap between commits to stay under HF's 128/hour limit.
 func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID, statsCSV, dataDir, warcMdDir string,
 	committed map[int]bool, lastChartTime *time.Time, chartsEvery time.Duration,
-	minCommitInterval time.Duration, lastCommitTime *time.Time) error {
+	minCommitInterval time.Duration, lastCommitTime *time.Time, commitNum *int, rds *ccRedis) error {
 
 	newFiles := ccFindUncommittedParquets(dataDir, crawlID, committed)
 	chartsStale := chartsEvery > 0 && time.Since(*lastChartTime) >= chartsEvery
@@ -137,10 +187,12 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 	}
 
-	// Cap batch size: each parquet is ~30 MB, so 5 files ≈ 150 MB.
-	// Upload speed is ~500 kB/s, so 150 MB takes ~5 min, leaving 7 min
-	// of the 12-min Go timeout for xet finalization (which can hang).
-	const maxBatchSize = 5
+	// Cap batch size: each parquet is ~30 MB, so 30 files ≈ 900 MB.
+	// With 60-min upload timeout and xet parallel upload, this fits comfortably.
+	// Larger batches amortize the per-commit overhead (stats merge, README regen,
+	// xet handshake). At 1.12 MB/s upload, 900 MB takes ~800s (~13 min).
+	// 30 shards × 4.6 commits/h = 138 shards/h theoretical max.
+	const maxBatchSize = 30
 	if len(newFiles) > maxBatchSize {
 		fmt.Printf("  [watcher] capping batch to %d of %d pending parquet(s)\n", maxBatchSize, len(newFiles))
 		newFiles = newFiles[:maxBatchSize]
@@ -150,10 +202,13 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	// Between finding them and committing, the scheduler cleanup or a crashed
 	// session may have deleted the local file. Committing a phantom shard
 	// (stats row without data on HF) causes data integrity issues.
-	// Also skip tiny/corrupt files (<1 MB) — these are truncated exports from
-	// crashed pipelines; the pipeline will regenerate them on next run.
+	// Skip files that disappeared or are truly corrupt (0 bytes / no parquet header).
+	// Valid empty parquets (shards with 0 HTML records) are ~343 bytes — these
+	// must be committed so the scheduler marks them as done and moves on.
+	// Previously the threshold was 1 MB which caused empty shards to loop
+	// (export → delete → re-export → delete) and never commit.
 	{
-		const minParquetBytes = 1 << 20 // 1 MB
+		const minParquetBytes = 100 // parquet header is ~100+ bytes; 0 bytes = truly corrupt
 		var existing []ccUncommittedParquet
 		for _, f := range newFiles {
 			fi, err := os.Stat(f.localPath)
@@ -162,8 +217,8 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 				continue
 			}
 			if fi.Size() < minParquetBytes {
-				fmt.Printf("  [watcher] skipping %s (truncated: %d bytes, expected ~30 MB) — deleting so pipeline retries\n", f.shard, fi.Size())
-				_ = os.Remove(f.localPath) // delete so pipeline regenerates on next run
+				fmt.Printf("  [watcher] skipping %s (corrupt: %d bytes) — deleting so pipeline retries\n", f.shard, fi.Size())
+				_ = os.Remove(f.localPath)
 				continue
 			}
 			existing = append(existing, f)
@@ -198,6 +253,7 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 			DurDownloadS: meta.DurDownloadS,
 			DurConvertS:  meta.DurConvertS,
 			DurExportS:   meta.DurExportS,
+			PeakRSSMB:    meta.PeakRSSMB,
 		})
 	}
 
@@ -321,6 +377,30 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 	*lastCommitTime = time.Now()
 	if len(chartRelPaths) > 0 {
 		*lastChartTime = time.Now()
+	}
+
+	// Write watcher status so scheduler can display the latest HF commit.
+	*commitNum++
+	wsStatus := ccWatcherStatus{
+		CommitNumber:   *commitNum,
+		Message:        commitMsg,
+		CommitURL:      commitURL,
+		ShardsInCommit: len(uploadedFiles),
+		TotalCommitted: len(committed) + len(uploadedFiles), // committed map updated below
+		Timestamp:      time.Now(),
+	}
+	ccWriteWatcherStatus(repoRoot, wsStatus)
+
+	// Redis: update committed set, record commit events, update watcher status.
+	if rds != nil {
+		committedIndices := make([]int, len(uploadedFiles))
+		for i, f := range uploadedFiles {
+			committedIndices[i] = f.fileIdx
+		}
+		rds.AddCommittedBatch(ctx, committedIndices)
+		rds.RecordCommitted(ctx, len(uploadedFiles))
+		rds.SetWatcherStatus(ctx, wsStatus)
+		rds.Log(ctx, "watcher", "info", commitMsg)
 	}
 
 	// Step 5: Update publish timing, delete all local intermediates, mark committed.
@@ -460,7 +540,6 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 	// by runCCWarcPack. CC filenames (e.g. CC-MAIN-...-00044.warc.gz) do not contain
 	// the file index, so filename-based matching doesn't work. The sidecar records the
 	// actual path for each shard index, making cleanup reliable.
-	home, _ := os.UserHomeDir()
 	if entries, err := os.ReadDir(warcMdDir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
@@ -487,60 +566,11 @@ func ccPurgeCommittedLocals(crawlID, dataDir, warcMdDir string, committed map[in
 		}
 	}
 
-	// Pass 3: brute-force raw WARC dir — delete any .warc.gz not currently open by
-	// any process and older than 10 minutes (safely orphaned from crashed pipelines).
-	warcDir := filepath.Join(home, "data", "common-crawl", crawlID, "warc")
-	openFiles := ccOpenFiles()
-	if entries, err := os.ReadDir(warcDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".warc.gz") {
-				continue
-			}
-			fullPath := filepath.Join(warcDir, e.Name())
-			if openFiles[fullPath] {
-				continue // currently in use by a pipeline
-			}
-			fi, err := e.Info()
-			if err != nil || time.Since(fi.ModTime()) < 10*time.Minute {
-				continue // too recent — may still be downloading
-			}
-			if rmErr := os.Remove(fullPath); rmErr == nil {
-				n++
-			}
-		}
-	}
+	// Note: no brute-force WARC cleanup here. Pipeline's --cleanup flag
+	// handles WARC deletion after successful packing. Aggressive deletion
+	// races with pipelines that have downloaded but not yet packed a WARC.
 
 	return n
-}
-
-// ccOpenFiles returns a set of absolute file paths currently held open by any process.
-// Uses /proc/*/fd symlinks (Linux only); returns empty map on other platforms.
-func ccOpenFiles() map[string]bool {
-	open := make(map[string]bool)
-	procs, err := os.ReadDir("/proc")
-	if err != nil {
-		return open
-	}
-	for _, pe := range procs {
-		if !pe.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(pe.Name()); err != nil {
-			continue
-		}
-		fdDir := filepath.Join("/proc", pe.Name(), "fd")
-		fds, err := os.ReadDir(fdDir)
-		if err != nil {
-			continue
-		}
-		for _, fd := range fds {
-			target, err := os.Readlink(filepath.Join(fdDir, fd.Name()))
-			if err == nil && target != "" {
-				open[target] = true
-			}
-		}
-	}
-	return open
 }
 
 // ccNewestChartTime returns the mtime of the most recently modified PNG in repoRoot/charts/,

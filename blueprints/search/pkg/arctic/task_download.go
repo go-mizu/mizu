@@ -98,12 +98,14 @@ func validateZst(path string, expectedBytes int64) error {
 
 // stallTimeouts defines the per-attempt stall patience. Later attempts wait
 // longer, giving slow seeders more time to respond before giving up.
+// These timeouts are deliberately generous because bundle torrent files
+// (≤2023-12) can be 20-50 GB and seeders may have intermittent connectivity.
 var stallTimeouts = []time.Duration{
-	3 * time.Minute,  // attempt 1: quick probe
-	3 * time.Minute,  // attempt 2: confirm stall position
-	5 * time.Minute,  // attempt 3: more patience
-	8 * time.Minute,  // attempt 4: generous
-	10 * time.Minute, // attempt 5: last resort
+	5 * time.Minute,  // attempt 1: reasonable initial probe
+	8 * time.Minute,  // attempt 2: confirm stall position
+	15 * time.Minute, // attempt 3: patient — large files need time
+	20 * time.Minute, // attempt 4: generous
+	30 * time.Minute, // attempt 5: last resort — let slow seeders finish
 }
 
 // downloadWithRetry attempts to download a .zst file, retrying on failure with
@@ -116,17 +118,30 @@ func downloadWithRetry(ctx context.Context, cfg Config, zstSizes ZstSizes, job *
 
 	var lastStallBytes int64
 	var sameStallCount int
+	var lastAttemptErr error
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		// Clean up before each attempt (including first) — delete both
-		// the partial .zst and any .part file from previous sessions.
 		if attempt > 0 {
+			// Always remove the final .zst (shouldn't exist mid-retry).
 			os.Remove(zstPath)
-			os.Remove(zstPath + ".part")
+
+			// Only delete .part file on corruption errors. For transient
+			// errors (stalls, timeouts), keep the .part file so the torrent
+			// client can resume from already-downloaded pieces instead of
+			// re-downloading from scratch. This is critical for large bundle
+			// torrent files (20-50 GB) where re-downloading is prohibitive.
+			if IsCorruption(lastAttemptErr) {
+				os.Remove(zstPath + ".part")
+				logf("download retry %d/%d for [%s] %s — corruption, deleted .part for clean re-download",
+					attempt+1, maxRetries, job.YM.String(), job.Type)
+			} else {
+				logf("download retry %d/%d for [%s] %s — transient error, keeping .part for resume",
+					attempt+1, maxRetries, job.YM.String(), job.Type)
+			}
 
 			backoff := time.Duration(10<<attempt) * time.Second
 			if backoff > 5*time.Minute {
@@ -162,22 +177,33 @@ func downloadWithRetry(ctx context.Context, cfg Config, zstSizes ZstSizes, job *
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		lastAttemptErr = err
 
 		logf("download attempt %d/%d failed for [%s] %s at %.1f MB: %v",
 			attempt+1, maxRetries, job.YM.String(), job.Type,
 			float64(peakBytes)/(1024*1024), err)
 
-		// Detect structural stall: if 2 consecutive attempts stall at the
-		// same byte position (within 1 MB), the swarm doesn't have data
-		// beyond this point. More retries won't help.
+		// Detect structural stall: if 3 consecutive attempts stall at the
+		// same byte position (within 10 MB or 2% of expected size), the
+		// swarm likely doesn't have data beyond this point.
+		// Use generous thresholds to avoid false positives when the torrent
+		// client resumes from a .part file and makes slow progress.
 		if peakBytes > 0 && lastStallBytes > 0 {
 			diff := peakBytes - lastStallBytes
 			if diff < 0 {
 				diff = -diff
 			}
-			if diff < 1024*1024 { // within 1 MB
+			// Dynamic tolerance: 10 MB or 2% of expected size, whichever is larger.
+			tolerance := int64(10 * 1024 * 1024) // 10 MB minimum
+			if expected := zstSizes.Get(job.Type, job.YM.String()); expected > 0 {
+				pctTolerance := expected / 50 // 2%
+				if pctTolerance > tolerance {
+					tolerance = pctTolerance
+				}
+			}
+			if diff < tolerance {
 				sameStallCount++
-				if sameStallCount >= 2 {
+				if sameStallCount >= 3 {
 					logf("download: structural stall at %.1f MB for [%s] %s — "+
 						"swarm lacks data beyond this point (%d consecutive same-position stalls), giving up",
 						float64(peakBytes)/(1024*1024), job.YM.String(), job.Type, sameStallCount+1)

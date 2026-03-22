@@ -1,0 +1,53 @@
+name = "storage"
+main = "src/index.ts"
+compatibility_date = "2026-03-11"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
+routes = [
+  { pattern = "storage.liteio.dev", custom_domain = true }
+]
+
+[assets]
+directory = "./public"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "storage-db"
+database_id = "10bc584b-8b6e-4695-95de-7d6c25a79b60"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "storage-files"
+
+# ── Hyperdrive (PostgreSQL connection pool, opt-in via STORAGE_DRIVER=hyperdrive) ──
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "91035394dca3474bb2d2a27a661eda4a"
+localConnectionString = "postgresql://user:pass@localhost:5432/db"
+
+# ── Durable Objects (per-actor SQLite, opt-in via STORAGE_DRIVER=do|dov2) ──
+[[durable_objects.bindings]]
+name = "STORAGE_DO"
+class_name = "StorageDO"
+
+[[durable_objects.bindings]]
+name = "STORAGE_DO_V2"
+class_name = "StorageDOv2"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StorageDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["StorageDOv2"]

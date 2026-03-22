@@ -226,6 +226,103 @@ func (c Config) scanParquetResult(ctx context.Context, path string, bytesWritten
 	}, nil
 }
 
+// MergeParquets merges srcPaths into dstPath, deduplicating rows by item id.
+// Sources are consumed in priority order: for duplicate ids, the row from the
+// earliest srcPath wins (index 0 = highest priority). dstPath is NOT implicitly
+// included — callers must add it to srcPaths if they want to preserve its data.
+//
+// Writes atomically (temp file → rename). Returns the FetchResult for dstPath.
+// Files in srcPaths that do not exist on disk are skipped.
+func MergeParquets(ctx context.Context, dstPath string, srcPaths []string) (FetchResult, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return FetchResult{}, fmt.Errorf("open duckdb for merge: %w", err)
+	}
+	defer db.Close()
+
+	// Build UNION ALL of all existing source files, tagged with priority index.
+	var unions []string
+	for i, p := range srcPaths {
+		if _, statErr := os.Stat(p); statErr != nil {
+			continue // skip missing files
+		}
+		unions = append(unions, fmt.Sprintf(
+			`SELECT *, %d AS _src FROM read_parquet('%s')`,
+			i+1, escapeSQLStr(p),
+		))
+	}
+	if len(unions) == 0 {
+		return FetchResult{}, nil
+	}
+
+	if err := ensureParentDir(dstPath); err != nil {
+		return FetchResult{}, fmt.Errorf("ensure dst dir: %w", err)
+	}
+
+	// Write to temp, then atomically rename to dstPath.
+	tmpPath := dstPath + ".merge.tmp"
+	defer os.Remove(tmpPath) // no-op if rename succeeded
+
+	// DISTINCT ON (id) ORDER BY id, _src: keeps the row with the lowest _src per id
+	// (= earliest srcPath = highest priority). Strip _src from the output.
+	unionSQL := strings.Join(unions, " UNION ALL ")
+	q := fmt.Sprintf(
+		`COPY (
+			SELECT * EXCLUDE (_src) FROM (
+				SELECT DISTINCT ON (id) * FROM (%s) ORDER BY id, _src ASC
+			)
+		) TO '%s' (FORMAT PARQUET)`,
+		unionSQL, escapeSQLStr(tmpPath),
+	)
+	if _, err := db.ExecContext(ctx, q); err != nil {
+		return FetchResult{}, fmt.Errorf("merge parquet: %w", err)
+	}
+	if err := os.Rename(tmpPath, dstPath); err != nil {
+		return FetchResult{}, fmt.Errorf("rename merged parquet: %w", err)
+	}
+
+	fi, _ := os.Stat(dstPath)
+	var sizeBytes int64
+	if fi != nil {
+		sizeBytes = fi.Size()
+	}
+	var count int64
+	var minID, maxID sql.NullInt64
+	scanQ := fmt.Sprintf(
+		`SELECT COUNT(*)::BIGINT, MIN(id)::BIGINT, MAX(id)::BIGINT FROM read_parquet('%s')`,
+		escapeSQLStr(dstPath),
+	)
+	if err := db.QueryRowContext(ctx, scanQ).Scan(&count, &minID, &maxID); err != nil {
+		return FetchResult{}, fmt.Errorf("scan merged parquet: %w", err)
+	}
+	return FetchResult{
+		LowestID:  minID.Int64,
+		HighestID: maxID.Int64,
+		Count:     count,
+		Bytes:     sizeBytes,
+	}, nil
+}
+
+// ScanParquetMaxTime returns the maximum time value from a parquet file.
+// Returns zero time on any error or if the file has no rows.
+func ScanParquetMaxTime(ctx context.Context, path string) time.Time {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return time.Time{}
+	}
+	defer db.Close()
+	// EPOCH returns seconds since Unix epoch; avoids timezone/format parsing issues.
+	var epochSec sql.NullInt64
+	q := fmt.Sprintf(
+		`SELECT EPOCH(MAX(time))::BIGINT FROM read_parquet('%s')`,
+		escapeSQLStr(path),
+	)
+	if err := db.QueryRowContext(ctx, q).Scan(&epochSec); err != nil || !epochSec.Valid {
+		return time.Time{}
+	}
+	return time.Unix(epochSec.Int64, 0).UTC()
+}
+
 // ensureParentDir creates the parent directory of path if it does not exist.
 func ensureParentDir(path string) error {
 	return os.MkdirAll(filepath.Dir(path), 0o755)

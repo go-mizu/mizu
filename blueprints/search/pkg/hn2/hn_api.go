@@ -433,3 +433,47 @@ func FetchHNAlgoliaRecent(ctx context.Context, since time.Time) ([]HNItem, error
 	sort.Slice(allItems, func(i, j int) bool { return allItems[i].ID < allItems[j].ID })
 	return allItems, nil
 }
+
+// FetchHNAlgoliaRange fetches all HN items with created_at_i in [from, to) from
+// the Algolia HN search API. Items are returned sorted by ID ascending.
+// Use this to fill gaps that ClickHouse hasn't ingested yet.
+func FetchHNAlgoliaRange(ctx context.Context, from, to time.Time) ([]HNItem, error) {
+	const hitsPerPage = 1000
+	var allItems []HNItem
+	fromUnix := from.Unix()
+	toUnix := to.Unix()
+
+	for page := 0; ; page++ {
+		// numericFilters: created_at_i>=fromUnix,created_at_i<toUnix
+		url := fmt.Sprintf(
+			"%s/search_by_date?numericFilters=created_at_i%%3E%%3D%d%%2Ccreated_at_i%%3C%d&hitsPerPage=%d&page=%d",
+			hnAlgoliaBase, fromUnix, toUnix, hitsPerPage, page,
+		)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("algolia range page %d: %w", page, err)
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("algolia range read page %d: %w", page, err)
+		}
+		var result algoliaResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("algolia range decode page %d: %w", page, err)
+		}
+		for _, h := range result.Hits {
+			allItems = append(allItems, algoliaHitToHNItem(h))
+		}
+		if page >= result.NbPages-1 || len(result.Hits) == 0 {
+			break
+		}
+	}
+
+	sort.Slice(allItems, func(i, j int) bool { return allItems[i].ID < allItems[j].ID })
+	return allItems, nil
+}

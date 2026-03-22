@@ -38,6 +38,7 @@ type ccShardStats struct {
 	DurConvertS   int64  // seconds: HTML→Markdown conversion (pack)
 	DurExportS    int64  // seconds: Parquet export
 	DurPublishS   int64  // seconds: HuggingFace commit
+	PeakRSSMB     int64  // peak RSS in MB during pack (0 = not measured)
 }
 
 // ccTotals is the aggregate across all shards for a crawl.
@@ -51,6 +52,13 @@ type ccTotals struct {
 	DurConvertS   int64
 	DurExportS    int64
 	DurPublishS   int64
+	// Throughput (computed from CreatedAt timestamps in stats.csv)
+	ShardsPerHour float64   // shards/hour over last 24h window
+	FirstShard    time.Time // earliest CreatedAt
+	LastShard     time.Time // latest CreatedAt
+	// Memory profiling (from peak_rss_mb in stats.csv)
+	AvgRSSMB int64 // average peak RSS across measured shards
+	MaxRSSMB int64 // highest peak RSS seen
 }
 
 func ccStatsCSVPath(repoRoot string) string {
@@ -97,6 +105,7 @@ func ccRecordSkip(csvPath, crawlID string, fileIdx int, stage string, err error)
 var ccStatsCSVHeader = []string{
 	"crawl_id", "file_idx", "rows", "html_bytes", "md_bytes", "parquet_bytes",
 	"created_at", "dur_download_s", "dur_convert_s", "dur_export_s", "dur_publish_s",
+	"peak_rss_mb",
 }
 
 func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
@@ -135,7 +144,7 @@ func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
 			s.CreatedAt = row[6]
 		}
 		if len(row) >= 11 {
-			// New 11-column format.
+			// New 11+ column format.
 			s.DurDownloadS, _ = strconv.ParseInt(row[7], 10, 64)
 			s.DurConvertS, _ = strconv.ParseInt(row[8], 10, 64)
 			s.DurExportS, _ = strconv.ParseInt(row[9], 10, 64)
@@ -145,6 +154,9 @@ func ccReadStatsCSV(csvPath string) ([]ccShardStats, error) {
 			s.DurConvertS, _ = strconv.ParseInt(row[7], 10, 64)
 			s.DurExportS, _ = strconv.ParseInt(row[8], 10, 64)
 			s.DurPublishS, _ = strconv.ParseInt(row[9], 10, 64)
+		}
+		if len(row) >= 12 {
+			s.PeakRSSMB, _ = strconv.ParseInt(row[11], 10, 64)
 		}
 		stats = append(stats, s)
 	}
@@ -172,6 +184,7 @@ func ccWriteStatsCSV(csvPath string, allStats []ccShardStats) error {
 			strconv.FormatInt(s.DurConvertS, 10),
 			strconv.FormatInt(s.DurExportS, 10),
 			strconv.FormatInt(s.DurPublishS, 10),
+			strconv.FormatInt(s.PeakRSSMB, 10),
 		})
 	}
 	w.Flush()
@@ -250,6 +263,9 @@ func ccMergeStatsFromHF(ctx context.Context, hf *hfClient, repoID, statsCSV stri
 			s.DurExportS, _ = strconv.ParseInt(row[9], 10, 64)
 			s.DurPublishS, _ = strconv.ParseInt(row[10], 10, 64)
 		}
+		if len(row) >= 12 {
+			s.PeakRSSMB, _ = strconv.ParseInt(row[11], 10, 64)
+		}
 		remote = append(remote, s)
 	}
 	if len(remote) == 0 {
@@ -291,6 +307,7 @@ func ccMergeStatsFromHF(ctx context.Context, hf *hfClient, repoID, statsCSV stri
 // ccComputeTotals sums all shard stats for a given crawl (empty = all crawls).
 func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 	var t ccTotals
+	var rssSum, rssCount int64
 	for _, s := range stats {
 		if crawlID != "" && s.CrawlID != crawlID {
 			continue
@@ -304,6 +321,37 @@ func ccComputeTotals(stats []ccShardStats, crawlID string) ccTotals {
 		t.DurConvertS += s.DurConvertS
 		t.DurExportS += s.DurExportS
 		t.DurPublishS += s.DurPublishS
+
+		if s.PeakRSSMB > 0 {
+			rssSum += s.PeakRSSMB
+			rssCount++
+			if s.PeakRSSMB > t.MaxRSSMB {
+				t.MaxRSSMB = s.PeakRSSMB
+			}
+		}
+
+		if s.CreatedAt != "" {
+			if ts, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
+				if t.FirstShard.IsZero() || ts.Before(t.FirstShard) {
+					t.FirstShard = ts
+				}
+				if ts.After(t.LastShard) {
+					t.LastShard = ts
+				}
+			}
+		}
+	}
+
+	if rssCount > 0 {
+		t.AvgRSSMB = rssSum / rssCount
+	}
+
+	// Compute shards/hour from the time span between first and last shard.
+	if t.Shards >= 2 && !t.FirstShard.IsZero() && !t.LastShard.IsZero() {
+		span := t.LastShard.Sub(t.FirstShard)
+		if span.Hours() > 0.1 {
+			t.ShardsPerHour = float64(t.Shards) / span.Hours()
+		}
 	}
 	return t
 }

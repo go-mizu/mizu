@@ -1,0 +1,25 @@
+/* ══════════════════════════════════════════════════════════════════════
+   storage.now — Layout Overrides
+   Used by directory and immersive page layouts (via layout.ts).
+   base.css handles all shared styles; this file adds layout-specific rules.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Container ───────────────────────────────────────────────────────── */
+.container{max-width:1104px;margin:0 auto;padding:48px 48px 96px;
+  position:relative;z-index:1;background:var(--bg)}
+
+/* ── Page headers ────────────────────────────────────────────────────── */
+.page-header{margin-bottom:32px}
+.page-title{font-size:24px;font-weight:500;letter-spacing:-0.5px;margin-bottom:8px}
+.page-desc{font-size:14px;color:var(--text-2)}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .container{padding:32px 24px 72px}
+  .page-title{font-size:22px}
+  .page-desc{font-size:13px}
+}
+@media(max-width:640px){
+  .container{padding:16px 20px 60px}
+  .page-title{font-size:20px}
+}

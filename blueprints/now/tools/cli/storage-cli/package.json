@@ -1,0 +1,31 @@
+{
+  "name": "@liteio/storage-cli",
+  "version": "2.1.0",
+  "description": "CLI for Storage API — upload, download, and share files from your terminal",
+  "type": "module",
+  "bin": {
+    "storage": "bin/storage.mjs"
+  },
+  "keywords": [
+    "storage",
+    "cli",
+    "file-sharing",
+    "upload",
+    "download",
+    "cloud-storage",
+    "s3-alternative"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "LICENSE",
+    "README.md"
+  ],
+  "homepage": "https://storage.liteio.dev/cli",
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,2 @@
+# Override root **/bin/ rule — bin/storage.mjs is the npm package entry point
+!bin/

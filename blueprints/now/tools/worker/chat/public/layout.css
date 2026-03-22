@@ -1,0 +1,474 @@
+/* ── Reset & Design Tokens ──────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FAFAF9;--surface:#FFF;--surface-alt:#F4F4F5;
+  --text:#09090B;--text-2:#52525B;--text-3:#A1A1AA;
+  --border:#E4E4E7;--ink:#09090B;--err:#EF4444;--ok:#10B981;
+  --glass-bg:rgba(255,255,255,0.7);--glass-border:var(--border);
+  --shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06);
+}
+html.dark{
+  --bg:#09090B;--surface:#18181B;--surface-alt:#27272A;
+  --text:#FAFAF9;--text-2:#A1A1AA;--text-3:#52525B;
+  --border:#27272A;--ink:#FAFAF9;--err:#FCA5A5;--ok:#6EE7B7;
+  --glass-bg:rgba(255,255,255,0.04);--glass-border:rgba(255,255,255,0.08);
+  --shadow:0 1px 3px rgba(0,0,0,0.3);
+}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--text);background:var(--bg);
+  -webkit-font-smoothing:antialiased;transition:background .3s,color .3s;padding-bottom:80px}
+a{color:inherit;text-decoration:none}
+
+/* ── Nav (full — used by my-chats etc) ─────────────────────────────── */
+nav{padding:20px 48px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:100}
+.logo{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:14px;letter-spacing:-0.5px}
+.nav-links{display:flex;align-items:center;gap:32px}
+.nav-links a{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
+  transition:color .15s;letter-spacing:0.5px}
+.nav-links a:hover{color:var(--text)}
+.nav-links a.active{color:var(--text);font-weight:600}
+.nav-right{display:flex;align-items:center;gap:12px}
+.nav-user{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3)}
+.nav-signout{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  border:1px solid var(--border);padding:4px 10px;transition:all .15s;text-decoration:none}
+.nav-signout:hover{color:var(--text);border-color:var(--text-3)}
+.theme-toggle{background:none;border:1px solid var(--border);
+  padding:6px 10px;cursor:pointer;color:var(--text-3);transition:all .15s;
+  display:flex;align-items:center}
+.theme-toggle:hover{color:var(--text);border-color:var(--text-3)}
+.theme-toggle .icon-sun{display:none}
+.theme-toggle .icon-moon{display:block}
+html.dark .theme-toggle .icon-sun{display:block}
+html.dark .theme-toggle .icon-moon{display:none}
+
+/* ── Layout ──────────────────────────────────────────────────────────── */
+.container{max-width:900px;margin:0 auto;padding:32px 48px 100px}
+.page-header{margin-bottom:32px}
+.page-title{font-size:36px;font-weight:800;letter-spacing:-1.5px;margin-bottom:8px}
+.page-desc{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text-3)}
+.page-count{font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--text-3);margin-bottom:20px}
+.page-count span{color:var(--text)}
+
+/* ── Search bar ─────────────────────────────────────────────────────── */
+.search-bar{display:flex;align-items:center;gap:12px;
+  border:1px solid var(--border);padding:12px 16px;margin-bottom:32px;
+  transition:border-color .15s}
+.search-bar:focus-within{border-color:var(--text-3)}
+.search-bar svg{color:var(--text-3);flex-shrink:0}
+.search-bar input{flex:1;font-family:'Inter',system-ui,sans-serif;font-size:14px;
+  border:none;background:none;color:var(--text);outline:none}
+.search-bar input::placeholder{color:var(--text-3)}
+
+/* ── Card grid (shared: people, agents, rooms) ──────────────────────── */
+.card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border)}
+.card{background:var(--surface);padding:32px;text-decoration:none;
+  display:flex;flex-direction:column;gap:14px;transition:all .2s;position:relative;cursor:pointer}
+.card:hover{background:var(--surface-alt)}
+.card-qr{position:absolute;top:24px;right:24px;width:48px;height:48px;
+  overflow:hidden;opacity:0.4;transition:opacity .15s}
+.card-qr svg{display:block;width:48px;height:48px}
+html.dark .card-qr svg{filter:invert(1)}
+.card:hover .card-qr{opacity:0.7}
+.card-top{display:flex;align-items:center;gap:16px}
+.card-avatar{width:72px;height:72px;flex-shrink:0;overflow:hidden;
+  border:1px solid var(--border)}
+.card-avatar svg{display:block;width:72px;height:72px;filter:grayscale(1) contrast(1.1)}
+html.dark .card-avatar svg{filter:grayscale(1) brightness(1.3)}
+.card-avatar--agent{border:1px solid var(--border)}
+.card-avatar--agent svg{filter:grayscale(1) contrast(1.1)}
+html.dark .card-avatar--agent svg{filter:grayscale(1) brightness(1.3)}
+.card-avatar--room{width:72px;height:72px;border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;background:var(--surface-alt)}
+.card-avatar-letter{font-family:'JetBrains Mono',monospace;font-size:28px;
+  font-weight:700;color:var(--text-3)}
+.card-identity{flex:1;min-width:0}
+.card-name-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.card-name{font-size:18px;font-weight:800;letter-spacing:-0.5px}
+.card-badge{font-family:'JetBrains Mono',monospace;font-size:10px;
+  padding:1px 6px;border:1px solid var(--border);color:var(--text-3);letter-spacing:0.5px}
+.card-activity{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  display:flex;align-items:center;gap:6px}
+.card-bio{font-size:13px;color:var(--text-2);line-height:1.6}
+.card-bio-who{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  margin-right:4px}
+/* Card social links (listing page) */
+.card-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-link-icon{display:flex;align-items:center;color:var(--text-3);transition:color .15s}
+.card-link-icon svg{width:14px;height:14px}
+.card:hover .card-link-icon{color:var(--text-2)}
+
+/* Card stagger entrance animation */
+@keyframes cardFadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.card--stagger{animation:cardFadeIn .3s ease both}
+
+.card-footer{display:flex;align-items:center;justify-content:space-between}
+.card-stats{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.card-arrow{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-3);
+  transition:transform .15s}
+.card:hover .card-arrow{transform:translateX(3px);color:var(--text-2)}
+
+/* ── Card zoom overlay ─────────────────────────────────────────────── */
+.card-overlay{position:fixed;inset:0;z-index:500;display:flex;align-items:center;
+  justify-content:center;opacity:0;transition:opacity .2s}
+.card-overlay.open{opacity:1}
+.card-overlay-bg{position:absolute;inset:0;background:rgba(0,0,0,0.5);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+html.dark .card-overlay-bg{background:rgba(0,0,0,0.7)}
+.card-overlay-inner{position:relative;background:var(--surface);border:1px solid var(--border);
+  padding:40px;max-width:480px;width:90%;display:flex;flex-direction:column;gap:16px;
+  transform:scale(0.95);transition:transform .2s;box-shadow:0 24px 48px rgba(0,0,0,0.12)}
+html.dark .card-overlay-inner{box-shadow:0 24px 48px rgba(0,0,0,0.5)}
+.card-overlay.open .card-overlay-inner{transform:scale(1)}
+.card-overlay-inner .card-avatar{width:80px;height:80px}
+.card-overlay-inner .card-avatar svg{width:80px;height:80px}
+.card-overlay-inner .card-qr{position:static;width:64px;height:64px;opacity:0.7}
+.card-overlay-inner .card-qr svg{width:64px;height:64px}
+.card-overlay-link{display:block;font-family:'JetBrains Mono',monospace;font-size:12px;
+  text-align:center;padding:14px;border:1px solid var(--ink);background:var(--ink);
+  color:var(--bg);text-decoration:none;transition:opacity .15s;margin-top:4px}
+.card-overlay-link:hover{opacity:0.85}
+
+/* ── Status dot ─────────────────────────────────────────────────────── */
+.status-dot{display:inline-block;width:6px;height:6px;
+  border:1px solid var(--text-3);flex-shrink:0}
+.status-dot.on{background:var(--ok);border-color:var(--ok)}
+
+
+/* ── Directory card grid (legacy — still used by some pages) ─────────── */
+.directory-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border)}
+.dir-card{background:var(--bg);padding:24px;text-decoration:none;
+  display:flex;flex-direction:column;gap:12px;transition:background .15s}
+.dir-card:hover{background:var(--surface-alt)}
+.dir-card-avatar{width:40px;height:40px;flex-shrink:0;overflow:hidden}
+.dir-card-avatar svg{display:block;width:40px;height:40px;filter:grayscale(1) contrast(1.1)}
+html.dark .dir-card-avatar svg{filter:grayscale(1) brightness(1.3)}
+.dir-card-info{flex:1;min-width:0}
+.dir-card-name{font-size:15px;font-weight:700;letter-spacing:-0.3px;margin-bottom:2px}
+.dir-card-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.dir-card-arrow{font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-3);
+  transition:transform .15s;align-self:flex-end}
+.dir-card:hover .dir-card-arrow{transform:translateX(3px);color:var(--text-2)}
+.dir-badge{display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:500;padding:2px 8px;border:1px solid var(--border);
+  color:var(--text-3);margin-left:6px;vertical-align:middle}
+
+/* ── Directory list (for my-chats) ───────────────────────────────────── */
+.directory{display:flex;flex-direction:column}
+.entry{display:flex;align-items:center;gap:16px;padding:16px 0;
+  border-bottom:1px solid var(--border);transition:background .15s;text-decoration:none}
+.entry:first-child{border-top:1px solid var(--border)}
+.entry:hover{background:var(--surface-alt);margin:0 -16px;padding:16px}
+.entry-avatar{width:40px;height:40px;flex-shrink:0;overflow:hidden}
+.entry-avatar svg{display:block;width:40px;height:40px;filter:grayscale(1) contrast(1.1)}
+html.dark .entry-avatar svg{filter:grayscale(1) brightness(1.3)}
+.entry-info{flex:1;min-width:0}
+.entry-name{font-size:14px;font-weight:600;letter-spacing:-0.2px}
+.entry-meta{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);margin-top:3px}
+.entry-ts{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);flex-shrink:0}
+.empty{text-align:center;padding:80px 20px;color:var(--text-3);font-size:14px}
+.empty a{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+
+/* ── Back link ──────────────────────────────────────────────────────── */
+.back-link{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
+  text-decoration:none;display:inline-flex;align-items:center;gap:6px;
+  transition:color .15s;margin-bottom:40px}
+.back-link:hover{color:var(--text)}
+
+/* ── Profile hero (centered) ────────────────────────────────────────── */
+.pf-hero{text-align:center;margin-bottom:40px;padding-bottom:40px;
+  border-bottom:1px solid var(--border)}
+.pf-avatar{width:80px;height:80px;margin:0 auto 20px;overflow:hidden}
+.pf-avatar svg{display:block;width:80px;height:80px;filter:grayscale(1) contrast(1.1)}
+html.dark .pf-avatar svg{filter:grayscale(1) brightness(1.3)}
+.pf-name{font-size:32px;font-weight:800;letter-spacing:-1px;margin-bottom:8px}
+.pf-status{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-3);
+  display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:4px}
+.pf-joined{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+.pf-bio{font-size:14px;color:var(--text-2);line-height:1.7;margin-bottom:16px}
+
+/* ── Profile stats bar ──────────────────────────────────────────────── */
+.pf-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);margin-bottom:40px}
+.pf-stat{background:var(--bg);padding:20px;text-align:center}
+.pf-stat-val{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin-bottom:2px}
+.pf-stat-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+
+/* ── Profile sections ───────────────────────────────────────────────── */
+.pf-section{margin-bottom:32px}
+.pf-section-label{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);letter-spacing:1.5px;margin-bottom:16px;
+  padding-bottom:8px;border-bottom:1px solid var(--border)}
+
+/* ── Profile rooms ──────────────────────────────────────────────────── */
+.pf-rooms{display:flex;flex-wrap:wrap;gap:8px}
+.pf-room-tag{display:inline-flex;align-items:baseline;gap:8px;
+  font-size:14px;font-weight:600;letter-spacing:-0.2px;
+  padding:10px 16px;border:1px solid var(--border);
+  transition:all .15s;text-decoration:none}
+.pf-room-tag:hover{border-color:var(--text-3);background:var(--surface-alt)}
+.pf-room-tag span{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);font-weight:400}
+
+/* ── Profile mutual rooms ───────────────────────────────────────────── */
+.pf-mutual{font-size:14px;color:var(--text-2);line-height:1.7}
+.pf-mutual a{font-weight:600;text-decoration:underline;text-underline-offset:3px;
+  transition:color .15s}
+.pf-mutual a:hover{color:var(--text)}
+
+/* ── Profile existing DM link ───────────────────────────────────────── */
+.pf-existing-dm{display:inline-block;font-family:'JetBrains Mono',monospace;
+  font-size:12px;color:var(--text-3);text-decoration:none;margin-top:12px;
+  transition:color .15s}
+.pf-existing-dm:hover{color:var(--text)}
+
+/* ── Profile chips (agent examples) ─────────────────────────────────── */
+.profile-chips{display:flex;flex-wrap:wrap;gap:8px}
+.profile-chip{font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 14px;
+  border:1px solid var(--border);background:none;color:var(--text-2);
+  cursor:pointer;transition:all .15s;text-decoration:none}
+.profile-chip:hover{border-color:var(--text-3);color:var(--text)}
+
+/* ── Room detail ────────────────────────────────────────────────────── */
+.room-thread{border:1px solid var(--border)}
+.room-msg{display:flex;gap:0;padding:10px 24px;border-bottom:1px solid var(--border);
+  font-size:14px;line-height:1.6}
+.room-msg:last-child{border-bottom:none}
+.room-msg-who{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3);
+  width:120px;flex-shrink:0;padding-top:2px}
+.room-msg-text{color:var(--text-2);min-width:0}
+.room-members{display:flex;flex-direction:column}
+.room-member{display:flex;align-items:center;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--border);text-decoration:none;color:inherit;transition:opacity .15s}
+.room-member:last-child{border-bottom:none}
+.room-member:hover{opacity:0.7}
+.room-member-avatar{width:28px;height:28px;flex-shrink:0;overflow:hidden}
+.room-member-avatar svg{display:block;width:28px;height:28px;filter:grayscale(1) contrast(1.1)}
+html.dark .room-member-avatar svg{filter:grayscale(1) brightness(1.3)}
+.room-member-name{font-size:14px;font-weight:600}
+.room-role{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3);
+  font-style:italic;margin-left:4px}
+.room-join-btn{font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 24px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);
+  cursor:pointer;transition:opacity .15s}
+.room-join-btn:hover{opacity:0.85}
+.room-open-btn{display:inline-flex;align-items:center;gap:8px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 20px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);
+  text-decoration:none;transition:opacity .15s}
+.room-open-btn:hover{opacity:0.85}
+
+/* ── Fieldset sections ───────────────────────────────────────────────── */
+fieldset.ps{border:1px solid var(--border);padding:28px 32px;margin-bottom:32px;background:none}
+fieldset.ps legend{font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:0 10px;color:var(--text-3);letter-spacing:1px}
+
+/* ── Message form ────────────────────────────────────────────────────── */
+.msg-form{display:flex;gap:0}
+.msg-form textarea{flex:1;font-family:'Inter',system-ui,sans-serif;font-size:14px;
+  padding:12px 14px;border:1px solid var(--border);background:var(--bg);
+  color:var(--text);resize:none;height:44px;outline:none;transition:border-color .15s;line-height:1.4}
+.msg-form textarea:focus{border-color:var(--text-3)}
+.msg-form textarea::placeholder{color:var(--text-3)}
+.msg-form button{font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:12px 20px;border:1px solid var(--ink);border-left:none;
+  background:var(--ink);color:var(--bg);cursor:pointer;transition:opacity .15s;white-space:nowrap}
+.msg-form button:hover:not(:disabled){opacity:0.85}
+.msg-form button:disabled{opacity:0.4;cursor:not-allowed}
+.msg-sent{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--ok);margin-top:8px;display:none}
+.msg-sent.show{display:block}
+.msg-error{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--err);margin-top:8px;min-height:16px}
+.signin-prompt{font-size:13px;color:var(--text-3);padding:14px 0}
+.signin-prompt a{text-decoration:underline;text-underline-offset:3px;color:var(--text)}
+
+/* ── Machine view / mode switch ──────────────────────────────────────── */
+.machine-view{display:none}
+.machine-view.active{display:block}
+.human-view.hidden{display:none}
+.md{background:var(--surface);padding:32px 40px;border:1px solid var(--border);
+  font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;
+  color:var(--text-2);white-space:pre-wrap;word-break:break-word;position:relative}
+.md .h1{color:var(--text);font-weight:700;font-size:16px}
+.md .h2{color:var(--text);font-weight:600;font-size:14px}
+.md .h3{color:var(--text-3);font-weight:500}
+.md .dim{color:var(--text-3)}
+.md .link{text-decoration:underline;text-underline-offset:3px}
+.md-copy{position:absolute;top:12px;right:12px;
+  font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:4px 12px;border:1px solid var(--border);background:var(--bg);
+  color:var(--text-3);cursor:pointer;transition:all .15s}
+.md-copy:hover{color:var(--text);border-color:var(--text-3)}
+.mode-switch{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  display:flex;background:var(--bg);border:1px solid var(--border);z-index:200;
+  box-shadow:0 4px 24px rgba(0,0,0,0.08)}
+html.dark .mode-switch{box-shadow:0 4px 24px rgba(0,0,0,0.4)}
+.mode-switch button{font-family:'JetBrains Mono',monospace;font-size:11px;
+  letter-spacing:1px;padding:10px 20px;border:none;background:none;
+  color:var(--text-3);cursor:pointer;display:flex;align-items:center;gap:8px;
+  transition:color .15s}
+.mode-switch button.active{color:var(--text)}
+.mode-switch button+button{border-left:1px solid var(--border)}
+.dot{width:6px;height:6px;border:1px solid var(--text-3);display:inline-block}
+.mode-switch button.active .dot{background:var(--text);border-color:var(--text)}
+.mobile-toggle{display:none;background:none;border:none;color:var(--text-3);cursor:pointer;padding:4px}
+
+
+
+/* ── Wide mode (people listing etc) ─────────────────────────────────── */
+body.wide .imm-header{max-width:1100px}
+body.wide .container{max-width:1100px}
+
+/* ── Profile topbar (standalone profile page) ─────────────────────── */
+.profile-topbar{display:flex;align-items:center;justify-content:space-between;
+  padding:20px 48px;position:sticky;top:0;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);z-index:100}
+.profile-topbar-right{display:flex;align-items:center;gap:12px}
+
+/* ── Social links in namecard ─────────────────────────────────────── */
+.namecard-links{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.namecard-link{display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;color:var(--text-3);transition:color .15s}
+.namecard-link:hover{color:var(--text)}
+.namecard-link svg{display:block}
+
+/* ── Profile edit controls ────────────────────────────────────────── */
+.namecard-edit-bio{position:absolute;top:36px;right:36px}
+.namecard-edit-btn{background:none;border:1px solid var(--border);padding:6px;
+  color:var(--text-3);cursor:pointer;transition:all .15s;display:flex;align-items:center}
+.namecard-edit-btn:hover{color:var(--text);border-color:var(--text-3)}
+.namecard-bio-editor{width:100%;font-family:'Inter',system-ui,sans-serif;font-size:14px;
+  color:var(--text-2);line-height:1.6;border:1px solid var(--border);background:none;
+  padding:8px;resize:none;height:60px;outline:none;margin-top:4px}
+.namecard-bio-editor:focus{border-color:var(--text-3)}
+.pf-empty-hint{color:var(--text-3);font-style:italic;cursor:pointer}
+.pf-edit-toggle{font-family:'JetBrains Mono',monospace;font-size:10px;
+  background:none;border:1px solid var(--border);color:var(--text-3);
+  padding:1px 8px;cursor:pointer;margin-left:8px;transition:all .15s}
+.pf-edit-toggle:hover{color:var(--text);border-color:var(--text-3)}
+
+/* ── Links editor ─────────────────────────────────────────────────── */
+.links-item{display:flex;align-items:center;gap:8px;padding:8px 0;
+  border-bottom:1px solid var(--border);font-size:13px}
+.links-item:last-child{border-bottom:none}
+.links-platform{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);min-width:60px}
+.links-url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--text-2)}
+.links-remove{background:none;border:none;color:var(--text-3);cursor:pointer;
+  font-size:16px;padding:0 4px;transition:color .15s}
+.links-remove:hover{color:var(--err)}
+.links-add{display:flex;gap:0;margin-top:12px}
+.links-input{flex:1;font-family:'Inter',system-ui,sans-serif;font-size:13px;
+  padding:8px 12px;border:1px solid var(--border);background:none;
+  color:var(--text);outline:none}
+.links-input:focus{border-color:var(--text-3)}
+.links-input::placeholder{color:var(--text-3)}
+.links-add-btn{font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:8px 14px;border:1px solid var(--border);border-left:none;
+  background:none;color:var(--text-2);cursor:pointer;transition:all .15s}
+.links-add-btn:hover{color:var(--text);background:var(--surface-alt)}
+.links-save-row{display:flex;align-items:center;gap:12px;margin-top:12px}
+.links-save-btn{font-family:'JetBrains Mono',monospace;font-size:11px;
+  padding:8px 20px;border:1px solid var(--ink);background:var(--ink);
+  color:var(--bg);cursor:pointer;transition:opacity .15s}
+.links-save-btn:hover{opacity:0.85}
+.links-status{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-3)}
+
+/* ── Namecard ──────────────────────────────────────────────────────── */
+.namecard{max-width:520px;margin:0 auto;border:1px solid var(--border);
+  padding:40px 36px 28px;position:relative;background:var(--surface)}
+html.dark .namecard{background:var(--glass-bg);border-color:var(--glass-border);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.namecard-brand{font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);letter-spacing:2px;text-transform:uppercase;margin-bottom:28px}
+.namecard-avatar{width:64px;height:64px;margin-bottom:16px;overflow:hidden}
+.namecard-avatar svg{display:block;width:64px;height:64px;filter:grayscale(1) contrast(1.1)}
+html.dark .namecard-avatar svg{filter:grayscale(1) brightness(1.3)}
+.namecard-avatar--room{display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);background:var(--surface-alt)}
+.namecard-room-hash{font-family:'JetBrains Mono',monospace;font-size:32px;
+  font-weight:700;color:var(--text-3)}
+.namecard-name{font-size:28px;font-weight:800;letter-spacing:-1px;margin-bottom:6px}
+.namecard-bio{font-size:14px;color:var(--text-2);line-height:1.6;margin-bottom:4px}
+.namecard-divider{height:1px;background:var(--border);margin:20px 0}
+.namecard-bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+.namecard-meta{font-family:'JetBrains Mono',monospace;font-size:11px;
+  color:var(--text-3);line-height:2;flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.namecard-meta .status-dot{vertical-align:middle}
+.namecard-qr{flex-shrink:0;width:80px;height:80px;overflow:hidden}
+.namecard-qr svg{display:block;width:80px;height:80px}
+html.dark .namecard-qr svg{filter:invert(1)}
+.namecard-url{font-family:'JetBrains Mono',monospace;font-size:10px;
+  color:var(--text-3);margin-top:16px;word-break:break-all}
+.namecard-actions{max-width:520px;margin:16px auto 40px;display:flex;gap:0}
+.namecard-action{flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:10px 16px;border:1px solid var(--border);background:none;
+  color:var(--text-2);cursor:pointer;transition:all .15s}
+.namecard-action+.namecard-action{border-left:none}
+.namecard-action:hover{color:var(--text);border-color:var(--text-3);background:var(--surface-alt)}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media(max-width:768px){
+  .directory-grid{grid-template-columns:1fr 1fr}
+  .pf-name{font-size:26px}
+  .room-msg-who{width:90px;font-size:10px}
+}
+@media(max-width:640px){
+  nav{padding:16px 20px}
+  .nav-links{display:none;position:absolute;top:54px;left:0;right:0;
+    flex-direction:column;background:var(--bg);
+    padding:16px 20px;gap:16px;z-index:100;border-bottom:1px solid var(--border)}
+  .nav-links.open{display:flex}
+  .mobile-toggle{display:block}
+  .container{padding:24px 20px 60px}
+  .page-title{font-size:28px;letter-spacing:-1px}
+  .card-grid{grid-template-columns:1fr}
+  .card{padding:24px}
+  .card-qr{top:16px;right:16px;width:40px;height:40px}
+  .card-qr svg{width:40px;height:40px}
+  .card-avatar{width:56px;height:56px}
+  .card-avatar svg{width:56px;height:56px}
+  .card-avatar--room{width:56px;height:56px}
+  .card-avatar-letter{font-size:22px}
+  .card-name{font-size:16px}
+  .card-overlay-inner{padding:28px}
+  .directory-grid{grid-template-columns:1fr}
+  .entry{padding:12px 0;gap:12px}
+  .entry-avatar{width:36px;height:36px}
+  .entry-avatar svg{width:36px;height:36px}
+  .pf-hero{margin-bottom:28px;padding-bottom:28px}
+  .pf-avatar{width:64px;height:64px;margin-bottom:16px}
+  .pf-avatar svg{width:64px;height:64px}
+  .pf-name{font-size:24px}
+  .pf-stats{grid-template-columns:repeat(3,1fr)}
+  .pf-stat{padding:16px 12px}
+  .pf-stat-val{font-size:20px}
+  .pf-room-tag{padding:8px 12px;font-size:13px}
+  .room-msg{padding:8px 16px}
+  .room-msg-who{width:70px;font-size:10px}
+  .profile-header{flex-direction:column;text-align:center}
+  .profile-avatar{width:56px;height:56px}
+  .profile-avatar svg{width:56px;height:56px}
+  fieldset.ps{padding:20px 16px}
+  .md{padding:24px 20px;font-size:12px}
+  .mode-switch{bottom:16px}
+  .mode-switch button{padding:8px 14px;font-size:10px}
+  .msg-form{flex-direction:column}
+  .msg-form button{border-left:1px solid var(--ink);border-top:none}
+  .back-link{margin-bottom:24px}
+  .search-bar{margin-bottom:24px}
+  .profile-topbar{padding:16px 20px}
+  .namecard-edit-bio{top:24px;right:24px}
+  .namecard{padding:28px 24px 20px}
+  .namecard-name{font-size:22px}
+  .namecard-bottom{flex-direction:column;align-items:flex-start}
+  .namecard-qr{width:64px;height:64px}
+  .namecard-qr svg{width:64px;height:64px}
+  .namecard-actions{margin-top:12px;margin-bottom:28px}
+}

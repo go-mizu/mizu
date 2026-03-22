@@ -8,11 +8,15 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-mizu/mizu/blueprints/search/pkg/arctic"
+	"github.com/go-mizu/mizu/blueprints/search/pkg/cc"
+	warcmd "github.com/go-mizu/mizu/blueprints/search/pkg/warc_md"
 	"github.com/spf13/cobra"
 )
 
@@ -37,15 +41,16 @@ func newCCPublish() *cobra.Command {
 		cleanup        bool
 		lightConvert   bool
 		skipErrors     bool
-		watchInterval  int
-		commitInterval int
-		chartsEvery    int
-		schedStart     int
-		schedEnd       int
-		schedMaxSess   int
-		schedChunk     int
-		schedDonePct   int
-		schedStall     int
+		watchInterval   int
+		commitInterval  int
+		chartsEvery     int
+		schedStart      int
+		schedEnd        int
+		schedMaxSess    int
+		schedChunk      int
+		schedDonePct    int
+		schedStall      int
+		ramPerSession   float64
 	)
 
 	cmd := &cobra.Command{
@@ -53,38 +58,48 @@ func newCCPublish() *cobra.Command {
 		Short: "Publish exported Common Crawl parquet shards to Hugging Face",
 		Long: `Publish $HOME/data/common-crawl/{crawl}/export/repo to a Hugging Face dataset repo.
 
-With --pipeline:  download, pack, export shards as .parquet files (no HF push).
-With --watch:     watch the parquet folder and push new files to HF in real-time.
-With --schedule:  manage pipeline screen sessions across a file index range.
-                  Starts/restarts sessions, detects stalls, self-heals on crash.
-Run --watch and --schedule as separate processes; use multiple --pipeline workers.`,
-		Example: `  # Watch-only (one per server):
-  search cc publish --watch
+Pipeline architecture (direct mode):
+  .warc.gz → gzip decompress → HTML filter → Markdown (ultralight) → Parquet (zstd)
+  No intermediate files. Single-pass. Prefetches next shard download in parallel.
 
-  # Scheduler (self-healing, adaptive resource management):
-  search cc publish --schedule --start 0    --end 4999   # server1
-  search cc publish --schedule --start 5000 --end 9999   # server2
+Modes:
+  --pipeline   Download → pack → parquet in one pass (no HF push).
+               Converter: --light (default, tokenizer-based) or --no-light (trafilatura).
+               Compression: zstd (default level, ~3% CPU overhead).
+  --watch      Watch parquet folder, push new files to HF in real-time.
+  --schedule   Manage pipeline screen sessions across a file index range.
+               Auto-detects hardware, self-heals on crash/stall, adaptive resource mgmt.
 
-  # Pipeline-only (multiple per server, no HF push):
-  search cc publish --pipeline --file 68-300 --cleanup --skip-errors
+Run --watch and --schedule as separate long-running processes.
+Use multiple --pipeline workers (or let --schedule manage them).`,
+		Example: `  # Full auto (scheduler + watcher on same server):
+  search cc publish --watch --commit-interval 90 &
+  search cc publish --schedule --start 0 --end 9999
 
-  # Manual one-shot publish (legacy):
+  # Pipeline-only (direct: .warc.gz → parquet, no HF push):
+  search cc publish --pipeline --file 0-49 --cleanup --skip-errors
+
+  # Check progress:
+  search cc publish --list                    # committed shard ranges
+  search cc publish --gaps --start 0 --end 99 # find missing shards
+
+  # Manual one-shot publish:
   search cc publish --file 0 --republish`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCCPublish(cmd.Context(), crawlID, fileIdx, repoRoot, repoID,
 				republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors,
 				watchInterval, commitInterval, chartsEvery,
-				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall)
+				schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall, ramPerSession)
 		},
 	}
 
 	cmd.Flags().StringVar(&crawlID, "crawl", "", "Crawl ID (default: latest)")
 	cmd.Flags().StringVar(&fileIdx, "file", "all", "File index, range (0-9), comma-separated list, or all (pipeline mode)")
 	cmd.Flags().StringVar(&repoRoot, "repo-root", "", "Local export repo root (default: $HOME/data/common-crawl/{crawl}/export/repo)")
-	cmd.Flags().StringVar(&repoID, "repo", "open-index/draft", "Hugging Face dataset repo ID")
+	cmd.Flags().StringVar(&repoID, "repo", "open-index/open-markdown", "Hugging Face dataset repo ID")
 	cmd.Flags().BoolVar(&republish, "republish", false, "Upload even if the remote path already exists (manual mode only)")
 	cmd.Flags().BoolVar(&private, "private", false, "Create the Hugging Face dataset repo as private")
-	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download, pack, export shards (writes parquets locally; use --watch to push)")
+	cmd.Flags().BoolVar(&pipeline, "pipeline", false, "Download + pack + parquet (direct, no intermediate WARC; use --watch to push to HF)")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Watch parquet folder and push new files to HuggingFace in real-time")
 	cmd.Flags().BoolVar(&schedule, "schedule", false, "Manage pipeline screen sessions across a file index range (self-healing scheduler)")
 	cmd.Flags().BoolVar(&list, "list", false, "List committed shards as ranges (from stats.csv / HF)")
@@ -92,22 +107,23 @@ Run --watch and --schedule as separate processes; use multiple --pipeline worker
 	cmd.Flags().BoolVar(&cleanup, "cleanup", false, "Delete raw .warc.gz after packing (--pipeline only)")
 	cmd.Flags().BoolVar(&lightConvert, "light", true, "Use lightweight HTML→Markdown converter (~10x faster, --no-light for trafilatura)")
 	cmd.Flags().BoolVar(&skipErrors, "skip-errors", false, "Skip shards that fail pack/export instead of aborting (--pipeline only)")
-	cmd.Flags().IntVar(&watchInterval, "watch-interval", 15, "Watcher poll interval in seconds (--watch only)")
-	cmd.Flags().IntVar(&commitInterval, "commit-interval", 180, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 180s → ≤20/hour per server, 40 total, leaving 88 headroom for other repos")
+	cmd.Flags().IntVar(&watchInterval, "watch-interval", 10, "Watcher poll interval in seconds (--watch only)")
+	cmd.Flags().IntVar(&commitInterval, "commit-interval", 120, "Minimum seconds between HF commits (--watch only). HF allows 128 commits/hour shared across all repos/tokens; default 120s → ≤30/hour per server, leaving headroom for arctic/HN/other repos")
 	cmd.Flags().IntVar(&chartsEvery, "charts-every", 60, "Regenerate charts every N minutes (--watch only, 0=disable)")
 	cmd.Flags().IntVar(&schedStart, "start", 0, "First file index in range (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedEnd, "end", 9999, "Last file index in range (--schedule/--gaps)")
 	cmd.Flags().IntVar(&schedMaxSess, "max-sessions", 0, "Max concurrent screen sessions (0=auto-detect from hardware; --schedule only)")
 	cmd.Flags().IntVar(&schedChunk, "chunk-size", 50, "Gap indices per screen session chunk (--schedule/--gaps; smaller = faster cycling, natural memory release)")
 	cmd.Flags().IntVar(&schedDonePct, "done-pct", 95, "% of shards committed before chunk is considered done (--schedule/--gaps)")
-	cmd.Flags().IntVar(&schedStall, "stall-rounds", 15, "Rounds with no new commits before killing a stalled session (--schedule only)")
+	cmd.Flags().IntVar(&schedStall, "stall-rounds", 40, "Rounds with no new commits before killing a stalled session (--schedule only; ~30 min at 45s/round)")
+	cmd.Flags().Float64Var(&ramPerSession, "ram-per-session", 0, "GB of RAM budgeted per pipeline session (0=default 1.2; --schedule only)")
 	return cmd
 }
 
 func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string,
 	republish, private, pipeline, watch, schedule, list, gaps, cleanup, lightConvert, skipErrors bool,
 	watchInterval, commitInterval, chartsEvery int,
-	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int) error {
+	schedStart, schedEnd, schedMaxSess, schedChunk, schedDonePct, schedStall int, ramPerSession float64) error {
 
 	resolvedID, note, err := ccResolveCrawlID(ctx, crawlID)
 	if err != nil {
@@ -146,15 +162,16 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 			fmt.Printf("  Gap backfill: %d uncommitted shards in %d–%d → scheduler\n",
 				len(gapIndices), schedStart, schedEnd)
 			cfg := ccScheduleConfig{
-				CrawlID:     crawlID,
-				RepoRoot:    repoRoot,
-				Start:       schedStart,
-				End:         schedEnd,
-				MaxSessions: schedMaxSess,
-				ChunkSize:   schedChunk,
-				DonePct:     schedDonePct,
-				StallRounds: schedStall,
-				GapIndices:  gapIndices,
+				CrawlID:       crawlID,
+				RepoRoot:      repoRoot,
+				Start:         schedStart,
+				End:           schedEnd,
+				MaxSessions:   schedMaxSess,
+				RAMPerSession: ramPerSession,
+				ChunkSize:     schedChunk,
+				DonePct:       schedDonePct,
+				StallRounds:   schedStall,
+				GapIndices:    gapIndices,
 			}
 			return runCCScheduleLoop(ctx, cfg)
 		}
@@ -196,14 +213,15 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	// ── Schedule mode: manage pipeline screen sessions (self-healing) ────────
 	if schedule {
 		cfg := ccScheduleConfig{
-			CrawlID:     crawlID,
-			RepoRoot:    repoRoot,
-			Start:       schedStart,
-			End:         schedEnd,
-			MaxSessions: schedMaxSess,
-			ChunkSize:   schedChunk,
-			DonePct:     schedDonePct,
-			StallRounds: schedStall,
+			CrawlID:       crawlID,
+			RepoRoot:      repoRoot,
+			Start:         schedStart,
+			End:           schedEnd,
+			MaxSessions:   schedMaxSess,
+			RAMPerSession: ramPerSession,
+			ChunkSize:     schedChunk,
+			DonePct:       schedDonePct,
+			StallRounds:   schedStall,
 		}
 		return runCCScheduleLoop(ctx, cfg)
 	}
@@ -339,17 +357,19 @@ func runCCPublish(ctx context.Context, crawlID, fileIdx, repoRoot, repoID string
 	return nil
 }
 
-// ccRunPipeline downloads, packs, and exports shards to local .parquet files.
+// ccRunPipeline downloads and converts shards directly to .parquet files.
 // It does NOT push to HuggingFace — run `--watch` in a separate session for that.
 // Parquets are written atomically (via .parquet.tmp → rename) so the watcher
 // only sees fully-written files. A .meta sidecar carries timing info to the watcher.
+//
+// Direct pipeline: .warc.gz → decompress → convert HTML→MD → write parquet (zstd)
+// No intermediate .md.warc.gz — eliminates 2 gzip passes and intermediate disk I/O.
 func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, cleanup, lightConvert, skipErrors bool) error {
 	indices, err := ccParseOpenFileSelector(fileIdx)
 	if err != nil {
 		return fmt.Errorf("--file: %w", err)
 	}
 
-	warcMdDir := ccDefaultWARCMdConfig(crawlID)
 	dataDir := filepath.Join(repoRoot, "data", crawlID)
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return err
@@ -357,16 +377,74 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 	statsCSV := ccStatsCSVPath(repoRoot)
 	skippedCSV := ccSkippedCSVPath(repoRoot)
 
+	// Redis integration: register pipeline session, track progress.
+	rds := newCCRedis(crawlID)
+	sessionID := fmt.Sprintf("pipe_%d_%s", os.Getpid(), fileIdx)
+	if rds.Available(ctx) {
+		rds.RegisterPipeline(ctx, sessionID)
+		defer rds.UnregisterPipeline(ctx, sessionID)
+		// Heartbeat goroutine: refresh TTL every 30s so dead sessions auto-expire.
+		heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
+		defer heartbeatCancel()
+		go func() {
+			tick := time.NewTicker(30 * time.Second)
+			defer tick.Stop()
+			for {
+				select {
+				case <-tick.C:
+					rds.HeartbeatPipeline(heartbeatCtx, sessionID)
+				case <-heartbeatCtx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	fmt.Println(Banner())
-	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → export"))
+	fmt.Println(subtitleStyle.Render("CC Pipeline: download → pack → parquet (direct)"))
 	fmt.Println()
 	fmt.Printf("  Crawl     %s\n", labelStyle.Render(crawlID))
 	fmt.Printf("  Files     %s\n", infoStyle.Render(strconv.Itoa(len(indices))))
 	fmt.Printf("  Output    %s\n", labelStyle.Render(dataDir))
+	if rds.Available(ctx) {
+		fmt.Printf("  Redis     %s\n", successStyle.Render("connected"))
+	}
 	fmt.Println()
 
 	// Load committed set once at startup (watcher maintains this via stats.csv).
 	committed := ccLoadCommittedSet(statsCSV, crawlID)
+
+	// Prefetch: download the NEXT shard's raw .warc.gz while processing the current.
+	// This overlaps network I/O with CPU-bound pack+parquet work.
+	type prefetchResult struct {
+		idx       int
+		localPath string
+		downloaded bool
+		err       error
+	}
+	var prefetchCh chan prefetchResult
+	var prefetchCancel context.CancelFunc
+	defer func() {
+		if prefetchCancel != nil {
+			prefetchCancel()
+		}
+	}()
+
+	startPrefetchDownload := func(nextIdx int) {
+		nextParquet := filepath.Join(dataDir, fmt.Sprintf("%05d.parquet", nextIdx))
+		if committed[nextIdx] || fileExists(nextParquet) {
+			return
+		}
+
+		prefetchCh = make(chan prefetchResult, 1)
+		var pfCtx context.Context
+		pfCtx, prefetchCancel = context.WithCancel(ctx)
+
+		go func() {
+			localPath, downloaded, dlErr := ccEnsureRawWARC(pfCtx, crawlID, nextIdx)
+			prefetchCh <- prefetchResult{idx: nextIdx, localPath: localPath, downloaded: downloaded, err: dlErr}
+		}()
+	}
 
 	for i, idx := range indices {
 		if ctx.Err() != nil {
@@ -374,14 +452,12 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		shard := fmt.Sprintf("%05d", idx)
-		mdWARCPath := filepath.Join(warcMdDir, shard+".md.warc.gz")
 		parquetPath := filepath.Join(dataDir, shard+".parquet")
-		tmpPath := parquetPath + ".tmp"
 
 		fmt.Printf("  ── [%d/%d] %s ──\n", i+1, len(indices), labelStyle.Render(shard))
 
-		// Skip: already committed to HF (watcher updated stats.csv).
-		if committed[idx] {
+		// Skip: already committed to HF (check Redis first, then file-based).
+		if rds.IsCommitted(ctx, idx) || committed[idx] {
 			fmt.Printf("  [%s] already committed, skipping\n", labelStyle.Render(shard))
 			fmt.Println()
 			continue
@@ -395,100 +471,142 @@ func ccRunPipeline(ctx context.Context, crawlID, fileIdx, repoRoot string, clean
 		}
 
 		// Clean up orphaned .tmp from a previous crash.
+		tmpPath := parquetPath + ".tmp"
 		if fileExists(tmpPath) {
 			_ = os.Remove(tmpPath)
 		}
 
-		var durDownloadS, durConvertS, durExportS int64
+		var durDownloadS, durConvertS int64
 
-		// Pack if md.warc.gz is missing.
-		if !fileExists(mdWARCPath) {
-			rawWARCExists := ccFindRawWARC(crawlID, idx) != ""
-			fmt.Printf("  [%s] packing...\n", labelStyle.Render(shard))
+		// Check if prefetch downloaded this shard's raw WARC.
+		var rawWARCPath string
+		if prefetchCh != nil {
+			select {
+			case pf := <-prefetchCh:
+				if pf.idx == idx && pf.err == nil {
+					rawWARCPath = pf.localPath
+					if pf.downloaded {
+						fmt.Printf("  [%s] raw WARC prefetched\n", labelStyle.Render(shard))
+					}
+				} else if pf.idx == idx && pf.err != nil {
+					fmt.Printf("  [%s] prefetch failed: %v — retrying\n", labelStyle.Render(shard), pf.err)
+				}
+			default:
+			}
+			prefetchCh = nil
+			prefetchCancel = nil
+		}
+
+		// Ensure raw .warc.gz is available.
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{"status": "downloading", "shard": idx})
+		if rawWARCPath == "" {
 			t0 := time.Now()
-			if packErr := runCCWarcPack(ctx, crawlID, strconv.Itoa(idx), -1, -1, 0, false, false, lightConvert, 200, "text/html", 512*1024, shard); packErr != nil {
+			path, downloaded, dlErr := ccEnsureRawWARC(ctx, crawlID, idx)
+			if dlErr != nil {
 				if skipErrors {
-					fmt.Printf("  [%s] %s pack error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), packErr)
-					ccRecordSkip(skippedCSV, crawlID, idx, "pack", packErr)
+					fmt.Printf("  [%s] download error (skipping): %v\n", labelStyle.Render(shard), dlErr)
+					ccRecordSkip(skippedCSV, crawlID, idx, "pack", dlErr)
 					fmt.Println()
 					continue
 				}
-				return fmt.Errorf("pack %d: %w", idx, packErr)
+				return fmt.Errorf("download %d: %w", idx, dlErr)
 			}
-			elapsed := int64(time.Since(t0).Seconds())
-			if rawWARCExists {
-				durConvertS = elapsed
-			} else {
-				durDownloadS = elapsed
+			rawWARCPath = path
+			if downloaded {
+				durDownloadS = int64(time.Since(t0).Seconds())
+				rds.RecordDownloaded(ctx)
 			}
-			if cleanup {
-				if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
-					_ = os.Remove(rawPath)
-					fmt.Printf("  [%s] cleaned up %s\n", labelStyle.Render(shard), filepath.Base(rawPath))
-				}
-			}
-		} else {
-			fmt.Printf("  [%s] md.warc.gz exists, skipping pack\n", labelStyle.Render(shard))
 		}
 
-		// Export to .tmp then atomically rename to .parquet.
-		fmt.Printf("  [%s] exporting  ", labelStyle.Render(shard))
-		t0 := time.Now()
-		rows, _, _, exportErr := exportWARCMdShardToParquet(mdWARCPath, tmpPath, func(n int64, elapsed time.Duration) {
-			secs := elapsed.Seconds()
-			rate := float64(n) / secs
-			if secs < 0.1 {
-				rate = 0
+		// Start prefetching NEXT shard download while we pack+parquet the current.
+		if i+1 < len(indices) {
+			startPrefetchDownload(indices[i+1])
+		}
+
+		// Direct pack → parquet (merged pipeline).
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{"status": "packing", "shard": idx})
+		fmt.Printf("  [%s] packing  ", labelStyle.Render(shard))
+		packCfg := warcmd.PackConfig{
+			InputFiles:   []string{rawWARCPath},
+			Workers:      0,
+			Force:        true,
+			LightConvert: lightConvert,
+			StatusCode:   200,
+			MIMEFilter:   "text/html",
+			MaxBodySize:  512 * 1024,
+		}
+
+		progressFn := func(done, total, errors, readBytes, writeBytes int64, elapsed time.Duration, peakMemMB float64) {
+			rate := float64(0)
+			if elapsed.Seconds() > 0 {
+				rate = float64(done) / elapsed.Seconds()
 			}
-			fmt.Printf("\r  [%s] exporting  %s docs  %s/s  %s",
+			fmt.Printf("\r  [%s] packing  in=%s  out=%s  err=%s  %.0f/s  mem=%sMB  %s",
 				labelStyle.Render(shard),
-				infoStyle.Render(ccFmtInt64(n)),
-				infoStyle.Render(fmt.Sprintf("%.0f", rate)),
-				elapsed.Round(time.Second),
-			)
-		})
-		if exportErr != nil {
-			_ = os.Remove(tmpPath)
-			fmt.Println()
+				infoStyle.Render(ccFmtInt64(total)),
+				infoStyle.Render(ccFmtInt64(done)),
+				infoStyle.Render(ccFmtInt64(errors)),
+				rate,
+				infoStyle.Render(fmt.Sprintf("%.0f", peakMemMB)),
+				elapsed.Round(time.Millisecond))
+		}
+
+		rows, _, _, packStats, directErr := packDirectToParquet(ctx, packCfg, parquetPath, progressFn)
+		fmt.Printf("\r\033[K")
+
+		if directErr != nil {
 			if skipErrors {
-				fmt.Printf("  [%s] %s export error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), exportErr)
-				ccRecordSkip(skippedCSV, crawlID, idx, "export", exportErr)
+				fmt.Printf("  [%s] pack error (skipping): %v\n", labelStyle.Render(shard), directErr)
+				ccRecordSkip(skippedCSV, crawlID, idx, "pack", directErr)
 				fmt.Println()
 				continue
 			}
-			return fmt.Errorf("export %d: %w", idx, exportErr)
-		}
-		durExportS = int64(time.Since(t0).Seconds())
-
-		// Atomic rename: watcher only sees complete files.
-		if renameErr := os.Rename(tmpPath, parquetPath); renameErr != nil {
-			_ = os.Remove(tmpPath)
-			if skipErrors {
-				fmt.Printf("  [%s] %s rename error (skipping): %v\n", labelStyle.Render(shard), warningStyle.Render("⚠"), renameErr)
-				ccRecordSkip(skippedCSV, crawlID, idx, "rename", renameErr)
-				fmt.Println()
-				continue
-			}
-			return fmt.Errorf("rename %d: %w", idx, renameErr)
+			return fmt.Errorf("pack %d: %w", idx, directErr)
 		}
 
-		fmt.Printf("\r  [%s] exported   %s docs  %s\n",
+		if packStats != nil {
+			durConvertS = int64(packStats.Duration.Seconds())
+		}
+
+		// Get parquet size.
+		pqSize := int64(0)
+		if fi, statErr := os.Stat(parquetPath); statErr == nil {
+			pqSize = fi.Size()
+		}
+		rate := float64(0)
+		if packStats != nil && packStats.Duration.Seconds() > 0 {
+			rate = float64(rows) / packStats.Duration.Seconds()
+		}
+		fmt.Printf("  [%s] done  %s docs  %s  %.0f/s  peak=%s\n",
 			labelStyle.Render(shard),
 			infoStyle.Render(ccFmtInt64(rows)),
-			successStyle.Render("done"),
+			infoStyle.Render(formatBytes(pqSize)),
+			rate,
+			infoStyle.Render(formatBytes(int64(packStats.PeakMemMB*1024*1024))),
 		)
 
-		// Write .meta sidecar with timing for the watcher.
+		// Write .meta sidecar with timing and memory for the watcher.
+		peakRSS := int64(warcmd.ReadRSSMB())
 		metaData, _ := json.Marshal(ccShardMeta{
 			DurDownloadS: durDownloadS,
 			DurConvertS:  durConvertS,
-			DurExportS:   durExportS,
+			PeakRSSMB:    peakRSS,
 		})
 		_ = os.WriteFile(filepath.Join(dataDir, shard+".meta"), metaData, 0o644)
 
-		// Aggressive cleanup: delete md.warc.gz after successful export.
+		// Redis: record pack event, update session state, push to watcher queue.
+		rds.RecordPacked(ctx)
+		rds.PushPendingParquet(ctx, parquetPath)
+		rds.SetSessionRSS(ctx, sessionID, float64(peakRSS))
+		rds.UpdatePipeline(ctx, sessionID, map[string]interface{}{
+			"status": "idle", "shard": idx, "peak_rss_mb": peakRSS,
+		})
+
+		// Cleanup raw .warc.gz.
 		if cleanup {
-			_ = os.Remove(mdWARCPath)
+			if rawPath := ccFindRawWARC(crawlID, idx); rawPath != "" {
+				_ = os.Remove(rawPath)
+			}
 		}
 
 		fmt.Println()
@@ -645,6 +763,50 @@ func ccListCommittedShards(ctx context.Context, crawlID, repoRoot, repoID string
 func ccDefaultWARCMdConfig(crawlID string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "data", "common-crawl", crawlID, "warc_md")
+}
+
+// ccEnsureRawWARC ensures the raw .warc.gz for the given file index is downloaded.
+// Returns the local path and whether a download was needed (for timing).
+func ccEnsureRawWARC(ctx context.Context, crawlID string, idx int) (localPath string, downloaded bool, err error) {
+	// Check if already on disk.
+	if existing := ccFindRawWARC(crawlID, idx); existing != "" {
+		return existing, false, nil
+	}
+
+	// Need to download — resolve manifest and fetch.
+	resolvedID, _, resolveErr := ccResolveCrawlID(ctx, crawlID)
+	if resolveErr != nil {
+		return "", false, fmt.Errorf("resolving crawl: %w", resolveErr)
+	}
+
+	client := cc.NewClient("", 4)
+	paths, dlErr := client.DownloadManifest(ctx, resolvedID, "warc.paths.gz")
+	if dlErr != nil {
+		return "", false, fmt.Errorf("manifest: %w", dlErr)
+	}
+	if idx < 0 || idx >= len(paths) {
+		return "", false, fmt.Errorf("file index %d out of range (0–%d)", idx, len(paths)-1)
+	}
+
+	cfg := warcmd.DefaultConfig(resolvedID)
+	warcDir := cfg.WARCDir()
+	if mkErr := os.MkdirAll(warcDir, 0o755); mkErr != nil {
+		return "", false, mkErr
+	}
+
+	localPath = filepath.Join(warcDir, filepath.Base(paths[idx]))
+	if dlErr := downloadWithProgress(ctx, client, paths[idx], localPath); dlErr != nil {
+		return "", false, fmt.Errorf("downloading %s: %w", filepath.Base(localPath), dlErr)
+	}
+
+	// Write sidecar so ccFindRawWARC finds it next time.
+	home, _ := os.UserHomeDir()
+	warcMdDir := filepath.Join(home, "data", "common-crawl", resolvedID, "warc_md")
+	_ = os.MkdirAll(warcMdDir, 0o755)
+	sidecarPath := filepath.Join(warcMdDir, fmt.Sprintf("%05d.warc.path", idx))
+	_ = os.WriteFile(sidecarPath, []byte(localPath), 0o644)
+
+	return localPath, true, nil
 }
 
 // ccFindRawWARC finds the raw .warc.gz file for a given file index.
@@ -891,8 +1053,15 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		totalMDStr      = "79.2 MB"
 		pctMDToPQStr    = "64.7"
 		endToEndPctStr  = "96.5"
+		// Projected 100k values (computed from per-shard averages)
+		projRawWARCStr  = "~81 TB"
+		projHTMLStr     = "~232 TB"
+		projPackStr     = "~4.1 TB"
+		projParquetStr  = "~2.8 TB"
 		// Timing table defaults (shown only when we have timing data)
 		timingSection = ""
+		// Progress/ETA line (shown when we have throughput data)
+		progressLine = ""
 	)
 
 	if totals != nil && totals.Shards > 0 {
@@ -928,6 +1097,65 @@ func ccPublishREADME(crawlID string, totals *ccTotals) string {
 		if rawWARCBytes > totals.ParquetBytes {
 			pct := float64(rawWARCBytes-totals.ParquetBytes) / float64(rawWARCBytes) * 100
 			endToEndPctStr = fmt.Sprintf("%.1f", pct)
+		}
+
+		// Projected 100k values: scale per-shard averages to 100,000 files.
+		const projFiles = 100_000
+		projScale := float64(projFiles) / float64(totals.Shards)
+		projRawWARCStr = "~" + ccFmtBytes(int64(float64(rawWARCBytes)*projScale))
+		projHTMLStr = "~" + ccFmtBytes(int64(float64(totals.HTMLBytes)*projScale))
+		projPackStr = "~" + ccFmtBytes(int64(float64(packBytes)*projScale))
+		projParquetStr = "~" + ccFmtBytes(int64(float64(totals.ParquetBytes)*projScale))
+
+		// Progress/ETA — computed from stats.csv timestamps + live hardware info.
+		if totals.ShardsPerHour > 0 {
+			remaining := projFiles - totals.Shards
+			if remaining > 0 {
+				etaHours := float64(remaining) / totals.ShardsPerHour
+				etaDone := time.Now().Add(time.Duration(etaHours * float64(time.Hour)))
+				pctDone := float64(totals.Shards) / float64(projFiles) * 100
+
+				var etaStr string
+				if etaHours >= 24 {
+					etaStr = fmt.Sprintf("**%s** (%.0f days)", etaDone.Format("January 2, 2006"), etaHours/24)
+				} else {
+					etaStr = fmt.Sprintf("**%s** (%.1f hours)", etaDone.Format("January 2, 2006 15:04 MST"), etaHours)
+				}
+
+				// Build progress section with hardware context.
+				var sb strings.Builder
+				sb.WriteString(fmt.Sprintf("\n### Live Progress\n\n"))
+				sb.WriteString(fmt.Sprintf("Processing at **%.1f shards/hour** — %s of %s done (**%.2f%%**)\n\n",
+					totals.ShardsPerHour, ccFmtInt64(int64(totals.Shards)), ccFmtInt64(projFiles), pctDone))
+				sb.WriteString(fmt.Sprintf("Estimated completion: %s\n\n", etaStr))
+
+				// Hardware snapshot (use home dir for disk detection).
+				homeDir, _ := os.UserHomeDir()
+				hw := arctic.DetectHardware(homeDir)
+				sb.WriteString(fmt.Sprintf("**Current server:** %d CPU cores, %.0f GB RAM (%.1f GB available), %.0f GB disk free\n\n",
+					runtime.NumCPU(), hw.RAMTotalGB, hw.RAMAvailGB, hw.DiskFreeGB))
+
+				// RSS from stats.csv.
+				if totals.AvgRSSMB > 0 {
+					sb.WriteString(fmt.Sprintf("**Memory per session:** avg %d MB, peak %d MB (measured via VmRSS)\n\n",
+						totals.AvgRSSMB, totals.MaxRSSMB))
+				}
+
+				// 10-server projection.
+				tenServerRate := totals.ShardsPerHour * 10
+				tenEtaHours := float64(remaining) / tenServerRate
+				var tenEtaStr string
+				if tenEtaHours >= 24 {
+					tenEtaDone := time.Now().Add(time.Duration(tenEtaHours * float64(time.Hour)))
+					tenEtaStr = fmt.Sprintf("%s (%.0f days)", tenEtaDone.Format("January 2, 2006"), tenEtaHours/24)
+				} else {
+					tenEtaStr = fmt.Sprintf("%.1f hours", tenEtaHours)
+				}
+				sb.WriteString(fmt.Sprintf("**With 10 identical servers:** %.0f shards/hour → %s",
+					tenServerRate, tenEtaStr))
+
+				progressLine = sb.String()
+			}
 		}
 
 		// Timing section — only shown when at least one shard has timing data.
@@ -967,7 +1195,7 @@ task_categories:
 - feature-extraction
 language:
 - en
-pretty_name: Open Index
+pretty_name: Open Markdown
 size_categories:
 - 1M<n<10M
 tags:
@@ -986,17 +1214,18 @@ configs:
     path: data/%[1]s/*
 ---
 
-# Open Index
+# **Open Markdown**
 
 > Clean markdown from the web, ready for training and retrieval
 
 ## What is it?
 
-Open Index is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown using [trafilatura](https://github.com/adbar/trafilatura), and packages the result into Parquet files with full WARC metadata preserved.
+**Open Markdown** is a large-scale web text dataset built from [Common Crawl](https://commoncrawl.org). Common Crawl is a non-profit that crawls the web and freely provides its archives and datasets to the public — see [their latest crawl announcement](https://commoncrawl.org/blog/march-2026-crawl-archive-now-available) for details on the source data. Every page goes through a pipeline that extracts the main content from raw HTML, converts it to clean Markdown, and packages the result into Parquet files with useful WARC metadata for traceability.
 
 The dataset currently includes crawl **%[1]s** with **%[7]s**. We plan to add more snapshots over time.
+%[24]s
 
-Open Index is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
+**Open Markdown** is released under the **Open Data Commons Attribution License (ODC-By) v1.0**, the same license used by Common Crawl.
 
 ## What is being released?
 
@@ -1010,9 +1239,9 @@ data/
     ...
 %[2]s
 
-Every row in a Parquet file is one web page. Along with the markdown body, we preserve the original WARC headers as a JSON column so you can always trace a document back to its source record.
+Every row in a Parquet file is one web page. Each row includes the %[3]swarc_record_id%[3]s and %[3]swarc_refers_to%[3]s fields parsed from the original WARC headers, so you can trace any document back to its source record. We also store %[3]shtml_length%[3]s and %[3]smarkdown_length%[3]s to measure the compression from raw HTML to clean markdown.
 
-## How to download and use Open Index
+## How to download and use Open Markdown
 
 ### Using %[3]sdatasets%[3]s
 
@@ -1020,13 +1249,13 @@ Every row in a Parquet file is one web page. Along with the markdown body, we pr
 from datasets import load_dataset
 
 # stream the entire dataset
-ds = load_dataset("open-index/draft", name="%[1]s", split="train", streaming=True)
+ds = load_dataset("open-index/open-markdown", name="%[1]s", split="train", streaming=True)
 for doc in ds:
     print(doc["url"], len(doc["markdown"]))
 
 # load a single shard into memory
 ds = load_dataset(
-    "open-index/draft",
+    "open-index/open-markdown",
     data_files="data/%[1]s/00000.parquet",
     split="train",
 )
@@ -1038,7 +1267,7 @@ ds = load_dataset(
 from huggingface_hub import snapshot_download
 
 folder = snapshot_download(
-    "open-index/draft",
+    "open-index/open-markdown",
     repo_type="dataset",
     local_dir="./open-index/",
     allow_patterns="data/%[1]s/*",
@@ -1051,16 +1280,16 @@ For faster downloads, install %[3]spip install huggingface_hub[hf_transfer]%[3]s
 
 %[2]ssql
 SELECT url, host, markdown_length
-FROM read_parquet('hf://datasets/open-index/draft/data/%[1]s/*.parquet')
+FROM read_parquet('hf://datasets/open-index/open-markdown/data/%[1]s/*.parquet')
 WHERE host = 'en.wikipedia.org'
 LIMIT 10;
 %[2]s
 
-# Dataset card for Open Index
+# Dataset card for Open Markdown
 
 ## Dataset Description
 
-- **Homepage and Repository:** [https://huggingface.co/datasets/open-index/draft](https://huggingface.co/datasets/open-index/draft)
+- **Homepage and Repository:** [https://huggingface.co/datasets/open-index/open-markdown](https://huggingface.co/datasets/open-index/open-markdown)
 - **Point of Contact:** please create a discussion on the Community tab
 - **License:** Open Data Commons Attribution License (ODC-By) v1.0
 
@@ -1106,7 +1335,7 @@ The default subset includes all available data across all crawl snapshots. You c
 
 ### Curation Rationale
 
-Most open web datasets either release raw text without structure or keep the HTML and leave parsing to the user. Open Index sits in between: it converts every page to Markdown so the content is immediately usable for training, while preserving the full WARC headers so you can always go back to the source if you need to.
+Most open web datasets either release raw text without structure or keep the HTML and leave parsing to the user. **Open Markdown** sits in between: it converts every page to Markdown so the content is immediately usable for training, while preserving key WARC identifiers (%[3]swarc_record_id%[3]s, %[3]swarc_refers_to%[3]s) so you can always trace back to the source record.
 
 ### Source Data
 
@@ -1114,15 +1343,14 @@ The source data consists of web pages crawled by the [Common Crawl](https://comm
 
 ### Data Processing Steps
 
-The processing pipeline runs in five stages:
+The processing pipeline runs as a single-pass direct conversion:
 
 1. **Download** raw .warc.gz files from Common Crawl S3 (each file is roughly 1 GB compressed)
 2. **Filter** to keep only HTTP 200 responses with a text/html content type, discarding images, scripts, redirects, and error pages
-3. **Convert** HTML to Markdown using [trafilatura](https://github.com/adbar/trafilatura), which extracts the main content and strips boilerplate, navigation, sidebars, footers, and ads
-4. **Pack** converted records into seekable .md.warc.gz files where each record is wrapped in its own gzip member, matching Common Crawl's concatenated-gzip format
-5. **Export** each shard to Apache Parquet with Zstd compression, 100,000 rows per row group, and an 8 MB page buffer
+3. **Convert** HTML to clean Markdown using a lightweight tokenizer-based extractor that strips tags, scripts, styles, navigation, and boilerplate — keeping only the main content
+4. **Export** directly to Apache Parquet with Zstd compression, 100,000 rows per row group
 
-Empty conversions (pages where trafilatura could not extract meaningful content) are dropped.
+No intermediate files are created — the pipeline streams from compressed WARC through conversion directly into Parquet. Pages that produce empty conversions are dropped.
 
 ### Compression Ratios
 
@@ -1130,12 +1358,12 @@ Numbers below are actual measurements summed across all %[8]s files of %[1]s (%[
 
 | Stage | %[8]s files (measured) | 100,000 files (projected) | Reduction |
 |---|---|---|---|
-| Raw WARC (.warc.gz, downloaded) | %[10]s | ~83 TB | — |
-| HTML extracted (uncompressed) | %[11]s | ~295 TB | — |
-| Packed markdown WARC (.md.warc.gz) | %[12]s | ~3.7 TB | **-%[13]s%%** vs HTML |
-| Final Parquet (Zstd level 19) | %[14]s | ~2.9 TB | **-%[15]s%%** vs packed WARC |
+| Raw WARC (.warc.gz, downloaded) | %[10]s | %[20]s | — |
+| HTML extracted (uncompressed) | %[11]s | %[21]s | — |
+| Markdown (clean text) | %[16]s | %[22]s | **-%[13]s%%** vs HTML |
+| Final Parquet (Zstd) | %[14]s | %[23]s | **-%[17]s%%** vs markdown |
 
-The big win is the HTML → Markdown step: trafilatura strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction** — before any file-level compression is applied. Parquet with Zstd level 19 then compresses the markdown a further %[17]s%%.
+The big win is HTML → Markdown conversion: the tokenizer strips all tags, scripts, styles, navigation, and ads, keeping only the main content. This cuts %[11]s of uncompressed HTML down to %[16]s of markdown — a **%[13]s%% reduction**. Parquet with Zstd then compresses the markdown a further %[17]s%%.
 
 End to end: %[10]s of raw gzipped WARCs becomes **%[14]s of Parquet** — a **%[18]s%% total reduction** — containing %[9]s clean markdown documents.
 %[19]s
@@ -1147,15 +1375,15 @@ No additional PII filtering is applied beyond what Common Crawl provides. As the
 
 ### Social Impact
 
-By releasing both the dataset and the full processing pipeline, we aim to lower the barrier to training and evaluating language models on high quality web data. Researchers and practitioners who cannot afford to run their own Common Crawl processing pipelines can use Open Index directly.
+By releasing both the dataset and the full processing pipeline, we aim to lower the barrier to training and evaluating language models on high quality web data. Researchers and practitioners who cannot afford to run their own Common Crawl processing pipelines can use **Open Markdown** directly.
 
 ### Discussion of Biases
 
-Open Index inherits the biases present in Common Crawl and the public web at large. The trafilatura extraction step favors article-like pages and may underrepresent content from forums, social media, and non-standard page layouts. We have not applied any machine-learning-based quality or toxicity filters, as such filters have been shown to disproportionately remove content from certain dialects and communities.
+**Open Markdown** inherits the biases present in Common Crawl and the public web at large. The trafilatura extraction step favors article-like pages and may underrepresent content from forums, social media, and non-standard page layouts. We have not applied any machine-learning-based quality or toxicity filters, as such filters have been shown to disproportionately remove content from certain dialects and communities.
 
 ### Known Limitations
 
-Code-heavy pages may not convert well to Markdown. If you are training a model that needs strong code performance, consider supplementing Open Index with a dedicated code dataset such as [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2). Similarly, highly structured pages like Wikipedia may have better formatting in dedicated Wikipedia dumps than in their Common Crawl versions.
+Code-heavy pages may not convert well to Markdown. If you are training a model that needs strong code performance, consider supplementing **Open Markdown** with a dedicated code dataset such as [The Stack v2](https://huggingface.co/datasets/bigcode/the-stack-v2). Similarly, highly structured pages like Wikipedia may have better formatting in dedicated Wikipedia dumps than in their Common Crawl versions.
 
 ## Additional Information
 
@@ -1165,7 +1393,7 @@ The dataset is released under the **Open Data Commons Attribution License (ODC-B
 
 ### Contact
 
-Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/draft/discussions) for questions, feedback, or issues.
+Please open a discussion on the [Community tab](https://huggingface.co/datasets/open-index/open-markdown/discussions) for questions, feedback, or issues.
 `,
 		c,               // [1] crawlID
 		cb,              // [2] triple backtick
@@ -1186,6 +1414,11 @@ Please open a discussion on the [Community tab](https://huggingface.co/datasets/
 		pctMDToPQStr,    // [17] markdown → parquet compression %
 		endToEndPctStr,  // [18] raw WARC → parquet end-to-end %
 		timingSection,   // [19] optional processing times table
+		projRawWARCStr,  // [20] projected raw WARC for 100k files
+		projHTMLStr,     // [21] projected HTML for 100k files
+		projPackStr,     // [22] projected packed WARC for 100k files
+		projParquetStr,  // [23] projected parquet for 100k files
+		progressLine,    // [24] progress/ETA line
 	)
 }
 
@@ -1197,7 +1430,7 @@ Full text: https://opendatacommons.org/licenses/by/1-0/
 You are free to copy, distribute, use, modify, transform, and build upon
 this database, as long as you attribute the source.
 
-Attribution: "Open Index, derived from Common Crawl (https://commoncrawl.org)"
+Attribution: "Open Markdown, derived from Common Crawl (https://commoncrawl.org)"
 
 Note: This dataset contains data derived from Common Crawl, which archives
 third-party web content. The original content remains subject to the rights

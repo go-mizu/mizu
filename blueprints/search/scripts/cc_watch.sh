@@ -2,8 +2,8 @@
 # cc_watch.sh — Keep the HF publish watcher running, restarting on failure.
 #
 # Run inside a dedicated screen session on each server:
-#   server1: screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"
-#   server2: screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"
+#   server1: screen -dmS cc_watcher bash -c "bash ~/scripts/cc_watch.sh; exec bash"
+#   server2: screen -dmS cc_watcher bash -c "bash ~/scripts/cc_watch.sh; exec bash"
 #
 # Or via Makefile:
 #   make deploy-cc-watch          # deploy script + start on server1
@@ -11,22 +11,22 @@
 #
 # HuggingFace rate limit: 128 commits/hour per token across ALL repos and servers.
 # With 2 servers + other repos also committing, keep well under that budget.
-# COMMIT_INTERVAL defaults to 180s → 20/hour per server, 40/hour total, leaving
-# 88 commits/hour headroom for arctic, goodreads, and any other HF repos.
-# Lower only if you're not running other HF publish jobs on the same token.
+# COMMIT_INTERVAL defaults to 120s → 30/hour per server, leaving plenty of
+# headroom for arctic, HN, goodreads, and any other HF repos sharing the
+# same token (128 commits/hour total). With maxBatchSize=20: 30 × 20 = 600/h.
 #
 # Environment:
-#   CRAWL           — crawl ID (default: CC-MAIN-2026-08)
+#   CRAWL           — crawl ID (default: CC-MAIN-2026-12)
 #   HF_TOKEN        — Hugging Face token (required; also checked in ~/.hf_token)
 #   SEARCH_BIN      — path to search binary (default: auto-detected)
 #   RESTART_DELAY   — seconds to wait before restarting after failure (default: 10)
-#   COMMIT_INTERVAL — minimum seconds between HF commits (default: 180)
+#   COMMIT_INTERVAL — minimum seconds between HF commits (default: 90)
 
 set -uo pipefail
 
-CRAWL=${CRAWL:-CC-MAIN-2026-08}
+CRAWL=${CRAWL:-CC-MAIN-2026-12}
 RESTART_DELAY=${RESTART_DELAY:-10}
-COMMIT_INTERVAL=${COMMIT_INTERVAL:-180}
+COMMIT_INTERVAL=${COMMIT_INTERVAL:-30}
 LOG_DIR="$HOME/log"
 LOG="$LOG_DIR/cc_watch.log"
 mkdir -p "$LOG_DIR"
@@ -42,6 +42,12 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
     fi
 fi
 export HF_TOKEN
+
+# Resolve REDIS_PASSWORD from env or ~/.redis_password
+if [[ -z "${REDIS_PASSWORD:-}" ]] && [[ -f "$HOME/.redis_password" ]]; then
+    REDIS_PASSWORD=$(cat "$HOME/.redis_password")
+    export REDIS_PASSWORD
+fi
 
 # Auto-detect search binary
 if [[ -n "${SEARCH_BIN:-}" ]]; then

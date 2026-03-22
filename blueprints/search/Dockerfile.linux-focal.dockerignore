@@ -4,14 +4,20 @@
 # Exclude everything by default
 *
 
-# Allow root module files (needed for go mod download)
+# Allow root module (needed by replace directive: github.com/go-mizu/mizu => ../..)
 !go.mod
 !go.sum
+!*.go
+!cmd
+!contract
+!openapi
+!middlewares
 
 # Allow blueprints/search source
 !blueprints/search
 
 # Re-exclude heavies inside blueprints/search
+blueprints/search/vendor
 blueprints/search/**/node_modules
 blueprints/search/tools
 blueprints/search/reports

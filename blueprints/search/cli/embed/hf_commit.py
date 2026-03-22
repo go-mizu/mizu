@@ -10,7 +10,7 @@ Reads a JSON payload from stdin, performs the commit, and prints the commit URL.
 Input JSON (stdin):
 {
   "token":    "hf_...",
-  "repo_id":  "open-index/draft",
+  "repo_id":  "open-index/open-markdown",
   "message":  "Publish shard ...",
   "num_threads": 10,
   "ops": [
@@ -20,7 +20,7 @@ Input JSON (stdin):
 }
 
 Output JSON (stdout):
-{"commit_url": "https://huggingface.co/datasets/open-index/draft/commit/abc123"}
+{"commit_url": "https://huggingface.co/datasets/open-index/open-markdown/commit/abc123"}
 """
 
 import json
