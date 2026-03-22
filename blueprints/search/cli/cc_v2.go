@@ -197,11 +197,7 @@ func runCCV2Publish(ctx context.Context, crawlID, fileIdx, repoID string,
 		}()
 
 		hf := newCCV2HFCommitter(token)
-		// Reuse exact v1 README generation.
-		writeRepoFn := func(repoRoot, crawlID, statsCSV string) error {
-			return ccEnsurePublishRepoFiles(repoRoot, crawlID, statsCSV)
-		}
-		w := cc_v2.NewWatcher(cfg, store, hf, writeRepoFn)
+		w := cc_v2.NewWatcher(cfg, store, hf)
 		return w.Run(ctx)
 	}
 

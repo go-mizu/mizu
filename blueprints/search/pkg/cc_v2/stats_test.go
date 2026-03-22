@@ -139,7 +139,7 @@ func TestGenerateREADME(t *testing.T) {
 	rows := []StatsRow{
 		{CrawlID: "CC-MAIN-2026-12", FileIdx: 0, Rows: 1000, HTMLBytes: 5000, MDBytes: 500, PqBytes: 200},
 	}
-	readme := generateREADME("CC-MAIN-2026-12", rows)
+	readme := generateREADME("CC-MAIN-2026-12", rows, 1)
 	if len(readme) == 0 {
 		t.Fatal("README should not be empty")
 	}
@@ -150,6 +150,16 @@ func TestGenerateREADME(t *testing.T) {
 	// Should contain shard count.
 	if !contains(readme, "1") {
 		t.Fatal("README should contain shard count")
+	}
+
+	// When committed > csv shards, should use committed count and scale estimates.
+	readme2 := generateREADME("CC-MAIN-2026-12", rows, 100)
+	if !contains(readme2, "| Shards | 100 |") {
+		t.Fatal("README should use committed count (100), not csv count (1)")
+	}
+	// Scaled docs should have ~ prefix.
+	if !contains(readme2, "~") {
+		t.Fatal("README should use ~ prefix for estimated docs")
 	}
 }
 

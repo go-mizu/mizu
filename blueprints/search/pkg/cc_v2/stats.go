@@ -170,17 +170,40 @@ func mergeStatsFromRemote(localPath string, remoteCSV []byte, crawlID string) {
 	writeStatsCSV(localPath, localRows)
 }
 
-func generateREADME(crawlID string, rows []StatsRow) string {
+// generateREADME builds the dataset README.
+// committedCount is the authoritative shard count from Redis.
+// stats.csv may be incomplete (only has rows for shards this instance processed),
+// so we scale document/byte estimates using per-shard averages when needed.
+func generateREADME(crawlID string, rows []StatsRow, committedCount int) string {
 	var totalRows, totalHTML, totalMD, totalPQ int64
-	shards := 0
+	csvShards := 0
 	for _, r := range rows {
 		if r.CrawlID == crawlID {
-			shards++
+			csvShards++
 			totalRows += r.Rows
 			totalHTML += r.HTMLBytes
 			totalMD += r.MDBytes
 			totalPQ += r.PqBytes
 		}
+	}
+
+	// Use committed count from Redis as the authoritative shard count.
+	// If stats.csv has fewer entries, scale estimates proportionally.
+	shards := csvShards
+	if committedCount > shards {
+		shards = committedCount
+	}
+	if csvShards > 0 && shards > csvShards {
+		scale := float64(shards) / float64(csvShards)
+		totalRows = int64(float64(totalRows) * scale)
+		totalHTML = int64(float64(totalHTML) * scale)
+		totalMD = int64(float64(totalMD) * scale)
+		totalPQ = int64(float64(totalPQ) * scale)
+	}
+
+	docsStr := fmtInt(totalRows)
+	if shards > csvShards {
+		docsStr = "~" + docsStr
 	}
 
 	return fmt.Sprintf(`---
@@ -233,7 +256,7 @@ ds = load_dataset("open-index/open-markdown", data_files="data/%s/*.parquet")
 ## License
 
 Open Data Commons Attribution License (ODC-By).
-`, crawlID, shards, fmtInt(totalRows), FmtBytes(totalHTML), FmtBytes(totalMD), FmtBytes(totalPQ), crawlID)
+`, crawlID, shards, docsStr, FmtBytes(totalHTML), FmtBytes(totalMD), FmtBytes(totalPQ), crawlID)
 }
 
 func fmtInt(n int64) string {

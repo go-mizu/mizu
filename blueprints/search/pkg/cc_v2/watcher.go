@@ -26,36 +26,30 @@ type HFOp struct {
 	PathInRepo string
 }
 
-// RepoFileWriter generates repo metadata files (README.md, LICENSE).
-// Injected from CLI layer so v2 reuses the exact same README as v1.
-type RepoFileWriter func(repoRoot, crawlID, statsCSV string) error
-
 // Watcher polls the parquet directory for new files and commits them to HuggingFace.
 // It is the ONLY component that deletes files (after successful HF commit).
 type Watcher struct {
-	cfg           WatcherConfig
-	store         Store
-	log           *Logger
-	hf            HFCommitter
-	writeRepoFn   RepoFileWriter // injected from CLI to reuse v1 README
-	parquetDir    string
-	repoRoot      string
-	committed     map[int]bool
-	commitNum     int
-	lastCommit    time.Time
+	cfg        WatcherConfig
+	store      Store
+	log        *Logger
+	hf         HFCommitter
+	parquetDir string
+	repoRoot   string
+	committed  map[int]bool
+	commitNum  int
+	lastCommit time.Time
 }
 
 // NewWatcher creates a watcher.
-func NewWatcher(cfg WatcherConfig, store Store, hf HFCommitter, writeRepoFn RepoFileWriter) *Watcher {
+func NewWatcher(cfg WatcherConfig, store Store, hf HFCommitter) *Watcher {
 	return &Watcher{
-		cfg:         cfg,
-		store:       store,
-		log:         NewLogger("watcher", store),
-		hf:          hf,
-		writeRepoFn: writeRepoFn,
-		parquetDir:  filepath.Join(cfg.DataDir, "parquet"),
-		repoRoot:    cfg.RepoRoot,
-		committed:   make(map[int]bool),
+		cfg:        cfg,
+		store:      store,
+		log:        NewLogger("watcher", store),
+		hf:         hf,
+		parquetDir: filepath.Join(cfg.DataDir, "parquet"),
+		repoRoot:   cfg.RepoRoot,
+		committed:  make(map[int]bool),
 	}
 }
 
@@ -360,9 +354,15 @@ func (w *Watcher) readMeta(f ParquetFile) ShardStats {
 
 func (w *Watcher) syncStatsFromHF(ctx context.Context) {
 	data, err := w.hf.DownloadFile(ctx, w.cfg.RepoID, "stats.csv")
-	if err != nil || len(data) == 0 {
+	if err != nil {
+		w.log.Warn("sync stats from HF failed", "err", err)
 		return
 	}
+	if len(data) == 0 {
+		w.log.Info("sync stats from HF: empty or not found")
+		return
+	}
+	w.log.Info("sync stats from HF", "bytes", len(data))
 	csvPath := filepath.Join(w.repoRoot, "stats.csv")
 	mergeStatsFromRemote(csvPath, data, w.cfg.CrawlID)
 
@@ -378,16 +378,10 @@ func (w *Watcher) syncStatsFromHF(ctx context.Context) {
 
 func (w *Watcher) writeRepoFiles() {
 	csvPath := filepath.Join(w.repoRoot, "stats.csv")
-	if w.writeRepoFn != nil {
-		// Use injected function (reuses v1 README generation).
-		if err := w.writeRepoFn(w.repoRoot, w.cfg.CrawlID, csvPath); err != nil {
-			w.log.Warn("write repo files", "err", err)
-		}
-	} else {
-		// Fallback: simple README.
-		rows, _ := readStatsCSV(csvPath)
-		readme := generateREADME(w.cfg.CrawlID, rows)
-		os.WriteFile(filepath.Join(w.repoRoot, "README.md"), []byte(readme), 0o644)
-		os.WriteFile(filepath.Join(w.repoRoot, "LICENSE"), []byte(licenseText), 0o644)
-	}
+	rows, _ := readStatsCSV(csvPath)
+	// Use committed count from Redis as authoritative shard count.
+	// stats.csv may be incomplete (only contains shards this instance processed).
+	readme := generateREADME(w.cfg.CrawlID, rows, len(w.committed))
+	os.WriteFile(filepath.Join(w.repoRoot, "README.md"), []byte(readme), 0o644)
+	os.WriteFile(filepath.Join(w.repoRoot, "LICENSE"), []byte(licenseText), 0o644)
 }
