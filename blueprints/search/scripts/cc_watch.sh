@@ -26,7 +26,7 @@ set -uo pipefail
 
 CRAWL=${CRAWL:-CC-MAIN-2026-12}
 RESTART_DELAY=${RESTART_DELAY:-10}
-COMMIT_INTERVAL=${COMMIT_INTERVAL:-120}
+COMMIT_INTERVAL=${COMMIT_INTERVAL:-30}
 LOG_DIR="$HOME/log"
 LOG="$LOG_DIR/cc_watch.log"
 mkdir -p "$LOG_DIR"
@@ -42,6 +42,12 @@ if [[ -z "${HF_TOKEN:-}" ]]; then
     fi
 fi
 export HF_TOKEN
+
+# Resolve REDIS_PASSWORD from env or ~/.redis_password
+if [[ -z "${REDIS_PASSWORD:-}" ]] && [[ -f "$HOME/.redis_password" ]]; then
+    REDIS_PASSWORD=$(cat "$HOME/.redis_password")
+    export REDIS_PASSWORD
+fi
 
 # Auto-detect search binary
 if [[ -n "${SEARCH_BIN:-}" ]]; then

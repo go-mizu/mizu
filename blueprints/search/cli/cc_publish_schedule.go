@@ -781,6 +781,11 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 		var packRate, commitRate, downloadRate float64
 		rateSource := ""
 
+		// Re-check Redis availability periodically (connection may have dropped).
+		if round%20 == 0 {
+			useRedis = rds.Available(ctx)
+		}
+
 		if useRedis {
 			// Redis rates use sorted sets with 15-min window — accurate across all processes.
 			packRate = rds.PackRate(ctx, 15*time.Minute)
@@ -842,11 +847,9 @@ func runCCSchedule(ctx context.Context, cfg ccScheduleConfig) error {
 			if redisCount > totalCommitted {
 				totalCommitted = redisCount
 			}
-			// Read pending from Redis counter if available.
-			redisPending := rds.PendingCount(ctx)
-			if redisPending > 0 {
-				pending = redisPending
-			}
+			// Note: don't use rds.PendingCount() — the Redis pending list is
+			// append-only (pipeline pushes, watcher never pops) so it grows
+			// stale. The filesystem count (countPendingParquets) is authoritative.
 		}
 
 		// Watcher status: prefer Redis, fall back to file.

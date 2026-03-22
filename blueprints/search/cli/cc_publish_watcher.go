@@ -187,12 +187,12 @@ func ccWatcherFlush(ctx context.Context, hf *hfClient, crawlID, repoRoot, repoID
 		}
 	}
 
-	// Cap batch size: each parquet is ~30 MB, so 20 files ≈ 600 MB.
+	// Cap batch size: each parquet is ~30 MB, so 30 files ≈ 900 MB.
 	// With 60-min upload timeout and xet parallel upload, this fits comfortably.
 	// Larger batches amortize the per-commit overhead (stats merge, README regen,
-	// xet handshake) and are critical for 10x throughput: 20 shards × 40 commits/h
-	// = 800 shards/h capacity, well above the 360/h target.
-	const maxBatchSize = 20
+	// xet handshake). At 1.12 MB/s upload, 900 MB takes ~800s (~13 min).
+	// 30 shards × 4.6 commits/h = 138 shards/h theoretical max.
+	const maxBatchSize = 30
 	if len(newFiles) > maxBatchSize {
 		fmt.Printf("  [watcher] capping batch to %d of %d pending parquet(s)\n", maxBatchSize, len(newFiles))
 		newFiles = newFiles[:maxBatchSize]

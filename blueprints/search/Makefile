@@ -459,9 +459,9 @@ deploy-cc-watch: ## Deploy cc_watch.sh and (re)start g_watch screen session (SER
 		echo "==> Writing HF_TOKEN to $(REMOTE_SSH):~/.hf_token..."; \
 		$(SSH) $(REMOTE_SSH) "echo '$(HF_TOKEN)' > ~/.hf_token && chmod 600 ~/.hf_token"; \
 	fi
-	@echo "==> Stopping existing g_watch session on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; true'
-	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; true'
+	@echo "==> Stopping existing watcher sessions on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_watch -X quit 2>/dev/null; screen -S cc_watcher -X quit 2>/dev/null; true'
+	-@$(SSH) $(REMOTE_SSH) 'pkill -f "cc publish --watch" 2>/dev/null; pkill -f hf_commit.py 2>/dev/null; true'
 	@sleep 1
 	@echo "==> Starting g_watch on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_watch bash -c "bash ~/scripts/cc_watch.sh; exec bash"'
@@ -484,19 +484,19 @@ remote-cc-watch-log: ## Tail cc_watch log on remote server
 
 # CC_SCHED_START / CC_SCHED_END define the file index range for the scheduler.
 # Defaults: server1=0–4999, server2=5000–9999.
-CC_SCHED_START ?= $(if $(filter 2,$(SERVER)),5000,0)
-CC_SCHED_END   ?= $(if $(filter 2,$(SERVER)),9999,4999)
+CC_SCHED_START ?= 0
+CC_SCHED_END   ?= 9999
 # HF rate limit: 128 commits/hour per token across ALL repos (cc, arctic, goodreads, etc.).
 # Default --commit-interval 180 → 20/hour per server, 40/hour total, 88 headroom for other repos.
 # Adjust via COMMIT_INTERVAL env var in cc_watch.sh or --commit-interval flag.
 
 .PHONY: deploy-cc-sched
 deploy-cc-sched: ## (Re)start g_sched using Go --schedule on remote server (SERVER=2 for server2)
-	@echo "==> Stopping existing g_sched on $(REMOTE_SSH)..."
-	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
+	@echo "==> Stopping existing scheduler sessions on $(REMOTE_SSH)..."
+	-@$(SSH) $(REMOTE_SSH) 'screen -S g_sched -X quit 2>/dev/null; screen -S cc_sched -X quit 2>/dev/null; pkill -f "cc publish --schedule" 2>/dev/null; true'
 	@sleep 1
 	@echo "==> Starting g_sched on $(REMOTE_SSH) (range $(CC_SCHED_START)–$(CC_SCHED_END))..."
-	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
+	@$(SSH) $(REMOTE_SSH) 'screen -dmS g_sched bash -c "export PATH=$$HOME/bin:$$PATH; [ -f $$HOME/.redis_password ] && export REDIS_PASSWORD=$$(cat $$HOME/.redis_password); search cc publish --schedule --start $(CC_SCHED_START) --end $(CC_SCHED_END); exec bash"'
 	@sleep 2
 	@echo "==> Verifying g_sched is running on $(REMOTE_SSH)..."
 	@$(SSH) $(REMOTE_SSH) 'screen -ls | grep g_sched && echo "g_sched started" || { echo "ERROR: g_sched not found"; exit 1; }'
