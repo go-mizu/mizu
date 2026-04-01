@@ -1,0 +1,52 @@
+# Go build outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+**/bin/
+
+# Coverage
+coverage.*
+*.cover
+*.coverprofile
+*.cov
+*.lcov
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Go workspaces
+go.work
+go.work.sum
+
+# macOS
+.DS_Store
+._*
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Vendoring
+vendor/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+dist/
+build/
+
+# Local env
+.env
+.env.*
+*.local
