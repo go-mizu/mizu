@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.26", "1.25"]
+        go: ["1.26"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
@@ -38,12 +38,12 @@ jobs:
       - name: Test
         env:
           CGO_ENABLED: "1"
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+        run: go test -race -covermode=atomic -coverprofile=${{ runner.temp }}/coverage.out ./...
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26'
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out
+          files: ${{ runner.temp }}/coverage.out
           fail_ci_if_error: false
