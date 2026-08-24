@@ -29,13 +29,20 @@ type Parse[T any] func(dst *T, v Value) error
 //
 // Use it for a type that cannot be an [encoding.TextUnmarshaler], usually
 // because it wants the whole of a table rather than a line of text.
+//
+// A value from a file keeps the type it was written with, so a Parser that
+// wants text asks for it with [Value.Str] rather than reading Value.Text,
+// which is empty for anything that came out of a file.
+//
+// Its error says what it wanted and nothing about where, the way every parser
+// here does, because [Get] adds the field and the place before anyone reads it.
 type Parser interface {
 	ParseConfig(v Value) error
 }
 
 // String reads a string, or any type whose underlying type is a string.
 func String[T ~string](dst *T, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -146,7 +153,7 @@ func Float[T ~float32 | ~float64](dst *T, v Value) error {
 // it: 30s, 2h45m, 150ms. It is a string in a file too, because a bare number
 // leaves the reader guessing at the unit.
 func Duration[T ~int64](dst *T, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -185,7 +192,7 @@ func Time(dst *time.Time, v Value) error {
 // without padding. A base64: prefix is allowed and ignored, because a key
 // written that way says what it is.
 func Bytes(dst *[]byte, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -215,7 +222,7 @@ func decodeBase64(s string) ([]byte, error) {
 
 // Addr reads an IP address, such as 10.0.0.1 or ::1.
 func Addr(dst *netip.Addr, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -229,7 +236,7 @@ func Addr(dst *netip.Addr, v Value) error {
 
 // Prefix reads a network, such as 10.0.0.0/8.
 func Prefix(dst *netip.Prefix, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -243,7 +250,7 @@ func Prefix(dst *netip.Prefix, v Value) error {
 
 // AddrPort reads an address and a port together, such as 127.0.0.1:8080.
 func AddrPort(dst *netip.AddrPort, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -258,7 +265,7 @@ func AddrPort(dst *netip.AddrPort, v Value) error {
 // Level reads a logging level: debug, info, warn, error, or one of those with
 // an offset, such as debug+2.
 func Level(dst *slog.Level, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -281,7 +288,7 @@ func Text[T any, P interface {
 	*T
 	encoding.TextUnmarshaler
 }](dst *T, v Value) error {
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil {
 		return err
 	}
@@ -388,18 +395,6 @@ func splitList(s string) []string {
 		}
 	}
 	return append(out, strings.TrimSpace(item.String()))
-}
-
-// text is the value as a string, and an error when it came from a file and was
-// not written as one.
-func text(v Value) (string, error) {
-	if v.TOML == nil {
-		return v.Text, nil
-	}
-	if v.TOML.Kind != toml.KindString {
-		return "", wantErr("a string", v)
-	}
-	return v.TOML.Str, nil
 }
 
 // fits is whether n survives being put in a signed number of that width.

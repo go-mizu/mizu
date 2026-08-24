@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -424,6 +425,67 @@ func ExampleGet() {
 	// Output:
 	// :9000 8
 	// config/local.toml:3:16: HTTP.ReadTimeout: want a length of time such as 30s or 2h45m, got "soon"
+}
+
+// megabytes is a setting written the way a person writes it, as 64M rather
+// than 67108864. A type that reads itself like this one is a [Parser], and
+// [Config] is the parser that hands it the value.
+type megabytes int64
+
+func (m *megabytes) ParseConfig(v Value) error {
+	// Str is the text of the value from whichever layer had it. Reading
+	// v.Text instead works everywhere except a file, which is the one place
+	// most settings come from.
+	s, err := v.Str()
+	if err != nil {
+		return err
+	}
+	// The error says what it wanted and nothing about where, because Get puts
+	// the field and the line it was written on in front of it.
+	n, ok := strings.CutSuffix(s, "M")
+	if !ok {
+		return fmt.Errorf("want a size in megabytes such as 64M, got %q", s)
+	}
+	i, err := strconv.Atoi(n)
+	if err != nil {
+		return fmt.Errorf("want a size in megabytes such as 64M, got %q", s)
+	}
+	*m = megabytes(i) << 20
+	return nil
+}
+
+func ExampleParser() {
+	dir, err := os.MkdirTemp("", "mizu")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "config"), 0o777)
+	os.WriteFile(filepath.Join(dir, "config", "local.toml"), []byte(
+		"[cache]\nmax_bytes = \"64M\"\nspill_at = 512\nfloor = \"tiny\"\n"), 0o666)
+
+	l, err := Open(Sources{Files: []string{filepath.Join(dir, "config", "local.toml")}})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var c struct{ MaxBytes, SpillAt, Floor megabytes }
+	Get(l, &c.MaxBytes, Field{Name: "Cache.MaxBytes", Path: "cache.max_bytes"}, Config)
+	Get(l, &c.SpillAt, Field{Name: "Cache.SpillAt", Path: "cache.spill_at"}, Config)
+	Get(l, &c.Floor, Field{Name: "Cache.Floor", Path: "cache.floor"}, Config)
+
+	fmt.Println(c.MaxBytes)
+	for _, e := range l.Errors() {
+		msg := strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator))
+		fmt.Println(filepath.ToSlash(msg))
+	}
+	// Output:
+	// 67108864
+	// config/local.toml:3:12: Cache.SpillAt: want a string, got integer
+	// config/local.toml:4:9: Cache.Floor: want a size in megabytes such as 64M, got "tiny"
 }
 
 func ExampleLoader() {
