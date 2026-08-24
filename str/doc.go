@@ -70,11 +70,35 @@
 // [UpperFirst] and [LowerFirst], and Swap is [SwapCase], because the first two
 // are names from PHP and the third says nothing about what it swaps.
 //
-// Four more were dropped for being a name over a line of [strings]. WordCount
-// is len(strings.Fields(s)), Lower and Upper are [strings.ToLower] and
-// [strings.ToUpper], and Squish is strings.Join(strings.Fields(s), " "). The
-// hand-written Squish was measured against that line and came out slower, so
-// there was nothing left to argue for it.
+// Plural takes a count through [PluralN] rather than an optional argument,
+// because Go does not have optional arguments and pretending otherwise with a
+// variadic reads worse than a second name.
+//
+// Eight were dropped for being a name over a line of [strings]. WordCount is
+// len(strings.Fields(s)), Lower and Upper are [strings.ToLower] and
+// [strings.ToUpper], Squish is strings.Join(strings.Fields(s), " "), Replace and
+// Remove are [strings.ReplaceAll] with and without a replacement, ReplaceFirst
+// is [strings.Replace] with a count of one, and PluralStudly is Pascal of
+// Plural. The hand-written Squish was measured against that line and came out
+// slower, so there was nothing left to argue for it.
+//
+// Two more went for being too narrow to carry a name. Transliterate is [Ascii]
+// with a table the caller supplies, and a caller with a table already has
+// [strings.NewReplacer]. ReplaceArray walks a list of replacements into
+// successive occurrences of one search, which is a parameterised query with the
+// safety taken out.
+//
+// # English
+//
+// [Plural] and [Singular] are English and nothing else. Inflection outside
+// English is not a rule table, and a package that guessed at it would be wrong
+// in a way that looked right. Anything that has to read as a sentence in more
+// than one language wants plural rules keyed by locale rather than a spelling
+// change, and that lives with the translations rather than here.
+//
+// Inside English they are a heuristic with a word list behind it, sized for the
+// words that end up in the name of a type or a table. [Singular] names the two
+// ways it is known to be wrong.
 //
 // # Cost
 //
