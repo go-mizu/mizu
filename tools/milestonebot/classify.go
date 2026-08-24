@@ -91,6 +91,8 @@ var areaRules = []areaRule{
 	{"errs/", "area/seams"},
 	{"ctxdata/", "area/seams"},
 	{"clock/", "area/seams"},
+	{"conc/", "area/seams"},
+	{"try/", "area/seams"},
 	{"log/", "area/seams"},
 	{"otelx/", "area/observability"},
 	{"codec/", "area/seams"},

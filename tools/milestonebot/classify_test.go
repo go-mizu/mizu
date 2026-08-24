@@ -35,6 +35,7 @@ func TestAreasFromPaths(t *testing.T) {
 		want  string
 	}{
 		{"seams", "go-mizu/mizu", []string{"errs/kind.go", "errs/kind_test.go"}, "area/seams"},
+		{"the standard library extensions are seams too", "go-mizu/mizu", []string{"conc/group.go", "try/try.go"}, "area/seams"},
 		{"two areas", "go-mizu/mizu", []string{"cache/cache.go", "db/db.go"}, "area/async area/db"},
 		{"codegen beats cli", "go-mizu/mizu", []string{"cmd/mizu/gen/rpc.go"}, "area/codegen"},
 		{"cli", "go-mizu/mizu", []string{"cmd/mizu/new.go"}, "area/cli"},
