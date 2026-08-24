@@ -16,10 +16,18 @@ env:
   CGO_ENABLED: "0"
 
 jobs:
-  # The matrix covers both architectures on all three operating systems. The
-  # toolkit has files behind unix and windows build tags, and an arm64 runner
-  # is where an alignment or a syscall assumption shows up, so the cost of the
-  # extra rows is worth paying on every pull request rather than on a report.
+  # The toolkit has files behind unix and windows build tags, and an arm64
+  # runner is where an alignment or a syscall assumption shows up, so the
+  # extra rows are worth paying for on every pull request rather than finding
+  # out from a report.
+  #
+  # darwin/amd64 is missing on purpose. The only hosted runner for it is
+  # macos-13, which GitHub is retiring, and it queued for more than ten
+  # minutes on both of the runs that introduced this file. A row that holds
+  # every pull request open for a quarter of an hour gets ignored, and an
+  # ignored check is worse than an absent one. It is compiled in the cross
+  # job below instead, so a build failure is still caught. Tests are not run
+  # there, and that is the honest version of what this covers.
   test:
     name: Test (Go ${{ matrix.go }} · ${{ matrix.os }})
     strategy:
@@ -29,7 +37,6 @@ jobs:
         os:
           - ubuntu-latest # linux/amd64
           - ubuntu-24.04-arm # linux/arm64
-          - macos-13 # darwin/amd64
           - macos-latest # darwin/arm64
           - windows-latest # windows/amd64
     runs-on: ${{ matrix.os }}
@@ -91,6 +98,7 @@ jobs:
       fail-fast: false
       matrix:
         target:
+          - { goos: darwin, goarch: amd64 }
           - { goos: linux, goarch: "386" }
           - { goos: linux, goarch: riscv64 }
           - { goos: windows, goarch: arm64 }
