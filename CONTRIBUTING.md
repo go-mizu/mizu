@@ -102,6 +102,19 @@ This is not a cleanup pass before 1.0, it is part of the milestone that introduc
 If something is exported it is documented and supported, and if it should not be either of those then it should not be exported.
 Hiding a package behind `internal/` is a way of avoiding that decision rather than making it.
 
+**The standard library, and nothing else.**
+`go get github.com/go-mizu/mizu` adds one line to your `go.mod` and pulls in no transitive graph.
+No third-party upgrade to schedule, no advisory to read that is not ours, no diamond conflict with whatever else you depend on.
+`deps_test.go` checks both the import graph and the `require` list, so a dependency cannot arrive through a test either.
+
+A library that needs a third-party package goes in a module of its own, the way `tools/milestonebot` does with its YAML parser.
+A nested module keeps its dependencies to itself, and somebody who imports the toolkit never sees them.
+That is also where database drivers and cloud clients will live.
+
+The rule covers `golang.org/x/*` as well.
+Those packages are maintained by the Go team and they are still separate modules that a consumer has to resolve, so they get the same treatment as anything else: a real reason, written down in the decision register, and an entry in `allowedModules` saying what it buys.
+The list is empty today.
+
 **Doc comments say what it does not do.**
 The sentence that saves somebody an hour is almost never the one describing the happy path.
 

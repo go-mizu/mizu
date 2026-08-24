@@ -83,6 +83,7 @@ type areaRule struct{ prefix, label string }
 var areaRules = []areaRule{
 	{".github/", "area/ci"},
 	{"tools/", "area/ci"},
+	{"scripts/", "area/ci"},
 	{"cmd/mizu/gen/", "area/codegen"},
 	{"cmd/", "area/cli"},
 	{"gen/", "area/codegen"},
@@ -134,6 +135,7 @@ var areaRules = []areaRule{
 	{"health/", "area/observability"},
 
 	{"mizutest/", "area/testing"},
+	{"archtest/", "area/testing"},
 	{"blueprints/", "area/cli"},
 }
 

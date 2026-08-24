@@ -16,13 +16,22 @@ env:
   CGO_ENABLED: "0"
 
 jobs:
+  # The matrix covers both architectures on all three operating systems. The
+  # toolkit has files behind unix and windows build tags, and an arm64 runner
+  # is where an alignment or a syscall assumption shows up, so the cost of the
+  # extra rows is worth paying on every pull request rather than on a report.
   test:
     name: Test (Go ${{ matrix.go }} · ${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         go: ["1.26"]
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os:
+          - ubuntu-latest # linux/amd64
+          - ubuntu-24.04-arm # linux/arm64
+          - macos-13 # darwin/amd64
+          - macos-latest # darwin/arm64
+          - windows-latest # windows/amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -47,6 +56,104 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ runner.temp }}/coverage.out
           fail_ci_if_error: false
+
+  # Formatting and vet run once. There is no reason to pay for them five times,
+  # and neither one is going to disagree across operating systems.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+  # A build tag that is wrong compiles fine on the machine you wrote it on.
+  # This job builds for platforms the matrix does not run on, which is cheap,
+  # since it compiles without linking or testing.
+  cross:
+    name: Cross compile
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { goos: linux, goarch: "386" }
+          - { goos: linux, goarch: riscv64 }
+          - { goos: windows, goarch: arm64 }
+          - { goos: freebsd, goarch: amd64 }
+          - { goos: openbsd, goarch: arm64 }
+          - { goos: js, goarch: wasm }
+          - { goos: wasip1, goarch: wasm }
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Build for ${{ matrix.target.goos }}/${{ matrix.target.goarch }}
+        env:
+          GOOS: ${{ matrix.target.goos }}
+          GOARCH: ${{ matrix.target.goarch }}
+        run: go build ./...
+
+  # Two builds of the same commit produce the same bytes, or the release is not
+  # something anybody can check.
+  #
+  # The two builds happen in different directories on purpose. That is what
+  # -trimpath is for, and building twice in one place would pass whether or not
+  # it works. The Go module cache is left alone, since a build that only
+  # reproduces on a cold cache is not reproducible either.
+  reproducible:
+    name: Reproducible build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Build once
+        run: go build -trimpath -o "$RUNNER_TEMP/mizu.1" ./cmd/mizu
+
+      - name: Build again somewhere else
+        run: |
+          dest="$RUNNER_TEMP/elsewhere"
+          git clone --shared --no-checkout . "$dest"
+          git -C "$dest" checkout --detach "$GITHUB_SHA"
+          cd "$dest"
+          go build -trimpath -o "$RUNNER_TEMP/mizu.2" ./cmd/mizu
+
+      - name: Compare
+        run: |
+          one=$(sha256sum "$RUNNER_TEMP/mizu.1" | cut -d' ' -f1)
+          two=$(sha256sum "$RUNNER_TEMP/mizu.2" | cut -d' ' -f1)
+          echo "first  $one"
+          echo "second $two"
+          if [ "$one" != "$two" ]; then
+            echo "the two builds differ, so the build is not reproducible"
+            exit 1
+          fi
+
+      - name: Show what the binary says about itself
+        run: "$RUNNER_TEMP/mizu.1 version -json"
 
   # tools/milestonebot is a nested module, so `go test ./...` at the root does
   # not reach it. It runs the label file through its own validator, which is

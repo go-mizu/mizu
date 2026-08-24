@@ -40,6 +40,8 @@ func TestAreasFromPaths(t *testing.T) {
 		{"cli", "go-mizu/mizu", []string{"cmd/mizu/new.go"}, "area/cli"},
 		{"workflows", "go-mizu/mizu", []string{".github/workflows/ci.yml"}, "area/ci"},
 		{"the bot is repository tooling", "go-mizu/mizu", []string{"tools/milestonebot/main.go"}, "area/ci"},
+		{"release scripting", "go-mizu/mizu", []string{"scripts/tag-release.sh"}, "area/ci"},
+		{"the import graph assertions are test tooling", "go-mizu/mizu", []string{"archtest/archtest.go"}, "area/testing"},
 		{"top level router file", "go-mizu/mizu", []string{"router.go"}, "area/router"},
 		{"unknown path gets nothing", "go-mizu/mizu", []string{"NOTICE"}, ""},
 
