@@ -1,29 +1,44 @@
 // Package gen is the code generation harness.
 //
-// It loads a module's packages with syntax and type information, hands them
-// to generators, and writes the result. This file describes the loading half.
-// Nothing here generates anything on its own.
+// It loads a module's packages with syntax and type information, finds the
+// declarations that asked to be generated for, hands them to generators, and
+// writes the result. Nothing here generates anything on its own.
 //
 //	pkgs, err := gen.Load(gen.Config{Dir: "."}, "./...")
 //	if err != nil {
 //		return err
 //	}
-//	for _, p := range pkgs {
-//		for _, f := range p.Syntax {
-//			// walk the file, read markers, look types up in p.TypesInfo
+//	targets, errs := gen.Scan(pkgs...)
+//	for _, t := range targets {
+//		for _, m := range t.Markers {
+//			// m.Name says which generator, m.Get reads its arguments,
+//			// and t.Object is the declaration to generate from
 //		}
 //	}
 //
 // # Markers
 //
-// Files are parsed with comments, because markers live in doc comments. One
-// thing to know before writing the code that reads them: a marker like
+// A marker is a directive in a doc comment that says which generator wants a
+// declaration and what it should do with it.
 //
-//	//mizu:table users
+//	//mizu:model table=posts
+//	//mizu:rpc method=POST path=/v1/orders ability=order.create
+//	//mizu:command name="users:prune" standalone
 //
-// is a directive comment, and [go/ast.CommentGroup.Text] strips directives on
-// the way out. The marker is in the parsed file, it is not in Text. Walk
-// Doc.List instead.
+// [Scan] finds them. It reads the package comment, functions and methods,
+// types, constants and variables, struct fields, and interface methods, and
+// returns a [Target] for each declaration that carried one, paired with the
+// [go/types.Object] it declares.
+//
+// Two slashes, then the name, with no space. That is Go's own rule for a
+// directive and it is not a detail: [go/ast.CommentGroup.Text] strips
+// directives and keeps sentences, which is how it tells them apart. A marker
+// written with a space is a sentence, and gets reported rather than skipped,
+// because a marker that silently does nothing is a bad afternoon.
+//
+// The same rule is why anything reading markers off an [go/ast.CommentGroup]
+// by hand has to walk Doc.List. The marker is in the parsed file. It is not in
+// Text.
 //
 // # Why not go/packages
 //

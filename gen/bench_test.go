@@ -1,6 +1,9 @@
 package gen
 
-import "testing"
+import (
+	"go/token"
+	"testing"
+)
 
 // There is no BenchmarkLoad. A full Load runs `go list -export`, which builds
 // the module, so the number it produced would be a measurement of the Go
@@ -8,7 +11,7 @@ import "testing"
 // part written here: parsing the files and type-checking them against export
 // data. So these benchmarks share one listing and time the rest.
 //
-// The fixture is four small packages. The numbers are not a prediction for a
+// The fixture is six small packages. The numbers are not a prediction for a
 // real module, they are a baseline to notice a change against.
 
 func benchListing(b *testing.B) []*listed {
@@ -63,6 +66,41 @@ func BenchmarkOrder(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		l.order()
+	}
+}
+
+// BenchmarkScan walks the loaded packages for markers. It runs once per
+// generation, over every file in the module, so it wants to stay well under
+// the cost of the type-checking it follows.
+func BenchmarkScan(b *testing.B) {
+	pkgs := benchLoader(b, benchListing(b), nil).load()
+	b.ReportAllocs()
+	for b.Loop() {
+		Scan(pkgs...)
+	}
+}
+
+// BenchmarkParseMarker is one comment, which is the inner loop of the walk and
+// the only part of it that does real string work.
+func BenchmarkParseMarker(b *testing.B) {
+	const text = `//mizu:command name="users:prune" desc="Delete users who never verified" standalone`
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := parseMarker(text, token.Position{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkParseOrdinaryComment is the case that dominates any real package,
+// where almost every comment is prose and the answer is no.
+func BenchmarkParseOrdinaryComment(b *testing.B) {
+	const text = "// Prune deletes drafts that nobody has touched in a year."
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := parseMarker(text, token.Position{}); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

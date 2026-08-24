@@ -47,8 +47,10 @@ func loadFixture(t *testing.T, overlay map[string][]byte) map[string]*Package {
 func TestLoadReturnsOnlyTheRoots(t *testing.T) {
 	pkgs := loadFixture(t, nil)
 	want := []string{
+		"mizu.test/gen/badmarkers",
 		"mizu.test/gen/bootstrap",
 		"mizu.test/gen/broken",
+		"mizu.test/gen/markers",
 		"mizu.test/gen/model",
 		"mizu.test/gen/store",
 	}
@@ -477,7 +479,13 @@ func TestErrorFormatting(t *testing.T) {
 	for _, tc := range []struct {
 		kind ErrorKind
 		want string
-	}{{ListError, "list"}, {ParseError, "parse"}, {TypeError, "type"}, {ErrorKind(9), "ErrorKind(9)"}} {
+	}{
+		{ListError, "list"},
+		{ParseError, "parse"},
+		{TypeError, "type"},
+		{MarkerError, "marker"},
+		{ErrorKind(9), "ErrorKind(9)"},
+	} {
 		if got := tc.kind.String(); got != tc.want {
 			t.Errorf("got %q, want %q", got, tc.want)
 		}
