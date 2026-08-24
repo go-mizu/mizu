@@ -45,6 +45,59 @@
 // redact cannot do. [Secret.Equal] compares in constant time, for the ones that
 // arrive from outside and get checked.
 //
+// # Encryption
+//
+// A [Crypt] encrypts and decrypts with a keyring: one key that writes, and any
+// number of retired ones that still read.
+//
+//	c, err := crypt.New(cfg.AppKey, cfg.OldKeys...)
+//	if err != nil {
+//		return err
+//	}
+//	b := c.Encrypt([]byte("4111 1111 1111 1111"))
+//	card, err := c.Decrypt(b)
+//
+// There is nothing to select. Every ciphertext is XAES-256-GCM with a random
+// 192 bit nonce, which is authenticated encryption: a value that anybody changed
+// along the way fails to open rather than opening as something else. The nonce
+// is long enough that drawing it at random is the whole of the answer, so there
+// is no counter to keep and nothing that goes wrong when a process restarts.
+//
+// [Crypt.EncryptString] is the same thing for values that have to be text, and
+// returns base64url with no padding, which is safe in a URL, a cookie, a header
+// and a filename.
+//
+// A ciphertext starts with a header holding the version, the algorithm and
+// [Key.ID], so a stored value says which key opens it. The header is
+// authenticated along with the message. [Overhead] is how much longer a
+// ciphertext is than what went into it, which is what a column has to have room
+// for.
+//
+// # Binding
+//
+// [AD] is data a ciphertext is tied to without being encrypted, and it is the
+// answer to a value being moved somewhere it does not belong: a session cookie
+// replayed against another account, a row copied from one tenant to another.
+//
+//	b := c.Encrypt(card, crypt.AD("user:"+userID))
+//	card, err := c.Decrypt(b, crypt.AD("user:"+userID))
+//
+// A value that arrives under a different id fails to open. The binding is
+// something the caller already knows at decryption time, not something it reads
+// out of the ciphertext, which is what makes it worth anything.
+//
+// # Rotation
+//
+// [Crypt.Rotate] returns a Crypt that writes with a new key and still reads
+// everything the old one could, so replacing a key is not a migration that has
+// to finish before the application starts again.
+//
+//	c, err = c.Rotate(next)
+//
+// [Crypt.NeedsRewrap] finds what is still holding an old key, which is how a
+// background job works through stored rows until the retired key can be dropped
+// from the list.
+//
 // # Random
 //
 // Everything here draws from the operating system, through crypto/rand, so

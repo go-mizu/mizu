@@ -92,6 +92,106 @@ func ExampleDigits() {
 	// 6 true
 }
 
+// ExampleCrypt is the whole of it: a key in, a ciphertext out, the message back.
+func ExampleCrypt() {
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	b := c.Encrypt([]byte("4111 1111 1111 1111"))
+	fmt.Println(len(b) == len("4111 1111 1111 1111")+crypt.Overhead)
+
+	card, err := c.Decrypt(b)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%s\n", card)
+
+	// Output:
+	// true
+	// 4111 1111 1111 1111
+}
+
+// ExampleAD shows what binding buys: the same ciphertext, handed over for
+// another user, does not open.
+func ExampleAD() {
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	b := c.Encrypt([]byte("4111 1111 1111 1111"), crypt.AD("user:42"))
+
+	_, err = c.Decrypt(b, crypt.AD("user:42"))
+	fmt.Println("owner:", err)
+
+	_, err = c.Decrypt(b, crypt.AD("user:43"))
+	fmt.Println("anybody else:", err)
+
+	// Output:
+	// owner: <nil>
+	// anybody else: crypt: this ciphertext does not open with the key it names
+}
+
+// ExampleCrypt_EncryptString is the form for a value that has to survive a
+// cookie or a URL.
+func ExampleCrypt_EncryptString() {
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	token := c.EncryptString("user:42", crypt.AD("session"))
+	fmt.Println(strings.ContainsAny(token, "+/="))
+
+	who, err := c.DecryptString(token, crypt.AD("session"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(who)
+
+	// Output:
+	// false
+	// user:42
+}
+
+// ExampleCrypt_Rotate is a key being replaced while the application is running.
+// What was written under the old key keeps opening, and NeedsRewrap is how a job
+// finds it.
+func ExampleCrypt_Rotate() {
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	old := c.Encrypt([]byte("4111 1111 1111 1111"))
+
+	c, err = c.Rotate(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("needs rewrap:", c.NeedsRewrap(old))
+
+	card, err := c.Decrypt(old)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fresh := c.Encrypt(card)
+	fmt.Println("needs rewrap:", c.NeedsRewrap(fresh))
+
+	// Output:
+	// needs rewrap: true
+	// needs rewrap: false
+}
+
 // Example_logging shows what a handler does with these types. Both of them
 // carry their own masking, so nothing has to be configured for this to hold.
 func Example_logging() {

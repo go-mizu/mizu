@@ -1,6 +1,7 @@
 package crypt
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,85 @@ func FuzzPick(f *testing.F) {
 			if !strings.Contains(alphabet, got[i:i+1]) {
 				t.Fatalf("Pick(%d, %q) drew %q", n, alphabet, got[i])
 			}
+		}
+	})
+}
+
+// FuzzDecrypt is the target that matters: whatever arrives from outside, this
+// package either opens it or refuses, and never panics on the way.
+func FuzzDecrypt(f *testing.F) {
+	// A fixed key, so that a corpus entry means the same thing on the next run
+	// as it did when it was written.
+	c, err := New(keyOf(f, bytes.Repeat([]byte{1}, KeySize)))
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	f.Add([]byte(nil), []byte(nil))
+	f.Add([]byte("hello"), []byte("user:42"))
+	f.Add(c.Encrypt([]byte("secret")), []byte(nil))
+	f.Add(c.Encrypt([]byte("secret"), AD("user:42")), []byte("user:42"))
+	f.Add(append(c.Encrypt([]byte("secret")), 'x'), []byte(nil))
+
+	f.Fuzz(func(t *testing.T, b, ad []byte) {
+		got, err := c.Decrypt(b, AD(ad))
+		if err != nil {
+			if got != nil {
+				t.Fatal("a plaintext came back with an error")
+			}
+			return
+		}
+
+		// It opened, so it has to be something this package wrote, and it has
+		// to close again into something that opens.
+		if len(b) < Overhead {
+			t.Fatalf("%d bytes opened", len(b))
+		}
+		again, err := c.Decrypt(c.Encrypt(got, AD(ad)), AD(ad))
+		if err != nil {
+			t.Fatalf("what came out does not go back in: %v", err)
+		}
+		if string(again) != string(got) {
+			t.Fatalf("%q went round again as %q", got, again)
+		}
+	})
+}
+
+// FuzzRoundTrip is the other direction: any message, bound to anything, comes
+// back as itself, and comes back only under the same binding.
+func FuzzRoundTrip(f *testing.F) {
+	c, err := New(GenerateKey())
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	f.Add([]byte(nil), []byte(nil))
+	f.Add([]byte(""), []byte(""))
+	f.Add([]byte("4111 1111 1111 1111"), []byte("user:42"))
+	f.Add(bytes.Repeat([]byte{0}, 1000), []byte("\x00\xff"))
+
+	f.Fuzz(func(t *testing.T, plaintext, ad []byte) {
+		b := c.Encrypt(plaintext, AD(ad))
+		if len(b) != len(plaintext)+Overhead {
+			t.Fatalf("a %d byte message came out %d bytes", len(plaintext), len(b))
+		}
+		if c.NeedsRewrap(b) {
+			t.Fatal("something written with the active key wants rewrapping")
+		}
+
+		got, err := c.Decrypt(b, AD(ad))
+		if err != nil {
+			t.Fatalf("what this package wrote does not open: %v", err)
+		}
+		if !bytes.Equal(got, plaintext) {
+			t.Fatalf("%q came back as %q", plaintext, got)
+		}
+
+		// A different binding never opens it, and the shortest different one
+		// is the one that says nothing.
+		other := AD(append(bytes.Clone(ad), 'x'))
+		if _, err := c.Decrypt(b, other); err == nil {
+			t.Fatalf("%q opened under %q", ad, other)
 		}
 	})
 }
