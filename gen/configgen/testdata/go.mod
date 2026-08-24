@@ -1,6 +1,6 @@
 module configtest
 
-go 1.26
+go 1.27
 
 require github.com/go-mizu/mizu v0.0.0
 

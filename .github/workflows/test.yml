@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.26"]
+        go: ["1.27"]
         os:
           - ubuntu-latest # linux/amd64
           - ubuntu-24.04-arm # linux/arm64
@@ -57,7 +57,7 @@ jobs:
         run: go test -race -covermode=atomic -coverprofile=${{ runner.temp }}/coverage.out ./...
 
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.26'
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.27'
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -74,7 +74,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Check formatting
         run: |
@@ -111,13 +111,43 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Build for ${{ matrix.target.goos }}/${{ matrix.target.goarch }}
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
         run: go build ./...
+
+  # Go 1.27 builds encoding/json/v2 by default and still lets anyone turn it
+  # off, so mizu carries both and json_v1.go is what compiles when it is off.
+  # The matrix above only ever exercises the default, which means the other file
+  # would rot without this job, and the tests that hold the two to the same
+  # behaviour would only ever check one of them.
+  #
+  # It is one row rather than a second axis on the matrix. The difference is in
+  # two files and none of it is platform specific, so paying for it four more
+  # times buys nothing.
+  json:
+    name: JSON v1
+    runs-on: ubuntu-latest
+    env:
+      GOEXPERIMENT: nojsonv2
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
 
   # Two builds of the same commit produce the same bytes, or the release is not
   # something anybody can check.
@@ -136,7 +166,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Build once
         run: go build -trimpath -o "$RUNNER_TEMP/mizu.1" ./cmd/mizu
@@ -175,7 +205,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           cache-dependency-path: tools/milestonebot/go.sum
 
       - name: Check formatting
