@@ -59,11 +59,31 @@
 // moves off bcrypt: everybody who signs in is moved, and what is left belongs to
 // accounts nobody has used since.
 //
+// # Migrating
+//
+// An application arriving from Laravel, Rails or Django arrives with a column
+// full of bcrypt. [Migrating] reads those and writes argon2id:
+//
+//	h := hash.Migrating(hash.Default(), hash.Bcrypt{})
+//
+// Nothing else at the call site changes. The same three calls above verify a
+// bcrypt hash, notice it is not what this writes, and replace it, so an account
+// moves the next time somebody signs in and nobody is asked to reset anything.
+// Accounts that never come back keep their old hash, which is the right answer
+// for a password nobody is using.
+//
+// This direction is not a tradeoff. bcrypt at cost 12, which is what Laravel
+// writes, takes about 200 milliseconds a check on an M4, against 19 for
+// argon2id at the OWASP defaults, so the migration makes sign in faster and
+// harder to attack at the same time.
+//
 // # What is not here
 //
 // There is no algorithm to select and no cipher suite to negotiate. Reading a
 // bcrypt hash from an application being migrated is supported because those
-// hashes exist and the passwords behind them do not. Writing one is not.
+// hashes exist and the passwords behind them do not. Writing one is not: it
+// costs an attacker time and nothing else, which is what argon2id was built to
+// fix, and it ignores everything after the 72nd byte of a password.
 //
 // The argon2id itself is golang.org/x/crypto/argon2, which is written and
 // reviewed by the Go team under the same process as the standard library and

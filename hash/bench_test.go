@@ -1,6 +1,7 @@
 package hash
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -116,9 +117,83 @@ func BenchmarkGateContended(b *testing.B) {
 	})
 }
 
+// BenchmarkVerifyBcrypt is what a sign in costs on the day an application
+// starts reading somebody else's password column, at the cost Laravel writes.
+// It is the number to hold next to BenchmarkVerify when deciding whether a
+// migration changes what a login costs, and it says that at cost 12 bcrypt is
+// in the same range as argon2id at the OWASP defaults.
+func BenchmarkVerifyBcrypt(b *testing.B) {
+	for name, encoded := range bcryptHashes {
+		b.Run(name, func(b *testing.B) {
+			var v Bcrypt
+			ctx := b.Context()
+
+			b.ReportAllocs()
+			for b.Loop() {
+				sinkBool, sinkErr = v.Verify(ctx, "hunter2", encoded)
+			}
+		})
+	}
+}
+
+// BenchmarkMigrationVerify is what the composition costs on top of the hash
+// itself, which had better be nothing measurable. Every sign in in an
+// application that is migrating goes through it.
+func BenchmarkMigrationVerify(b *testing.B) {
+	h := Migrating(cheap(b), Bcrypt{MaxCost: 4})
+	ctx := b.Context()
+
+	encoded, err := h.Hash(ctx, "hunter2")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.Run("argon2id", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sinkBool, sinkErr = h.Verify(ctx, "hunter2", encoded)
+		}
+	})
+	b.Run("bcrypt", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sinkBool, sinkErr = h.Verify(ctx, "hunter2", bcryptHashes["cost 4"])
+		}
+	})
+}
+
+// BenchmarkReads is the dispatch on its own, since it runs on every sign in
+// before anything expensive happens and it is the one part of a Migration that
+// a caller pays for whether or not there is an old hash to read.
+func BenchmarkReads(b *testing.B) {
+	var v Bcrypt
+	const encoded = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0c2FsdA$AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = v.Reads(encoded)
+	}
+}
+
+// BenchmarkTune is the search and not the hashing, so it says what the command
+// costs beyond the hashes it cannot avoid. A machine that answers instantly
+// leaves only the arithmetic.
+func BenchmarkTune(b *testing.B) {
+	instant := func(ctx context.Context, p Params) (time.Duration, error) {
+		return time.Duration(p.Memory) * time.Microsecond, nil
+	}
+	ctx := b.Context()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkTuning, sinkErr = tune(ctx, Target{}, instant)
+	}
+}
+
 var (
 	sinkString string
 	sinkBool   bool
 	sinkErr    error
 	sinkPHC    phc
+	sinkTuning Tuning
 )
