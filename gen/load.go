@@ -90,6 +90,7 @@ const (
 	ListError ErrorKind = iota
 	ParseError
 	TypeError
+	MarkerError
 )
 
 func (k ErrorKind) String() string {
@@ -100,6 +101,8 @@ func (k ErrorKind) String() string {
 		return "parse"
 	case TypeError:
 		return "type"
+	case MarkerError:
+		return "marker"
 	}
 	return fmt.Sprintf("ErrorKind(%d)", int(k))
 }
