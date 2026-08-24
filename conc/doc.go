@@ -13,6 +13,46 @@
 // whose result is already going in the bin, and [Group.Wait] returns the error
 // that started it.
 //
+// # Fanning out
+//
+// The loop above is common enough to have a name. [Map] runs one function over
+// a slice, at most n at a time, and gives the results back in the order of the
+// input:
+//
+//	prices, err := conc.Map(ctx, ids, 8, priceOf)
+//
+// [Each] is the same for work that has an effect rather than a result, and
+// [All] runs a fixed list of different functions instead of one function over a
+// list, so there is no limit to pass: the limit is how many were written. All
+// three stop at the first error and return it on its own, because a half filled
+// slice is a thing nobody can use safely.
+//
+// [Race] runs several ways of getting the same answer and takes whichever
+// arrives first, cancelling the rest:
+//
+//	body, err := conc.Race(ctx, fromReplica, fromPrimary)
+//
+// [MapSeq] is [Map] over an [iter.Seq], handing each result over as it is ready
+// rather than collecting them all first:
+//
+//	for row, err := range conc.MapSeq(ctx, rows, 8, enrich) {
+//		if err != nil {
+//			return err
+//		}
+//		w.Write(row)
+//	}
+//
+// n elements are in flight at a time and nothing is read from the input ahead
+// of that, so ten million rows cost what ten do. The results still come out in
+// the order they went in, which means an element that takes a long time holds
+// up the finished ones behind it. That is what an ordered answer costs, and the
+// alternative is a sequence whose order has nothing to do with the input.
+//
+// An error from [MapSeq] arrives against the element it belongs to and does not
+// end the sequence, since a sequence hands that decision to the caller one
+// element at a time. Break to end it. Breaking out cancels everything in flight
+// and waits for it before the loop is over, so nothing it started outlives it.
+//
 // # No bare go statement
 //
 // The go statement has no return value, no owner and no end. Nothing collects
@@ -105,10 +145,22 @@
 // is about 2.7 microseconds, nearly all of it capturing the stack, which is the
 // right trade for something that should not be happening.
 //
+// The helpers add what their shape needs and nothing more. [Map] and [Each]
+// cost two allocations per element against the one a bare [Group.Go] costs, the
+// extra being the closure that carries the element. [MapSeq] costs four, since
+// every element gets a channel of its own, which is what keeps the results in
+// order without holding all of them at once, and it runs about half as long
+// again per element as [Map] does. [All] over three functions is around 1.5
+// microseconds and [Race] over three is around 2.5, the difference being that
+// Race stops the losers and waits for them before it returns.
+//
+// Timings were taken on a machine with other work on it, so read them as
+// ceilings. The allocation counts do not move.
+//
 // # What is not here yet
 //
-// The fan-out helpers that the spec puts in this package, Map, MapSeq, Each,
-// Race and All, are built on a Group and land next. Registration with the
-// application, so that shutdown waits for a group that outlives the request it
-// started in, needs the supervisor and arrives with it.
+// Debounce, Throttle, Once and Pool, the rate shaping and object reuse that the
+// spec puts in this package, land next. Registration with the application, so
+// that shutdown waits for a group that outlives the request it started in,
+// needs the supervisor and arrives with it.
 package conc

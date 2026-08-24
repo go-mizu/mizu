@@ -101,9 +101,11 @@ func NewGroup(ctx context.Context, opts ...GroupOption) (*Group, context.Context
 // nothing left to wait for it.
 func (g *Group) Go(fn func(context.Context) error) { g.run(g.ctx, fn) }
 
-// run is Go with the context to hand fn spelled out, because the package level
-// Go hands over the caller's context rather than the group's.
-func (g *Group) run(ctx context.Context, fn func(context.Context) error) {
+// run is Go with two things spelled out that the exported form hides: the
+// context to hand fn, because the package level Go passes the caller's rather
+// than the group's, and whether a goroutine was started at all, because Map and
+// the rest are waiting on a channel that only fn will write to.
+func (g *Group) run(ctx context.Context, fn func(context.Context) error) bool {
 	if g.waited.Load() {
 		panic("conc: Go after Wait returned, so nothing would wait for this goroutine")
 	}
@@ -112,14 +114,14 @@ func (g *Group) run(ctx context.Context, fn func(context.Context) error) {
 	// that itself, and most of them would not.
 	if g.ctx.Err() != nil {
 		g.fail(context.Cause(g.ctx))
-		return
+		return false
 	}
 	if g.sem != nil {
 		select {
 		case g.sem <- struct{}{}:
 		case <-g.ctx.Done():
 			g.fail(context.Cause(g.ctx))
-			return
+			return false
 		}
 	}
 
@@ -138,6 +140,7 @@ func (g *Group) run(ctx context.Context, fn func(context.Context) error) {
 			g.fail(err)
 		}
 	}()
+	return true
 }
 
 // Wait blocks until every goroutine has finished and returns the first error
@@ -150,6 +153,16 @@ func (g *Group) Wait() error {
 	g.waited.Store(true)
 	g.cancel(g.err)
 	return g.err
+}
+
+// stop ends the group with the given cause and waits for what it started, for
+// a caller that has the answer it came for and no use for the rest.
+//
+// It is not exported because it is a shape rather than a policy: Race and
+// MapSeq both need it, and neither of them is asking the caller to decide.
+func (g *Group) stop(cause error) error {
+	g.cancel(cause)
+	return g.Wait()
 }
 
 // fail records the first error and cancels the group with it.

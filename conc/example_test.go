@@ -3,6 +3,7 @@ package conc_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/go-mizu/mizu/conc"
@@ -116,4 +117,103 @@ func ExampleGroup_Wait() {
 	// Output:
 	// internal panic
 	// a goroutine panicked: assignment to entry in nil map
+}
+
+// ExampleMap is the group above with the loop and the slot bookkeeping taken
+// out, which is what most fan-outs turn out to be.
+func ExampleMap() {
+	prices := map[string]int{"apple": 3, "pear": 5, "plum": 2}
+	names := []string{"apple", "pear", "plum"}
+
+	found, err := conc.Map(context.Background(), names, 4, func(_ context.Context, name string) (int, error) {
+		p, ok := prices[name]
+		if !ok {
+			return 0, errs.NotFoundf("no price for %s", name)
+		}
+		return p, nil
+	})
+
+	fmt.Println(err, found)
+
+	// Output:
+	// <nil> [3 5 2]
+}
+
+// ExampleEach is [conc.Map] for work that has an effect rather than a result.
+// The limit is what keeps a list of any length from opening a connection per
+// element, so the results arrive in whatever order they finish.
+func ExampleEach() {
+	users := []string{"ana", "ben", "cleo"}
+
+	var mu sync.Mutex
+	var sent []string
+	err := conc.Each(context.Background(), users, 2, func(_ context.Context, u string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		sent = append(sent, u)
+		return nil
+	})
+
+	slices.Sort(sent)
+	fmt.Println(err, sent)
+
+	// Output:
+	// <nil> [ana ben cleo]
+}
+
+// ExampleAll runs a fixed list of different jobs rather than one job over a
+// list, so there is no limit to pass. The limit is how many were written.
+func ExampleAll() {
+	page, err := conc.All(context.Background(),
+		func(context.Context) (string, error) { return "header", nil },
+		func(context.Context) (string, error) { return "body", nil },
+		func(context.Context) (string, error) { return "footer", nil },
+	)
+
+	fmt.Println(err, page)
+
+	// Output:
+	// <nil> [header body footer]
+}
+
+// ExampleMapSeq hands each result over as it is ready rather than collecting
+// them all first, so a sequence of ten million costs what a sequence of ten
+// does. The order still follows the input.
+func ExampleMapSeq() {
+	words := slices.Values([]string{"mizu", "kaze", "hi"})
+
+	for n, err := range conc.MapSeq(context.Background(), words, 4, func(_ context.Context, w string) (int, error) {
+		return len(w), nil
+	}) {
+		fmt.Println(n, err)
+	}
+
+	// Output:
+	// 4 <nil>
+	// 4 <nil>
+	// 2 <nil>
+}
+
+// ExampleRace tries two ways of getting the same answer and takes whichever
+// works. The one that lost is told why it was cancelled, so it can tell that
+// apart from the caller giving up.
+func ExampleRace() {
+	fromCache := func(context.Context) (string, error) {
+		return "", errs.NotFoundf("not in the cache")
+	}
+	fromOrigin := func(context.Context) (string, error) {
+		return "the front page", nil
+	}
+	fromMirror := func(ctx context.Context) (string, error) {
+		<-ctx.Done()
+		fmt.Println("the mirror stopped because:", context.Cause(ctx))
+		return "", ctx.Err()
+	}
+
+	body, err := conc.Race(context.Background(), fromCache, fromOrigin, fromMirror)
+	fmt.Println(body, err)
+
+	// Output:
+	// the mirror stopped because: conc: something else finished first
+	// the front page <nil>
 }
