@@ -1,6 +1,7 @@
 package xs
 
 import (
+	"cmp"
 	"iter"
 	"slices"
 )
@@ -20,21 +21,29 @@ import (
 //
 // # What is not here, and why
 //
-// A method cannot have type parameters of its own and cannot narrow the type
-// parameters of its receiver. Everything in this package that introduces a new
-// type or a new constraint is therefore missing from this type: Map and FlatMap
-// introduce a result type, Unique needs comparable, Sum needs a number, and
-// GroupBy, KeyBy, CountBy, MinBy, MaxBy and UniqueBy all introduce a key.
+// A method may have type parameters of its own, so the steps that introduce a
+// new type are methods: [Seq.Map] introduces a result type, [Seq.GroupBy] and
+// the rest of the By methods introduce a key, and the chain carries on across
+// the change.
 //
-// [MapTo] is the way out for the common one. It is a free function that takes a
-// Seq and returns a Seq, so the chain carries on after it:
-//
-//	names := xs.MapTo(xs.Of(users).Filter(User.active), User.name).
+//	names := xs.Of(users).
+//		Filter(User.active).
+//		Map(User.name).
 //		Take(10).
 //		Slice()
 //
-// For the rest, call [Seq.Seq] and use the free functions. Nothing is lost by
-// doing that, since the methods are those functions with a shorter spelling.
+// What a method still cannot do is narrow the type parameter it was given. Sum
+// wants a number, Min and Max want an ordered type, Unique wants a comparable
+// one and Join wants a string, and none of those can be said about a receiver
+// declared with any. Those stay free functions, and [Seq.Seq] hands the
+// sequence over to them.
+//
+//	total := xs.Sum(xs.Of(items).Map(Item.total).Seq())
+//
+// [Seq.Chunk] and [Seq.Window] are the other hole. Both return a sequence of
+// slices of the element type, and a method returning Seq[[]T] on a Seq[T]
+// receiver is an instantiation cycle, so both hand back a plain [iter.Seq] and
+// [From] starts a new chain if the batches want one.
 type Seq[T any] func(yield func(T) bool)
 
 // Of starts a chain from a slice.
@@ -149,15 +158,15 @@ func (s Seq[T]) Enumerate() iter.Seq2[int, T] {
 //		Take(3).
 //		Slice()
 //
-// This is the one method that is not lazy, and it cannot be: the smallest
-// element could be the last one to arrive. The sort happens when the chain is
-// read rather than when it is built, and it happens again on every read. A
-// [Take] after it still saves the work further down the chain, and none of the
-// work above it.
+// This and [Seq.SortBy] are the two methods that are not lazy, and they cannot
+// be: the smallest element could be the last one to arrive. The sort happens
+// when the chain is read rather than when it is built, and it happens again on
+// every read. A [Take] after it still saves the work further down the chain,
+// and none of the work above it.
 //
-// It takes a comparison rather than a key, because a key would be a type
-// parameter and a method cannot have one. [slices.SortedFunc] over [Seq.Seq] is
-// the same thing spelled out.
+// [Seq.SortBy] is this with the comparison written for you, and is the one to
+// reach for when the order is a field. This one is for the orders that are not:
+// two fields, a reversal, or anything [cmp.Compare] does not say.
 func (s Seq[T]) SortFunc(compare func(a, b T) int) Seq[T] {
 	return func(yield func(T) bool) {
 		for _, v := range slices.SortedFunc(s.Seq(), compare) {
@@ -166,6 +175,20 @@ func (s Seq[T]) SortFunc(compare func(a, b T) int) Seq[T] {
 			}
 		}
 	}
+}
+
+// SortBy sorts the elements by what key returns for each of them.
+//
+//	youngest := xs.Of(users).SortBy(User.age).Take(3).Slice()
+//
+// key is called once per comparison rather than once per element, so a key that
+// costs something wants [Seq.SortFunc] over a slice of pairs instead. For a
+// field read, which is what this is for, the call is free and the sort is the
+// cost.
+//
+// It is not lazy, for the reason [Seq.SortFunc] gives.
+func (s Seq[T]) SortBy[K cmp.Ordered](key func(T) K) Seq[T] {
+	return s.SortFunc(func(a, b T) int { return cmp.Compare(key(a), key(b)) })
 }
 
 // Count returns how many elements there are. See [Count].
@@ -203,15 +226,79 @@ func (s Seq[T]) Reduce(fn func(a, b T) T) (T, bool) { return Reduce(s.Seq(), fn)
 // not. See [PartitionBy].
 func (s Seq[T]) PartitionBy(ok func(T) bool) (yes, no []T) { return PartitionBy(s.Seq(), ok) }
 
-// MapTo turns every element into something else and gives back a chain of the
-// new type.
+// Map turns every element into something else and carries on as a chain of the
+// new type. See [Map].
 //
-//	names := xs.MapTo(xs.Of(users), User.name).Take(10).Slice()
+//	names := xs.Of(users).Map(User.name).Take(10).Slice()
 //
-// It is a function rather than a method on [Seq] because the result type is a
-// type parameter and a method cannot have one. That restriction is the reason
-// this exists at all, and it is worth knowing before wondering why the chain
-// has a hole in the middle of it.
-func MapTo[T, R any](s Seq[T], fn func(T) R) Seq[R] {
+// R is inferred from fn, so it is never written out. Writing it out is how you
+// take a method value: xs.Of(users).Map[string] is a func(func(User) string)
+// Seq[string], which is worth knowing and almost never worth using.
+func (s Seq[T]) Map[R any](fn func(T) R) Seq[R] {
 	return Seq[R](Map(s.Seq(), fn))
+}
+
+// FlatMap turns every element into a sequence and runs them one after another,
+// so an element can become several or none. See [FlatMap].
+//
+//	tags := xs.Of(posts).FlatMap(Post.tags).Slice()
+func (s Seq[T]) FlatMap[R any](fn func(T) iter.Seq[R]) Seq[R] {
+	return Seq[R](FlatMap(s.Seq(), fn))
+}
+
+// Zip pairs the elements with the elements of other and ends with whichever
+// runs out first. See [Zip].
+//
+// It ends the chain, since a sequence of pairs is an [iter.Seq2] and this type
+// holds one element.
+func (s Seq[T]) Zip[U any](other iter.Seq[U]) iter.Seq2[T, U] {
+	return Zip(s.Seq(), other)
+}
+
+// Fold combines the elements into a single value of another type, starting from
+// init. See [Fold].
+//
+//	widest := xs.Of(words).Fold(0, func(n int, s string) int { return max(n, len(s)) })
+//
+// [Seq.Reduce] is the one for combining the elements with each other, where the
+// answer has the element's own type and there is nothing to start from.
+func (s Seq[T]) Fold[A any](init A, fn func(A, T) A) A {
+	return Fold(s.Seq(), init, fn)
+}
+
+// UniqueBy leaves out the elements whose key has been seen already, keeping the
+// first of each. See [UniqueBy].
+func (s Seq[T]) UniqueBy[K comparable](key func(T) K) Seq[T] {
+	return Seq[T](UniqueBy(s.Seq(), key))
+}
+
+// GroupBy collects the elements into a map from key to every element with that
+// key, in the order they arrived. See [GroupBy].
+//
+//	byAuthor := xs.Of(posts).GroupBy(Post.author)
+func (s Seq[T]) GroupBy[K comparable](key func(T) K) map[K][]T {
+	return GroupBy(s.Seq(), key)
+}
+
+// KeyBy collects the elements into a map from key to element, keeping the last
+// of each. See [KeyBy].
+func (s Seq[T]) KeyBy[K comparable](key func(T) K) map[K]T {
+	return KeyBy(s.Seq(), key)
+}
+
+// CountBy counts how many elements share each key. See [CountBy].
+func (s Seq[T]) CountBy[K comparable](key func(T) K) map[K]int {
+	return CountBy(s.Seq(), key)
+}
+
+// MinBy returns the element with the smallest key, and reports whether there
+// was one. See [MinBy].
+func (s Seq[T]) MinBy[K cmp.Ordered](key func(T) K) (T, bool) {
+	return MinBy(s.Seq(), key)
+}
+
+// MaxBy returns the element with the largest key, and reports whether there was
+// one. See [MaxBy].
+func (s Seq[T]) MaxBy[K cmp.Ordered](key func(T) K) (T, bool) {
+	return MaxBy(s.Seq(), key)
 }

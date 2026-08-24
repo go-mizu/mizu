@@ -2,6 +2,9 @@ package xs_test
 
 import (
 	"cmp"
+	"fmt"
+	"iter"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -234,10 +237,12 @@ func TestTheTerminalMethods(t *testing.T) {
 	}
 }
 
-func TestMapTo(t *testing.T) {
+func TestChainMap(t *testing.T) {
 	users := []user{{"ana", true}, {"ben", false}, {"cleo", true}}
 
-	got := xs.MapTo(xs.Of(users).Filter(func(u user) bool { return u.Active }), user.name).
+	got := xs.Of(users).
+		Filter(func(u user) bool { return u.Active }).
+		Map(user.name).
 		Take(1).
 		Slice()
 
@@ -246,20 +251,156 @@ func TestMapTo(t *testing.T) {
 	}
 }
 
-func TestMapToIsLazyToo(t *testing.T) {
+func TestChainMapIsLazyToo(t *testing.T) {
 	in, read := counted([]int{1, 2, 3, 4})
 
 	calls := 0
-	got := xs.MapTo(xs.From(in), func(n int) string {
+	got := xs.From(in).Map(func(n int) string {
 		calls++
 		return strings.Repeat("x", n)
 	}).Take(2).Slice()
 
 	if want := []string{"x", "xx"}; !slices.Equal(got, want) {
-		t.Errorf("MapTo gave %q, want %q", got, want)
+		t.Errorf("Map gave %q, want %q", got, want)
 	}
 	if calls != 2 || *read != 2 {
 		t.Errorf("it called fn %d times over %d elements, want 2 and 2", calls, *read)
+	}
+}
+
+// TestMapNeedsNoTypeArgument is the thing that makes the method worth having
+// over the free function it wraps. If inference ever stopped working here the
+// package would still compile everywhere it is used internally and break for
+// everyone else, so it is written down.
+func TestMapNeedsNoTypeArgument(t *testing.T) {
+	got := xs.Of([]int{1, 2, 3}).Map(func(n int) string { return strings.Repeat("x", n) }).Slice()
+
+	if want := []string{"x", "xx", "xxx"}; !slices.Equal(got, want) {
+		t.Errorf("Map gave %q, want %q", got, want)
+	}
+}
+
+// TestMapAsAMethodValue is the other half of it: the type argument can be
+// written, and what comes back is a function.
+func TestMapAsAMethodValue(t *testing.T) {
+	toName := xs.Of([]user{{"ana", true}, {"ben", false}}).Map[string]
+
+	if got := toName(user.name).Slice(); !slices.Equal(got, []string{"ana", "ben"}) {
+		t.Errorf("the method value gave %q, want [ana ben]", got)
+	}
+}
+
+func TestChainAcrossTwoTypeChanges(t *testing.T) {
+	got := xs.Of([]int{1, 2, 3}).
+		Map(func(n int) string { return strings.Repeat("x", n) }).
+		Map(func(s string) int { return len(s) * 2 }).
+		Slice()
+
+	if want := []int{2, 4, 6}; !slices.Equal(got, want) {
+		t.Errorf("the chain gave %v, want %v", got, want)
+	}
+}
+
+func TestChainFlatMap(t *testing.T) {
+	got := xs.Of([]string{"a b", "", "c"}).
+		FlatMap(func(s string) iter.Seq[string] { return slices.Values(strings.Fields(s)) }).
+		Slice()
+
+	if want := []string{"a", "b", "c"}; !slices.Equal(got, want) {
+		t.Errorf("FlatMap gave %q, want %q", got, want)
+	}
+}
+
+func TestChainZip(t *testing.T) {
+	var pairs []string
+	for name, n := range xs.Of([]string{"a", "b", "c"}).Zip(slices.Values([]int{1, 2})) {
+		pairs = append(pairs, fmt.Sprintf("%s%d", name, n))
+	}
+
+	if want := []string{"a1", "b2"}; !slices.Equal(pairs, want) {
+		t.Errorf("Zip gave %q, want %q", pairs, want)
+	}
+}
+
+func TestChainFold(t *testing.T) {
+	got := xs.Of([]string{"a", "bbb", "cc"}).Fold(0, func(n int, s string) int { return max(n, len(s)) })
+
+	if got != 3 {
+		t.Errorf("Fold gave %d, want 3", got)
+	}
+}
+
+func TestChainUniqueBy(t *testing.T) {
+	got := xs.Of([]string{"go", "rust", "c", "zig", "d"}).UniqueBy(func(s string) int { return len(s) }).Slice()
+
+	// One word per length, the first one of each, so d goes and c stays.
+	if want := []string{"go", "rust", "c", "zig"}; !slices.Equal(got, want) {
+		t.Errorf("UniqueBy gave %q, want %q", got, want)
+	}
+}
+
+func TestChainSortBy(t *testing.T) {
+	got := xs.Of([]string{"pear", "fig", "quince"}).SortBy(func(s string) int { return len(s) }).Slice()
+
+	if want := []string{"fig", "pear", "quince"}; !slices.Equal(got, want) {
+		t.Errorf("SortBy gave %q, want %q", got, want)
+	}
+}
+
+// TestSortByAgreesWithSortFunc is the promise in SortBy's doc comment, that it
+// is SortFunc with the comparison written out.
+func TestSortByAgreesWithSortFunc(t *testing.T) {
+	in := []user{{"cleo", true}, {"ana", false}, {"ben", true}}
+
+	byKey := xs.Of(in).SortBy(user.name).Slice()
+	byFunc := xs.Of(in).SortFunc(func(a, b user) int { return cmp.Compare(a.Name, b.Name) }).Slice()
+
+	if !slices.Equal(byKey, byFunc) {
+		t.Errorf("SortBy gave %v and SortFunc gave %v", byKey, byFunc)
+	}
+}
+
+func TestTheKeyedTerminalMethods(t *testing.T) {
+	words := []string{"go", "rust", "c", "zig", "d"}
+	length := func(s string) int { return len(s) }
+
+	groups := xs.Of(words).GroupBy(length)
+	want := map[int][]string{1: {"c", "d"}, 2: {"go"}, 3: {"zig"}, 4: {"rust"}}
+	if !maps.EqualFunc(groups, want, slices.Equal) {
+		t.Errorf("GroupBy gave %v, want %v", groups, want)
+	}
+
+	if got := xs.Of(words).KeyBy(length)[1]; got != "d" {
+		t.Errorf("KeyBy kept %q for length 1, want the last one, d", got)
+	}
+	if got := xs.Of(words).CountBy(length)[1]; got != 2 {
+		t.Errorf("CountBy counted %d words of length 1, want 2", got)
+	}
+	if got, ok := xs.Of(words).MinBy(length); !ok || got != "c" {
+		t.Errorf("MinBy gave %q, want c", got)
+	}
+	if got, ok := xs.Of(words).MaxBy(length); !ok || got != "rust" {
+		t.Errorf("MaxBy gave %q, want rust", got)
+	}
+}
+
+// TestTheKeyedMethodsMatchTheFreeFunctions keeps the methods honest about being
+// the same code, the way TestTheChainAndTheFreeFunctionsAgree does for the rest.
+func TestTheKeyedMethodsMatchTheFreeFunctions(t *testing.T) {
+	words := []string{"go", "rust", "c", "zig", "d"}
+	length := func(s string) int { return len(s) }
+
+	if got, want := xs.Of(words).CountBy(length), xs.CountBy(slices.Values(words), length); !maps.Equal(got, want) {
+		t.Errorf("the method gave %v and the function gave %v", got, want)
+	}
+	if got, want := xs.Of(words).KeyBy(length), xs.KeyBy(slices.Values(words), length); !maps.Equal(got, want) {
+		t.Errorf("the method gave %v and the function gave %v", got, want)
+	}
+
+	chained := xs.Of(words).Map(length).Slice()
+	free := slices.Collect(xs.Map(slices.Values(words), length))
+	if !slices.Equal(chained, free) {
+		t.Errorf("the method gave %v and the function gave %v", chained, free)
 	}
 }
 

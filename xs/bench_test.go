@@ -507,15 +507,57 @@ func BenchmarkChain(b *testing.B) {
 	})
 }
 
-func BenchmarkMapTo(b *testing.B) {
+// BenchmarkChainMap is the method against the free function it wraps, since a
+// method that changes the element type is the one place the chain could have
+// cost something and the doc comment says it does not.
+func BenchmarkChainMap(b *testing.B) {
 	data := make([]int, 1000)
 
-	b.ReportAllocs()
-	for b.Loop() {
-		for v := range xs.MapTo(xs.Of(data), double).Seq() {
-			sink = v
+	b.Run("method", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Of(data).Map(double).Seq() {
+				sink = v
+			}
 		}
+	})
+
+	b.Run("free function", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Map(slices.Values(data), double) {
+				sink = v
+			}
+		}
+	})
+}
+
+// BenchmarkChainSortBy is the key against the comparison, since SortBy calls
+// key once per comparison rather than once per element and the doc comment says
+// that is fine for a field read.
+func BenchmarkChainSortBy(b *testing.B) {
+	data := make([]int, 1000)
+	for i := range data {
+		data[i] = len(data) - i
 	}
+
+	b.Run("SortBy", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Of(data).SortBy(func(n int) int { return n }).Seq() {
+				sink = v
+			}
+		}
+	})
+
+	b.Run("SortFunc", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Of(data).SortFunc(cmp.Compare).Seq() {
+				sink = v
+			}
+		}
+	})
 }
 
 // BenchmarkSortFunc is the one method that reads everything before it yields
