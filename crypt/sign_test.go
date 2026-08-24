@@ -344,14 +344,24 @@ type session struct {
 
 func TestSeal(t *testing.T) {
 	c := newTest(t)
-	want := session{User: "42", Admin: true}
+
+	// The user is long enough that finding it in the token by chance is not a
+	// thing that happens. "42" was not: a token is about a hundred characters
+	// of base64url, which carries any given pair of them about one run in
+	// forty, and the test failed that often for no reason.
+	want := session{User: "user-8f21c07d", Admin: true}
 
 	token, err := Seal(c, want, AD("session"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(token, "42") || strings.ContainsAny(token, "+/=") {
-		t.Errorf("the token is %q", token)
+	if strings.Contains(token, want.User) {
+		t.Errorf("the token has the plaintext in it: %q", token)
+	}
+	// Base64url without padding, so a token goes in a cookie, a URL or a header
+	// without anything having to escape it.
+	if strings.ContainsAny(token, "+/=") {
+		t.Errorf("the token is not base64url: %q", token)
 	}
 
 	got, err := Unseal[session](c, token, AD("session"))
