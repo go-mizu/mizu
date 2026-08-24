@@ -6,33 +6,164 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
 
 jobs:
-  release:
-    name: Release
+  # Nothing is published until the tag passes the same checks a pull request
+  # does. A tag is harder to take back than a branch, so the order matters.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      # Full history, because the module train check reads the other tags.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
+      - name: Test the tools
+        working-directory: tools/milestonebot
+        run: go test ./...
+
+      # Every module in the repository moves on one version. If the toolkit is
+      # tagged v0.7.0 then tools/milestonebot is tagged tools/milestonebot/v0.7.0,
+      # and scripts/tag-release.sh pushes them together. This catches the case
+      # where somebody tagged by hand and pushed half the train.
+      - name: Check the module train
+        run: |
+          git fetch --tags --quiet --force
+          TAG="${GITHUB_REF#refs/tags/}"
+          missing=""
+          for mod in $(git ls-files '*go.mod' | grep -v '/testdata/' | sed -e 's|/\{0,1\}go.mod$||' -e 's|^$|.|'); do
+            if [ "$mod" = "." ]; then
+              continue
+            fi
+            if ! git rev-parse -q --verify "refs/tags/$mod/$TAG" >/dev/null; then
+              missing="$missing $mod/$TAG"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "these module tags are missing for $TAG:$missing"
+            echo "push them with: scripts/tag-release.sh $TAG"
+            exit 1
+          fi
+          echo "every module is tagged at $TAG"
+
+  # One machine cross-compiles every artefact. Go does that well, and it means
+  # the whole set comes out of one toolchain rather than five runners that
+  # might not agree. -trimpath is what makes the result reproducible, and the
+  # CI job of the same name is what proves it still is.
+  build:
+    name: Build artefacts
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Generate release notes
-        id: notes
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      # The archives are reproducible as well as the binaries inside them. A
+      # tar records a modification time and a gzip header records another, and
+      # both of them default to "now", which would make two builds of the same
+      # tag differ for no reason anybody cares about. Everything is stamped
+      # with the tagged commit's own time instead.
+      - name: Build
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            RANGE="${PREV_TAG}..${TAG}"
-          else
-            RANGE="${TAG}"
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+          dist="$PWD/dist"
+          mkdir -p "$dist"
+          epoch=$(git log -1 --format=%ct "$TAG")
+          echo "stamping everything with $epoch, the commit time of $TAG"
 
-      - name: Create GitHub release
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            name="mizu_${TAG}_${goos}_${goarch}"
+
+            staging="$(mktemp -d)"
+            mkdir -p "$staging/$name"
+            cp LICENSE README.md "$staging/$name/"
+
+            if [ "$goos" = windows ]; then
+              binary="$staging/$name/mizu.exe"
+            else
+              binary="$staging/$name/mizu"
+            fi
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$binary" ./cmd/mizu
+
+            find "$staging" -exec touch -d "@$epoch" {} +
+
+            if [ "$goos" = windows ]; then
+              # -X drops the extra fields that carry the local uid and the
+              # high-resolution times.
+              (cd "$staging" && zip -q -X -r "$dist/$name.zip" "$name")
+            else
+              tar --sort=name --owner=0 --group=0 --numeric-owner \
+                --mtime="@$epoch" \
+                -cf - -C "$staging" "$name" |
+                gzip -9 -n > "$dist/$name.tar.gz"
+            fi
+            echo "built $name"
+          done
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum ./*.tar.gz ./*.zip | sed 's| \./| |' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Check the binary runs and knows its version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          go build -trimpath -o "$RUNNER_TEMP/mizu" ./cmd/mizu
+          "$RUNNER_TEMP/mizu" version
+          got=$("$RUNNER_TEMP/mizu" version -json | grep '"version"' | cut -d'"' -f4)
+          echo "binary reports $got, tag is $TAG"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: dist
+          path: dist
+
+      - name: Create the release
         uses: softprops/action-gh-release@v3
         with:
+          files: dist/*
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}

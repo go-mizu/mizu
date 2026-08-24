@@ -17,12 +17,15 @@ It never appears in an import path.
 ## Commands
 
 ```bash
-go build ./...                     # the toolkit
-go test ./...                      # tests
-go test -race ./...                # what CI runs
+go build ./...                      # the toolkit
+go test ./...                       # tests
+go test -race ./...                 # what CI runs
+go test -bench=. -run=XXX ./...     # benchmarks, no tests
+go run ./cmd/mizu version           # the CLI
 go -C tools/milestonebot test ./... # the repository tooling, a separate module
-gofmt -l .                         # must print nothing
+gofmt -l .                          # must print nothing
 go vet ./...
+scripts/tag-release.sh v0.7.0 --dry-run  # what a release would tag
 ```
 
 There is no Makefile and no task runner.
@@ -34,7 +37,7 @@ These are checked by CI or by a test, so breaking one produces a red build rathe
 
 - **No `internal/`.** Anywhere. If it should not be exported, do not write it.
 - **No package imports the composition root.** Every package works standalone. This is the rule the whole toolkit claim rests on.
-- **The core depends only on the standard library and `golang.org/x/*`.** A test asserts the transitive graph. Drivers with third-party dependencies live in their own modules.
+- **The core depends only on the standard library.** Not `golang.org/x/*` either. `deps_test.go` asserts the import graph and the `require` list, so a test-only dependency fails too. Anything that needs a third-party package goes in its own module, the way `tools/milestonebot` does. To add an exception you need an entry in `allowedModules` and one in the decision register; the list is empty today.
 - **Generated code is checked in and byte-identical across platforms, architectures, `GOMAXPROCS` values, and input order.**
 - **`gofmt` is clean and `go vet` passes.**
 - **New behaviour has a test that fails without the change.**
