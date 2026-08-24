@@ -3,6 +3,7 @@ package xs_test
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -17,7 +18,9 @@ func ExampleOf() {
 		{"dai", true},
 	}
 
-	names := xs.MapTo(xs.Of(users).Filter(func(u user) bool { return u.Active }), user.name).
+	names := xs.Of(users).
+		Filter(func(u user) bool { return u.Active }).
+		Map(user.name).
 		Take(2).
 		Slice()
 
@@ -35,16 +38,32 @@ func ExampleFrom() {
 	// Output: 2
 }
 
-func ExampleMapTo() {
-	widths := xs.MapTo(xs.Of([]string{"a", "bb", "ccc"}), func(s string) int { return len(s) })
+func ExampleSeq_Map() {
+	widths := xs.Of([]string{"a", "bb", "ccc"}).Map(func(s string) int { return len(s) })
 
 	fmt.Println(widths.Slice())
 	// Output: [1 2 3]
 }
 
+func ExampleSeq_GroupBy() {
+	words := []string{"go", "c", "rust", "zig", "d"}
+
+	byLength := xs.Of(words).GroupBy(func(s string) int { return len(s) })
+
+	for _, n := range slices.Sorted(maps.Keys(byLength)) {
+		fmt.Println(n, byLength[n])
+	}
+	// Output:
+	// 1 [c d]
+	// 2 [go]
+	// 3 [zig]
+	// 4 [rust]
+}
+
 func ExampleSeq_Seq() {
-	// Unique needs a comparable element type, which a method cannot ask for, so
-	// the chain hands the plain sequence to the free function.
+	// Unique wants a comparable element type, which a method cannot ask of the
+	// receiver it was given, so the chain hands the plain sequence to the free
+	// function.
 	chain := xs.Of([]string{"go", "go", "rust"})
 
 	fmt.Println(slices.Collect(xs.Unique(chain.Seq())))
@@ -54,9 +73,19 @@ func ExampleSeq_Seq() {
 func ExampleSeq_SortFunc() {
 	words := []string{"quince", "fig", "pear"}
 
+	// Longest first, which is not something a key can say.
 	byLength := xs.Of(words).
-		SortFunc(func(a, b string) int { return cmp.Compare(len(a), len(b)) }).
+		SortFunc(func(a, b string) int { return cmp.Compare(len(b), len(a)) }).
 		Slice()
+
+	fmt.Println(byLength)
+	// Output: [quince pear fig]
+}
+
+func ExampleSeq_SortBy() {
+	words := []string{"quince", "fig", "pear"}
+
+	byLength := xs.Of(words).SortBy(func(s string) int { return len(s) }).Slice()
 
 	fmt.Println(byLength)
 	// Output: [fig pear quince]

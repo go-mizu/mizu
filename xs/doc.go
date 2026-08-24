@@ -140,17 +140,38 @@
 //		Slice()
 //
 // It is the same laziness and the same cost. A chain allocates nothing that the
-// free functions do not, and runs about seven percent slower on a pipeline of
-// two stages over a thousand elements, which is the method call that the
-// compiler does not inline through.
+// free functions do not, and on a pipeline of two stages over a thousand
+// elements the two are the same speed to within the noise of a shared machine.
+// A method here is the free function with the arguments the other way round,
+// and the compiler is not fooled by that.
 //
-// The chain cannot cover everything, and the reason is a language rule rather
-// than a decision: a method cannot have type parameters of its own, and it
-// cannot narrow the ones on its receiver. So Map, Unique, Sum, GroupBy and
-// every other function here that introduces a result type, a key or a
-// constraint has no method. [MapTo] is a free function taking a chain and
-// returning a chain, which covers the common one, and [Seq.Seq] hands the plain
-// sequence to the free functions for the rest.
+// A method may have type parameters of its own, so a step that changes the
+// element type stays in the chain:
+//
+//	names := xs.Of(users).
+//		Filter(User.active).
+//		Map(User.name).
+//		SortBy(strings.ToLower).
+//		Slice()
+//
+// The result type is inferred from the function, so it is never written out.
+// [Seq.Map], [Seq.FlatMap], [Seq.Fold] and [Seq.Zip] introduce a result type
+// this way, and [Seq.GroupBy], [Seq.KeyBy], [Seq.CountBy], [Seq.UniqueBy],
+// [Seq.MinBy], [Seq.MaxBy] and [Seq.SortBy] introduce a key.
+//
+// The chain still cannot cover everything, and the reason is a language rule
+// rather than a decision: a method cannot narrow the type parameter its
+// receiver was declared with. [Sum] and [Product] want a number, [Min] and
+// [Max] want an ordered type, [Unique] wants a comparable one and [Join] wants
+// a string, and none of those can be asked of a receiver declared with any.
+// Those stay free functions, and [Seq.Seq] hands them the plain sequence:
+//
+//	total := xs.Sum(xs.Of(items).Map(Item.total).Seq())
+//
+// [Seq.Chunk] and [Seq.Window] are the other hole, for a different reason. Both
+// return a sequence of slices of the element type, and a method returning
+// Seq[[]T] on a Seq[T] receiver is an instantiation cycle, so both hand back a
+// plain [iter.Seq] and [From] starts a new chain over it.
 //
 // # What the standard library already does
 //
