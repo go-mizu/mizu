@@ -74,6 +74,17 @@ func TestConsoleLevels(t *testing.T) {
 	}
 }
 
+// TestConsoleNothingToLineUpWith is why the padding is written and then taken
+// back. A record with no attributes would otherwise end in twenty spaces.
+func TestConsoleNothingToLineUpWith(t *testing.T) {
+	got := consoleOf(t, ConsoleOptions{}, func(log *slog.Logger) {
+		log.Info("done")
+	})
+	if want := "10:44:02.113 INF done\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestConsoleBelowLevel(t *testing.T) {
 	got := consoleOf(t, ConsoleOptions{Level: slog.LevelWarn}, func(log *slog.Logger) {
 		log.Info("not this one")

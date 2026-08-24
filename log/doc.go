@@ -56,6 +56,20 @@
 // is a thing to write down on purpose rather than to arrive at by leaving a
 // field out.
 //
+// # Putting handlers together
+//
+// Three handlers take a handler and give one back, so that a policy is written
+// once around whatever is doing the writing.
+//
+//	h = log.NewMultiHandler(h, other)   // write every record to both
+//	h = log.NewFilterHandler(h, keep)   // drop the ones keep says no to
+//	h = log.NewSamplingHandler(h, o)    // drop the ones that repeat
+//
+// [NewSamplingHandler] is the one to reach for when a message in a loop can
+// fill a disk. It writes the first hundred of a message each second and then
+// one in a hundred, counts them in a fixed table of counters rather than behind
+// a lock, and never drops an error.
+//
 // # Cost
 //
 // Both handlers format into a pooled buffer and write it with one call, so a

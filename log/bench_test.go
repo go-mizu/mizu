@@ -125,3 +125,72 @@ func BenchmarkDisabled(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkMulti is what fanning out to two handlers costs over writing to one.
+func BenchmarkMulti(b *testing.B) {
+	ctx := context.Background()
+	one := NewJSONHandler(io.Discard, JSONOptions{})
+	two := NewMultiHandler(one, NewJSONHandler(io.Discard, JSONOptions{}))
+
+	for _, c := range []struct {
+		name string
+		h    slog.Handler
+	}{{"one", one}, {"two", two}} {
+		b.Run(c.name, func(b *testing.B) {
+			log := slog.New(c.h)
+			b.ReportAllocs()
+			for b.Loop() {
+				log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
+			}
+		})
+	}
+}
+
+// BenchmarkFilter is the cost of asking a question about every record.
+func BenchmarkFilter(b *testing.B) {
+	ctx := context.Background()
+	h := NewFilterHandler(NewJSONHandler(io.Discard, JSONOptions{}), func(_ context.Context, r slog.Record) bool {
+		return r.Message != "healthz"
+	})
+	log := slog.New(h)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
+	}
+}
+
+// BenchmarkSampling has the two paths that matter: the record that is written
+// and the one that is counted and dropped, which is the one that runs when a
+// program is in the state sampling is for.
+func BenchmarkSampling(b *testing.B) {
+	ctx := context.Background()
+
+	b.Run("written", func(b *testing.B) {
+		log := slog.New(NewSamplingHandler(NewJSONHandler(io.Discard, JSONOptions{}), SampleOptions{Every: 1}))
+		b.ReportAllocs()
+		for b.Loop() {
+			log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
+		}
+	})
+
+	b.Run("dropped", func(b *testing.B) {
+		log := slog.New(NewSamplingHandler(NewJSONHandler(io.Discard, JSONOptions{}), SampleOptions{Initial: 1, Every: 1 << 30}))
+		b.ReportAllocs()
+		for b.Loop() {
+			log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
+		}
+	})
+
+	// The counters are sharded so that this is an atomic add rather than a
+	// queue behind one lock.
+	b.Run("dropped-parallel", func(b *testing.B) {
+		log := slog.New(NewSamplingHandler(NewJSONHandler(io.Discard, JSONOptions{}), SampleOptions{Initial: 1, Every: 1 << 30}))
+		b.ReportAllocs()
+		b.RunParallel(func(p *testing.PB) {
+			for p.Next() {
+				log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
+			}
+		})
+	})
+}
