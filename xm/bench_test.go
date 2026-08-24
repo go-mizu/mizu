@@ -128,3 +128,67 @@ func BenchmarkUpdate(b *testing.B) {
 	}
 	sink = counts["key"]
 }
+
+// BenchmarkChain is the chain against the free functions doing the same work,
+// which is what says whether a method costs anything over the function it
+// wraps.
+func BenchmarkChain(b *testing.B) {
+	m := build(1000)
+	keep := func(k string, v int) bool { return v%2 == 0 }
+	double := func(k string, v int) int { return v * 2 }
+
+	b.Run("chained", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.Of(m).Filter(keep).MapValues(double))
+		}
+	})
+
+	b.Run("free functions", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.MapValues(xm.Filter(m, keep), double))
+		}
+	})
+}
+
+// BenchmarkChainMapValues is the generic method on its own against the free
+// function, with no other step in the way to hide the difference.
+func BenchmarkChainMapValues(b *testing.B) {
+	m := build(1000)
+	double := func(k string, v int) int { return v * 2 }
+
+	b.Run("method", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.Of(m).MapValues(double))
+		}
+	})
+
+	b.Run("free function", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.MapValues(m, double))
+		}
+	})
+}
+
+// BenchmarkChainMerge is the one method that does not hand straight through:
+// it builds a slice to put the receiver in front of the others.
+func BenchmarkChainMerge(b *testing.B) {
+	first, second := build(1000), build(1000)
+
+	b.Run("method", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.Of(first).Merge(second))
+		}
+	})
+
+	b.Run("free function", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xm.Merge(first, second))
+		}
+	})
+}
