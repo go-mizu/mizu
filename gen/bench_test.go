@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"bytes"
 	"go/token"
 	"testing"
 )
@@ -100,6 +101,92 @@ func BenchmarkParseOrdinaryComment(b *testing.B) {
 	for b.Loop() {
 		if _, err := parseMarker(text, token.Position{}); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// generatedFile is about what a small generator produces: a header, a package
+// clause, and a handful of declarations.
+var generatedFile = []byte(Header("columns", "1", "model/model.go") + `
+package model
+
+// UserTable is where a User is stored.
+const UserTable = "users"
+
+// UserColumns are its columns, in the order the fields are declared.
+var UserColumns = []string{
+	"id",
+	"email",
+	"created",
+}
+`)
+
+// BenchmarkFormat is gofmt over one generated file, which is the most
+// expensive thing the writer does per file and the reason a generator does not
+// have to get its own whitespace right.
+func BenchmarkFormat(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := Format("model/columns_gen.go", generatedFile); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkGenerated is the header check, which runs twice per file: once on
+// what the generator produced and once on what is already on disk.
+func BenchmarkGenerated(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if !Generated(generatedFile) {
+			b.Fatal("no header")
+		}
+	}
+}
+
+// BenchmarkWriteUnchanged is the case that dominates a real run, where the
+// file on disk already says what the generator was going to say. It is a
+// format, a read, and a compare, with nothing written.
+func BenchmarkWriteUnchanged(b *testing.B) {
+	w := &Writer{Dir: b.TempDir()}
+	f := File{Path: "model/columns_gen.go", Data: generatedFile}
+	if _, err := w.Write(f); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		r, err := w.Write(f)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if r[0].Changed() {
+			b.Fatal("the file changed under the benchmark")
+		}
+	}
+}
+
+// BenchmarkWriteUpdated is the same with the write on the end: a temporary
+// file, a chmod, and a rename. Two versions alternate so every iteration has
+// something to do.
+func BenchmarkWriteUpdated(b *testing.B) {
+	w := &Writer{Dir: b.TempDir()}
+	files := [2]File{
+		{Path: "model/columns_gen.go", Data: generatedFile},
+		{Path: "model/columns_gen.go", Data: append(bytes.Clone(generatedFile), "\nconst Extra = 1\n"...)},
+	}
+	if _, err := w.Write(files[0]); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		i++
+		r, err := w.Write(files[i%2])
+		if err != nil {
+			b.Fatal(err)
+		}
+		if r[0].Status != Updated {
+			b.Fatalf("status is %v", r[0].Status)
 		}
 	}
 }

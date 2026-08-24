@@ -1,0 +1,11 @@
+# Line endings are LF everywhere, including on Windows.
+#
+# Go source is an LF format: gofmt writes LF and compares bytes, so a checkout
+# with core.autocrlf=true makes gofmt -l list every file in the repository.
+# Generated files have the same problem twice over, because mizu gen compares
+# what it produced with what is on disk and would rewrite all of them on every
+# run. Go's own repository does this.
+* text=auto eol=lf
+
+# The golden files under gen/testdata are compared byte for byte.
+gen/testdata/** -text
