@@ -415,8 +415,11 @@ func ExampleGet() {
 
 	fmt.Println(c.Addr, c.Workers)
 	for _, e := range l.Errors() {
-		// The file is a temporary directory, so print only the last part of it.
-		fmt.Println(strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator)))
+		// The file is in a temporary directory, and on Windows it is separated
+		// by backslashes, so cut the directory off and write what is left the
+		// way a project writes it down.
+		msg := strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator))
+		fmt.Println(filepath.ToSlash(msg))
 	}
 	// Output:
 	// :9000 8
