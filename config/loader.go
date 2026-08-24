@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"slices"
@@ -70,6 +71,12 @@ func (s Source) String() string {
 // how a file names the setting and Env is how the environment names it, and
 // either may be empty when that layer has no name for it.
 type Field struct {
+	// Name is what the field is called in Go, such as DB.MaxOpenConns. It is
+	// what an error about the field leads with, because that is the name the
+	// person reading the error will search the code for. Generated code fills
+	// it in, and it may be empty, in which case Path stands in for it.
+	Name string
+
 	// Path is the dotted path in a TOML file, such as database.max_open_conns.
 	Path string
 
@@ -106,6 +113,24 @@ func (v Value) Display() string {
 		return v.Text
 	}
 	return display(v.TOML)
+}
+
+// Errorf is an error about this value, at the place the value was written.
+//
+// A value from a file gets a file, a line and a column, and a value from
+// anywhere else gets the name of its layer, so an error either way says where
+// to go and change it.
+func (v Value) Errorf(format string, args ...any) error {
+	msg := fmt.Sprintf(format, args...)
+	if v.TOML != nil {
+		return &Error{
+			File: v.TOML.Pos.File,
+			Line: v.TOML.Pos.Line,
+			Col:  v.TOML.Pos.Col,
+			Msg:  msg,
+		}
+	}
+	return &Error{Msg: v.Source.String() + ": " + msg}
 }
 
 func display(v *toml.Value) string {
@@ -183,7 +208,12 @@ type Loader struct {
 	flagKeys []string // in the order they were given, for a stable report
 	override map[string]string
 
+	// command runs a cmd: indirection, and is nil when the caller did not
+	// supply one, which is when a cmd: value is refused.
+	command func(string) (string, error)
+
 	settings []Setting
+	errs     []*FieldError
 
 	// asked is every path a field asked for, and open is every prefix of one.
 	// A file key that is in asked was read, and one that is in open holds
@@ -215,6 +245,7 @@ func Open(s Sources) (*Loader, error) {
 		environ:  map[string]string{},
 		flags:    map[string]entry{},
 		override: s.Override,
+		command:  s.Command,
 		asked:    map[string]bool{},
 		open:     map[string]bool{},
 	}

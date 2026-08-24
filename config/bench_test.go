@@ -2,10 +2,15 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-mizu/mizu/toml"
 )
 
 // fields are what an application with a full mizu.Base and a few modules of
@@ -206,6 +211,219 @@ func BenchmarkNearest(b *testing.B) {
 			b.Fatal("found nothing to suggest")
 		}
 	}
+}
+
+// benchConf is the struct a generated decoder fills in, using every parser
+// that has any work to do.
+type benchConf struct {
+	App struct {
+		Name  string
+		Env   string
+		Debug bool
+		URL   string
+		Key   []byte
+	}
+	HTTP struct {
+		Addr           string
+		ReadTimeout    time.Duration
+		WriteTimeout   time.Duration
+		IdleTimeout    time.Duration
+		TrustedProxies []netip.Prefix
+	}
+	Log struct {
+		Format string
+		Level  slog.Level
+	}
+	Database struct {
+		Driver       string
+		DSN          string
+		MaxOpenConns int
+		MaxIdleConns int
+	}
+	Cache struct {
+		Store string
+		TTL   time.Duration
+	}
+	Queue struct {
+		Driver  string
+		Workers int
+	}
+	Mail struct {
+		Host string
+		Port uint16
+	}
+	Billing struct {
+		TrialDays     int
+		WebhookSecret string
+	}
+}
+
+// decode is what mizu gen config emits, written out by hand. Every line is one
+// field, and the order is the order the errors come back in.
+func decode(l *Loader, c *benchConf) {
+	Get(l, &c.App.Name, fields[0], String)
+	Get(l, &c.App.Env, fields[1], String)
+	Get(l, &c.App.Debug, fields[2], Bool)
+	Get(l, &c.App.URL, fields[3], String)
+	Get(l, &c.App.Key, fields[4], Bytes)
+	Get(l, &c.HTTP.Addr, fields[5], String)
+	Get(l, &c.HTTP.ReadTimeout, fields[6], Duration)
+	Get(l, &c.HTTP.WriteTimeout, fields[7], Duration)
+	Get(l, &c.HTTP.IdleTimeout, fields[8], Duration)
+	Get(l, &c.HTTP.TrustedProxies, fields[9], Slice(Prefix))
+	Get(l, &c.Log.Format, fields[10], String)
+	Get(l, &c.Log.Level, fields[11], Level)
+	Get(l, &c.Database.Driver, fields[12], String)
+	Get(l, &c.Database.DSN, fields[13], String)
+	Get(l, &c.Database.MaxOpenConns, fields[14], Int)
+	Get(l, &c.Database.MaxIdleConns, fields[15], Int)
+	Get(l, &c.Cache.Store, fields[16], String)
+	Get(l, &c.Cache.TTL, fields[17], Duration)
+	Get(l, &c.Queue.Driver, fields[18], String)
+	Get(l, &c.Queue.Workers, fields[19], Int)
+	Get(l, &c.Mail.Host, fields[20], String)
+	Get(l, &c.Mail.Port, fields[21], Uint)
+	Get(l, &c.Billing.TrialDays, fields[22], Int)
+	Get(l, &c.Billing.WebhookSecret, fields[23], String)
+}
+
+// BenchmarkDecode is the whole of startup as an application sees it: read the
+// files, then fill in a struct, then check for settings nobody wanted.
+func BenchmarkDecode(b *testing.B) {
+	s := benchProject(b)
+	for b.Loop() {
+		l, err := Open(s)
+		if err != nil {
+			b.Fatal(err)
+		}
+		var c benchConf
+		decode(l, &c)
+		if err := l.Err(); err != nil {
+			b.Fatal(err)
+		}
+		if err := l.Check(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkGet is the same fields without the reading, which is the part that
+// grows with the number of settings rather than the number of files.
+func BenchmarkGet(b *testing.B) {
+	l, err := Open(benchProject(b))
+	if err != nil {
+		b.Fatal(err)
+	}
+	var c benchConf
+	for b.Loop() {
+		// Every Get records the field it read, so without this the benchmark
+		// would spend its time growing a slice to a million settings. Cutting
+		// it back keeps the capacity, which is what a real run has after the
+		// first few fields anyway.
+		l.settings = l.settings[:0]
+		decode(l, &c)
+	}
+	if err := l.Err(); err != nil {
+		b.Fatal(err)
+	}
+}
+
+func BenchmarkParse(b *testing.B) {
+	file := func(body string) Value {
+		doc, err := toml.Parse("bench.toml", []byte("x = "+body+"\n"))
+		if err != nil {
+			b.Fatal(err)
+		}
+		return Value{Source: Source{From: FromFile, Name: "bench.toml:1:5"}, TOML: doc.Get("x")}
+	}
+	env := func(s string) Value {
+		return Value{Source: Source{From: FromEnv, Name: "X"}, Text: s}
+	}
+
+	b.Run("String", func(b *testing.B) {
+		v, dst := file(`"postgres"`), ""
+		for b.Loop() {
+			String(&dst, v)
+		}
+	})
+	b.Run("Int", func(b *testing.B) {
+		v, dst := env("25"), 0
+		for b.Loop() {
+			Int(&dst, v)
+		}
+	})
+	b.Run("Duration", func(b *testing.B) {
+		v, dst := env("15s"), time.Duration(0)
+		for b.Loop() {
+			Duration(&dst, v)
+		}
+	})
+	b.Run("Level", func(b *testing.B) {
+		v, dst := env("info"), slog.Level(0)
+		for b.Loop() {
+			Level(&dst, v)
+		}
+	})
+	b.Run("Bytes", func(b *testing.B) {
+		v, dst := env("base64:0000000000000000000000000000000000000000000="), []byte(nil)
+		for b.Loop() {
+			Bytes(&dst, v)
+		}
+	})
+	b.Run("SliceFromFile", func(b *testing.B) {
+		v, dst := file(`["10.0.0.0/8", "172.16.0.0/12"]`), []netip.Prefix(nil)
+		parse := Slice(Prefix)
+		for b.Loop() {
+			parse(&dst, v)
+		}
+	})
+	b.Run("SliceFromText", func(b *testing.B) {
+		v, dst := env("10.0.0.0/8, 172.16.0.0/12"), []netip.Prefix(nil)
+		parse := Slice(Prefix)
+		for b.Loop() {
+			parse(&dst, v)
+		}
+	})
+}
+
+func ExampleGet() {
+	dir, err := os.MkdirTemp("", "mizu")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "config"), 0o777)
+	os.WriteFile(filepath.Join(dir, "config", "local.toml"), []byte(
+		"[http]\naddr = \":9000\"\nread_timeout = \"soon\"\n"), 0o666)
+
+	l, err := Open(Sources{Files: []string{filepath.Join(dir, "config", "local.toml")}})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	var c struct {
+		Addr    string
+		Timeout time.Duration
+		Workers int
+	}
+	Get(l, &c.Addr, Field{Name: "HTTP.Addr", Path: "http.addr"}, String)
+	Get(l, &c.Timeout, Field{Name: "HTTP.ReadTimeout", Path: "http.read_timeout"}, Duration)
+	Get(l, &c.Workers, Field{Name: "Queue.Workers", Path: "queue.workers", Default: "8"}, Int)
+
+	fmt.Println(c.Addr, c.Workers)
+	for _, e := range l.Errors() {
+		// The file is in a temporary directory, and on Windows it is separated
+		// by backslashes, so cut the directory off and write what is left the
+		// way a project writes it down.
+		msg := strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator))
+		fmt.Println(filepath.ToSlash(msg))
+	}
+	// Output:
+	// :9000 8
+	// config/local.toml:3:16: HTTP.ReadTimeout: want a length of time such as 30s or 2h45m, got "soon"
 }
 
 func ExampleLoader() {

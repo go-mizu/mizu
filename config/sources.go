@@ -52,6 +52,17 @@ type Sources struct {
 	// setting. It is for values the program works out for itself, and for
 	// tests that want one setting to be a particular thing.
 	Override map[string]string
+
+	// Command runs a cmd: indirection on a secret field and returns what the
+	// command printed. The zero value refuses them, because reading a file is
+	// one thing and starting a process is another, and a caller has to ask for
+	// the second one on purpose.
+	//
+	// It is a function rather than a flag so that the core never has to know
+	// how to run a program. A caller that wants cmd:op read op://vault/db to
+	// work supplies the part that runs it, and gets to decide what a command is
+	// allowed to be.
+	Command func(name string) (string, error)
 }
 
 // Discover returns the sources for an application rooted at dir.
