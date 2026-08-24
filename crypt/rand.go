@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"strings"
 )
 
 // Alphanumeric is the alphabet [String] draws from: the digits and both cases
@@ -12,6 +13,17 @@ const Alphanumeric = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv
 
 // Digits10 is the alphabet [Digits] draws from.
 const Digits10 = "0123456789"
+
+// Letters is both cases of the Latin letters.
+const Letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// Symbols is the punctuation [Password] draws from.
+//
+// The quote characters, the backtick and the backslash are left out, because
+// those are the ones that turn a password into a syntax error somewhere between
+// the generator and the thing that stores it. What is left is wide enough that
+// a rule asking for a symbol has something to choose from.
+const Symbols = "!#$%&*+-=?@^_~"
 
 // Bytes returns n random bytes from the operating system's random source.
 //
@@ -94,6 +106,39 @@ func Pick(n int, alphabet string) string {
 			if len(out) == n {
 				return string(out)
 			}
+		}
+	}
+}
+
+// Password returns a random password of n characters with at least one letter,
+// one digit and one symbol in it, drawn from [Letters], [Digits10] and
+// [Symbols].
+//
+// It panics if n is under 3, since there is no room below that for one of each.
+// That is a floor on what the function can promise and not advice: a password
+// worth generating is at least sixteen characters, and the length a caller
+// should ask for is whatever the thing checking it will accept.
+//
+// The three classes are covered by drawing again when one of them did not come
+// up, rather than by placing one of each and shuffling. Redrawing gives every
+// password meeting the rule the same chance, which shuffling does not, and it
+// costs almost nothing: at sixteen characters about one draw in seven is thrown
+// away, and at thirty two about one in eighty.
+//
+// A password with a symbol in it still has to be quoted wherever it is written
+// down. Generating one that needs no quoting means an alphabet small enough to
+// be worth narrowing the search, which is the wrong trade.
+func Password(n int) string {
+	if n < 3 {
+		panic("crypt: Password shorter than the character classes it covers")
+	}
+
+	for {
+		p := Pick(n, Letters+Digits10+Symbols)
+		if strings.ContainsAny(p, Letters) &&
+			strings.ContainsAny(p, Digits10) &&
+			strings.ContainsAny(p, Symbols) {
+			return p
 		}
 	}
 }

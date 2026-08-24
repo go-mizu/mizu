@@ -93,6 +93,17 @@ func ExampleDigits() {
 	// 6 true
 }
 
+func ExamplePassword() {
+	p := crypt.Password(24)
+	fmt.Println(len(p),
+		strings.ContainsAny(p, crypt.Letters),
+		strings.ContainsAny(p, crypt.Digits10),
+		strings.ContainsAny(p, crypt.Symbols))
+
+	// Output:
+	// 24 true true true
+}
+
 // ExampleCrypt is the whole of it: a key in, a ciphertext out, the message back.
 func ExampleCrypt() {
 	c, err := crypt.New(crypt.GenerateKey())

@@ -87,6 +87,76 @@ func TestDigits(t *testing.T) {
 	}
 }
 
+func TestPassword(t *testing.T) {
+	for _, n := range []int{3, 4, 8, 16, 24, 64} {
+		p := Password(n)
+		if len(p) != n {
+			t.Errorf("Password(%d) is %d characters", n, len(p))
+		}
+		if rest := strings.Trim(p, Letters+Digits10+Symbols); rest != "" {
+			t.Errorf("Password(%d) is %q, which has %q in it", n, p, rest)
+		}
+	}
+	if Password(16) == Password(16) {
+		t.Error("two passwords are the same")
+	}
+}
+
+// TestPasswordCoversEveryClass is the promise in the doc comment. The short
+// lengths are the ones worth repeating, since those are where a draw misses a
+// class often enough for a loop that gave up to be caught.
+func TestPasswordCoversEveryClass(t *testing.T) {
+	for _, n := range []int{3, 4, 6} {
+		for range 300 {
+			p := Password(n)
+			for name, class := range map[string]string{
+				"letter": Letters,
+				"digit":  Digits10,
+				"symbol": Symbols,
+			} {
+				if !strings.ContainsAny(p, class) {
+					t.Fatalf("Password(%d) gave %q, which has no %s in it", n, p, name)
+				}
+			}
+		}
+	}
+}
+
+// TestPasswordUsesTheWholeAlphabet checks that redrawing does not quietly
+// narrow what comes out, which is what a loop written to stop early would do.
+func TestPasswordUsesTheWholeAlphabet(t *testing.T) {
+	const alphabet = Letters + Digits10 + Symbols
+
+	seen := map[byte]bool{}
+	for range 400 {
+		for _, c := range []byte(Password(24)) {
+			seen[c] = true
+		}
+	}
+	for _, c := range []byte(alphabet) {
+		if !seen[c] {
+			t.Errorf("%q never came up", c)
+		}
+	}
+}
+
+// TestSymbolsAreSafeToWriteDown pins the alphabet against the reason the doc
+// comment gives for it. A quote or a backslash in a generated password breaks
+// somewhere between here and the file it ends up in.
+func TestSymbolsAreSafeToWriteDown(t *testing.T) {
+	if bad := strings.ContainsAny(Symbols, "\"'`\\"); bad {
+		t.Errorf("Symbols is %q, which has a quote or a backslash in it", Symbols)
+	}
+	for _, c := range []byte(Symbols) {
+		if c <= ' ' || c >= 0x7f {
+			t.Errorf("Symbols has %q in it, which is not printable ascii", c)
+		}
+	}
+	if len(Symbols) < 8 {
+		t.Errorf("Symbols is %d characters, which is not much to choose from", len(Symbols))
+	}
+}
+
 // TestPickIsUniform is the reason for the rejection loop.
 //
 // Folding a random byte into the alphabet with a remainder biases whatever does
@@ -156,6 +226,7 @@ func TestPickPanics(t *testing.T) {
 		"zero bound":       func() { Intn(0) },
 		"negative bound":   func() { Intn(-3) },
 		"empty choice":     func() { Choice([]int{}) },
+		"short password":   func() { Password(2) },
 	}
 	for name, call := range cases {
 		t.Run(name, func(t *testing.T) {

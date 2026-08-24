@@ -64,6 +64,21 @@
 // because an excerpt of something that is not there is nothing rather than
 // everything.
 //
+// # What is a string and what is a value
+//
+// [IsUUID], [IsULID] and [IsURL] answer whether a string is shaped like one of
+// those things. They read the string and nothing else, which is what a
+// validator and a log redactor are asking for, and it is the whole of what this
+// package does with them. Parsing one into a value, generating one, or ordering
+// two of them belongs to a package that owns the type.
+//
+// Nothing here draws random. A generator needs crypto/rand, a decision about
+// how much entropy is enough, and somewhere for the answer to live, and none of
+// those are text handling. [github.com/go-mizu/mizu/crypt.String],
+// [github.com/go-mizu/mizu/crypt.Token], [github.com/go-mizu/mizu/crypt.Digits]
+// and [github.com/go-mizu/mizu/crypt.Password] are where they are, which is why
+// Random, UUID, ULID and Password are not names in this package.
+//
 // # Naming
 //
 // Two functions are named differently from the spec. Ucfirst and Lcfirst are
@@ -81,6 +96,14 @@
 // is [strings.Replace] with a count of one, and PluralStudly is Pascal of
 // Plural. The hand-written Squish was measured against that line and came out
 // slower, so there was nothing left to argue for it.
+//
+// Seven of the tests went the same way. IsMatch is [regexp.MatchString],
+// Contains, StartsWith and EndsWith are [strings.Contains], [strings.HasPrefix]
+// and [strings.HasSuffix], IsJSON is [encoding/json.Valid], and IsEmpty and
+// IsBlank are s == "" and strings.TrimSpace(s) == "". ContainsAll is the eighth
+// and went for a different reason: it is a loop over [strings.Contains] that
+// reads better where it is written than it does behind a name, since the caller
+// is the one who knows whether all of them or any of them is the question.
 //
 // Two more went for being too narrow to carry a name. Transliterate is [Ascii]
 // with a table the caller supplies, and a caller with a table already has
@@ -124,6 +147,14 @@
 // they have to cross: [Take] of the first ten characters is ten clusters of
 // work whatever the string after it looks like, and [Substr] with a negative
 // start has to measure the whole string before it can count back from the end.
+//
+// The tests allocate nothing and none of them look at more of the string than
+// they have to. [Is] holds the pattern as it walks rather than splitting it, so
+// a path against a pattern is about 14 nanoseconds and a pattern with no star
+// in it is about 6, which is what makes a list of them per request affordable.
+// [IsUUID] and [IsULID] are around 50. [IsURL] is the one that stands out at
+// about 200 nanoseconds and one allocation, because it parses rather than
+// inspects, and that is the price of it being right about the awkward inputs.
 //
 // Timings came from an Apple M4 with other work running on it, so read them as
 // ceilings. The allocation counts do not move.
