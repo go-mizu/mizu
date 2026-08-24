@@ -3,7 +3,6 @@ package gen
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"go/types"
 	"os"
@@ -13,9 +12,9 @@ import (
 	"strings"
 	"testing"
 	"unicode"
-)
 
-var update = flag.Bool("update", false, "rewrite the files under testdata/golden")
+	"github.com/go-mizu/mizu/golden"
+)
 
 // The columns generator is a whole generator in about sixty lines. It reads
 // the markers, asks the type checker what the fields are, renders, and hands
@@ -179,7 +178,9 @@ func TestGoldenColumns(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		golden(t, r.Path, got)
+		// The generated files keep their own tree under testdata/golden, so
+		// that a path in a failure names the file the generator would write.
+		golden.Assert(t, got, golden.At("testdata/golden/"+r.Path))
 	}
 
 	// Running again finds nothing to do, which is what makes mizu gen --check
@@ -238,34 +239,4 @@ func TestColumnName(t *testing.T) {
 			t.Errorf("column(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
-}
-
-// golden compares got with testdata/golden/<name>, or writes it there when the
-// test runs with -update.
-func golden(t *testing.T, name string, got []byte) {
-	t.Helper()
-	file := filepath.Join("testdata", "golden", filepath.FromSlash(name))
-
-	if *update {
-		if err := os.MkdirAll(filepath.Dir(file), 0o777); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(file, got, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("wrote %s", file)
-		return
-	}
-
-	want, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("%v\nrun go test ./gen -update to write the golden files", err)
-	}
-	if bytes.Equal(got, want) {
-		return
-	}
-	if bytes.Equal(got, bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))) {
-		t.Fatalf("%s differs from its golden file only in line endings, so this checkout turned LF into CRLF.\nthe repository's .gitattributes asks for LF, and git config core.autocrlf=false makes it stick", name)
-	}
-	t.Errorf("%s does not match its golden file.\nrun go test ./gen -update and read the diff\n\ngot:\n%s\nwant:\n%s", name, got, want)
 }

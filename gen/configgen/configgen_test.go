@@ -1,7 +1,6 @@
 package configgen
 
 import (
-	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,13 +8,14 @@ import (
 	"testing"
 
 	"github.com/go-mizu/mizu/gen"
+	"github.com/go-mizu/mizu/golden"
 )
-
-var update = flag.Bool("update", false, "rewrite the generated file in testdata")
 
 // goldenPath is the file the generator is expected to produce, checked in so
 // that a change to the output is a change in a diff rather than something that
-// only happens on someone's machine.
+// only happens on someone's machine. It is a real Go file that the testdata
+// module compiles, so it lives beside the code rather than under testdata/golden
+// with a .golden suffix, which is what [golden.At] is for.
 const goldenPath = "testdata/app/config_gen.go"
 
 func TestGenerate(t *testing.T) {
@@ -27,20 +27,7 @@ func TestGenerate(t *testing.T) {
 		t.Errorf("path = %q, want app/config_gen.go", got)
 	}
 
-	got := format(t, files[0])
-	if *update {
-		if err := os.WriteFile(goldenPath, got, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
-	want, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("%v (run go test -run TestGenerate -update to write it)", err)
-	}
-	if string(got) != string(want) {
-		t.Errorf("%s is out of date, run go test -run TestGenerate -update\n\n%s", goldenPath, diff(string(want), string(got)))
-	}
+	golden.Assert(t, format(t, files[0]), golden.At(goldenPath))
 }
 
 // TestFields checks the details that are hard to see in a golden file: that
@@ -312,32 +299,6 @@ func format(t *testing.T, f gen.File) []byte {
 		t.Fatal(err)
 	}
 	return data
-}
-
-// diff is the first line the two differ on, with a little either side, which
-// is all anyone reads from a failed golden comparison anyway.
-func diff(want, got string) string {
-	a, b := strings.Split(want, "\n"), strings.Split(got, "\n")
-	for i := range max(len(a), len(b)) {
-		x, y := at(a, i), at(b, i)
-		if x == y {
-			continue
-		}
-		var s strings.Builder
-		for j := max(0, i-3); j < i; j++ {
-			s.WriteString("  " + at(a, j) + "\n")
-		}
-		s.WriteString("- " + x + "\n+ " + y + "\n")
-		return s.String()
-	}
-	return ""
-}
-
-func at(lines []string, i int) string {
-	if i < len(lines) {
-		return lines[i]
-	}
-	return ""
 }
 
 // runGo runs the go command inside the testdata module, which is where the
