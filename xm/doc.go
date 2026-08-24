@@ -21,6 +21,43 @@
 // and writing slices.Sorted(maps.Keys(m)) in forty places is worse than one
 // function with a name that says what it is for.
 //
+// # Reading left to right
+//
+// Free functions nest, and three of them read inside out, which is the wrong
+// way round from the order the work happens in. [Of] starts a chain over the
+// same map, with the operations as methods:
+//
+//	public := xm.Of(row).
+//		Omit("password", "apiKey").
+//		MapValues(redact)
+//
+// [M] has map[K]V as its underlying type, so it is a map in every way that
+// matters. len, indexing, ranging and deleting all work on it, it marshals as a
+// map, and a caller expecting a map[K]V takes one without a conversion. That is
+// why there is no call to end a chain: there is nothing to convert back.
+//
+// It is the same cost as the free functions, the same allocations, and the same
+// maps coming out, with one exception that [M.Merge] explains. Every method
+// here is the free function with the arguments the other way round.
+//
+// A method may have type parameters of its own, so a step that changes a type
+// stays in the chain. [M.MapValues] introduces a value type, [M.MapKeys]
+// introduces a key type, and [M.Map] introduces both at once. The types are
+// inferred from the function, so no call site writes one out.
+//
+// Two things stay free functions, and the reason is a language rule rather than
+// a decision: a method cannot narrow the type parameters its receiver was
+// declared with. [SortedKeys] wants an ordered key and [Invert] wants a
+// comparable value, and neither can be asked of a receiver declared with
+// comparable and any. Both take the chain as it stands:
+//
+//	names := xm.SortedKeys(xm.Of(users).Filter(active))
+//
+// The chain gives up one thing the free functions keep. They are written
+// against ~map[K]V, so [Filter] of a named map type gives the named type back,
+// and the chain gives back an [M]. Code that names its map types everywhere
+// either writes the conversion or stays with the free functions.
+//
 // # What the standard library already does
 //
 // [maps] covers more than people expect, and anything it covers is not here:
