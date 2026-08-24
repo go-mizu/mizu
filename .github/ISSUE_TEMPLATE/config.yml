@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question, or an idea that is not a proposal yet
+    url: https://github.com/go-mizu/mizu/discussions
+    about: Discussions is the right place to work out whether something is a problem before it becomes an issue.
+
+  - name: Something wrong on go-mizu.dev
+    url: https://github.com/go-mizu/docs/issues/new
+    about: The website lives in its own repository, and so do its issues.
+
+  - name: Something wrong with the design system
+    url: https://github.com/go-mizu/shizuku/issues/new
+    about: Shizuku is the CSS the website is built from, and it has its own repository.
+
+  - name: A security vulnerability
+    url: https://github.com/go-mizu/mizu/security/advisories/new
+    about: Report it privately here, not as an issue. We answer within three working days.

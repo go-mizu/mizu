@@ -1,0 +1,48 @@
+name: Merged
+
+# When a pull request merges, tick the checklist item it finished on the
+# milestone tracking issue and leave a comment there saying what landed and
+# what is left.
+#
+# A pull request that names no checklist item is the common case and this
+# workflow exits quietly for it. A pull request that names an item that does
+# not exist fails, on purpose, because the alternative is a checklist that
+# silently stops matching reality.
+#
+# The pull_request_target note in pull-request.yml applies here too: the
+# checkout is pinned to the base commit and nothing from the pull request is
+# executed. By this point the change is merged, so the base commit already
+# contains it.
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: merged-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  checklist:
+    name: Update the checklist
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: tools/milestonebot/go.sum
+
+      - name: Tick the item and comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go -C tools/milestonebot run . on-merge -pr ${{ github.event.pull_request.number }}

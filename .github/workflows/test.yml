@@ -47,3 +47,36 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ runner.temp }}/coverage.out
           fail_ci_if_error: false
+
+  # tools/milestonebot is a nested module, so `go test ./...` at the root does
+  # not reach it. It runs the label file through its own validator, which is
+  # why a broken .github/labels.yml fails here rather than on the push to main
+  # that would have synced it.
+  tools:
+    name: Tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: tools/milestonebot/go.sum
+
+      - name: Check formatting
+        working-directory: tools/milestonebot
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: tools/milestonebot
+        run: go vet ./...
+
+      - name: Test
+        working-directory: tools/milestonebot
+        run: go test ./...

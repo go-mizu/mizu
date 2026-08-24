@@ -1,0 +1,71 @@
+name: Proposal
+description: A new package, a new exported symbol, or a change to one that exists
+labels: ["type/feature", "status/needs-design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every exported symbol is a promise to keep it working, so a proposal is
+        a request for a promise rather than a request for code. The questions
+        below are the ones that decide it.
+
+        If you are not sure this is a proposal yet, open a discussion instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what makes it awkward today. Write this before writing the solution, and write it without naming the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today instead
+      description: The workaround, the twenty lines you copy between projects, or the other library you reach for. If there is no workaround, say so, because that changes the answer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: The shape you have in mind
+      description: The signatures, and one call site showing how it reads. Rough is fine. Compiling is better.
+      render: go
+
+  - type: textarea
+    id: standalone
+    attributes:
+      label: Does it stand alone
+      description: |
+        Every package in the toolkit works on its own, imports nothing from the composition root, and can be used by somebody who wants only that package.
+        Say whether this can, and if it cannot, say what it needs and why.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: What it costs
+      description: A dependency, an allocation on a hot path, a concept somebody has to learn, a signature that can never change. Name it. A proposal with no cost is a proposal that has not been thought through.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Which milestone this belongs to, if you know
+      options:
+        - I do not know
+        - M0 Foundations
+        - M1 HTTP and RPC core
+        - M2 Database core and query builder
+        - M3 ORM, migrations, factories
+        - M4 Views and frontend interoperability
+        - M5 Session, security, authentication, authorization
+        - M6 Cache, locks, queue, scheduler, events
+        - M7 Mail, notifications, storage, broadcasting
+        - M8 Observability and the remaining subsystems
+        - M9 Hardening, documentation, 1.0
+        - After 1.0

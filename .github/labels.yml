@@ -1,0 +1,179 @@
+# The label set, and the only place it is defined.
+#
+# `tools/milestonebot sync-labels` reconciles the repository against this file:
+# it creates what is missing, updates a colour or description that drifted, and
+# reports a label that exists on the repository but not here rather than
+# deleting it, because a label somebody is using is not ours to remove without
+# saying so.
+#
+# The workflow in .github/workflows/labels.yml runs it on every push to main
+# that touches this file, so editing labels means opening a pull request
+# against it rather than clicking around in the settings page. That is the
+# point: a label set nobody reviewed is a label set with three ways to say bug.
+#
+# Colour carries the group, so a glance at an issue list groups by prefix
+# without reading the words.
+
+groups:
+  # What kind of change this is. Exactly one per issue and per pull request,
+  # applied from the conventional-commit prefix in the title.
+  - prefix: type
+    color: "1d76db"
+    labels:
+      - name: type/feature
+        description: New capability, or an extension of one that exists
+      - name: type/bug
+        description: Behaviour that contradicts the documentation or the tests
+      - name: type/docs
+        description: Documentation, comments, and the specification
+      - name: type/perf
+        description: Same behaviour, less time or fewer allocations
+      - name: type/refactor
+        description: Same behaviour, different shape
+      - name: type/test
+        description: Tests, fixtures, fuzz targets, and the conformance suites
+      - name: type/build
+        description: Build, CI, release scripting, and repository tooling
+      - name: type/security
+        description: A vulnerability, a hardening change, or a dependency advisory
+
+  # Which part of the toolkit. More than one is allowed and common.
+  - prefix: area
+    color: "5319e7"
+    labels:
+      - name: area/seams
+        description: errs, ctxdata, clock, log, otelx, codec
+      - name: area/router
+        description: Routing, middleware, binding, and responses
+      - name: area/rpc
+        description: The transport-agnostic service core, gRPC, Connect, and typed clients
+      - name: area/db
+        description: database/sql layer, dialects, and the query builder
+      - name: area/orm
+        description: Models, repositories, relations, migrations, and factories
+      - name: area/views
+        description: Templates, the asset pipeline, and frontend interoperability
+      - name: area/auth
+        description: Session, authentication, authorization, and security headers
+      - name: area/async
+        description: Cache, locks, queue, scheduler, and events
+      - name: area/messaging
+        description: Mail, notifications, storage, and broadcasting
+      - name: area/observability
+        description: Tracing, metrics, logging exporters, and the diagnostics registry
+      - name: area/codegen
+        description: The generator harness and every mizu gen command
+      - name: area/cli
+        description: The mizu command, its flags, and its output
+      - name: area/testing
+        description: mizutest, the fakes, and the driver conformance suites
+      - name: area/docs-site
+        description: go-mizu.dev, which lives in go-mizu/docs
+      - name: area/ci
+        description: Workflows, runners, and the release pipeline
+
+  # The milestone a piece of work belongs to. This mirrors the GitHub
+  # milestone, and it exists as a label as well so that a pull request carries
+  # it into search and so the merge automation can find the tracking issue
+  # without parsing the milestone name.
+  - prefix: milestone
+    color: "0e8a16"
+    labels:
+      - name: milestone/M0
+        description: Foundations, seams, codegen harness, diagnostics
+      - name: milestone/M1
+        description: HTTP and RPC core
+      - name: milestone/M2
+        description: Database core and query builder
+      - name: milestone/M3
+        description: ORM, migrations, factories
+      - name: milestone/M4
+        description: Views and frontend interoperability
+      - name: milestone/M5
+        description: Session, security, authentication, authorization
+      - name: milestone/M6
+        description: Cache, locks, queue, scheduler, events
+      - name: milestone/M7
+        description: Mail, notifications, storage, broadcasting
+      - name: milestone/M8
+        description: Observability and the remaining subsystems
+      - name: milestone/M9
+        description: Hardening, documentation, 1.0
+      - name: milestone/site
+        description: The documentation site phases, tracked in go-mizu/docs
+
+  # Where it is. At most one, and the absence of all of them means nobody has
+  # looked at it yet.
+  - prefix: status
+    color: "fbca04"
+    labels:
+      - name: status/needs-triage
+        description: Nobody has read it properly yet
+      - name: status/needs-design
+        description: Agreed as a problem, no agreed shape for the answer
+      - name: status/ready
+        description: Shape agreed, unclaimed, safe to start
+      - name: status/in-progress
+        description: Somebody is working on it
+      - name: status/blocked
+        description: Waiting on something named in the thread
+      - name: status/needs-info
+        description: Waiting on the reporter, and closed after 30 days of silence
+
+  # The compatibility promise on the package a change touches. On an issue it
+  # says what the reader can rely on. On a pull request it says how carefully
+  # the signature needs reviewing.
+  - prefix: tier
+    color: "c5def5"
+    labels:
+      - name: tier/stable
+        description: Covered by the compatibility policy, breaking it needs a major
+      - name: tier/provisional
+        description: Signature can change in a minor, with a migration
+      - name: tier/experimental
+        description: Signature can change without notice, and says so on its page
+
+  # Reviewer load, not effort. Set by whoever opens the pull request and
+  # corrected by whoever reviews it.
+  - prefix: size
+    color: "d4c5f9"
+    labels:
+      - name: size/xs
+        description: Under 20 lines, reviewable in one sitting with no context
+      - name: size/s
+        description: Under 100 lines
+      - name: size/m
+        description: Under 400 lines
+      - name: size/l
+        description: Under 1000 lines, and probably wants splitting
+      - name: size/xl
+        description: Over 1000 lines, and needs a reason in the description
+
+  # Everything that is not part of a group.
+  - prefix: ""
+    color: "ededed"
+    labels:
+      - name: tracking
+        color: "0e8a16"
+        description: A milestone tracking issue, whose checklist the merge automation ticks
+      - name: breaking
+        color: "b60205"
+        description: Changes an exported signature or an observable behaviour
+      - name: dx
+        color: "006b75"
+        description: Makes the toolkit easier to hold, which is most of the point
+      - name: good first issue
+        color: "7057ff"
+        description: Small, well-specified, and does not need context from elsewhere
+      - name: help wanted
+        color: "008672"
+        description: We would take a pull request for this
+      - name: needs-benchmark
+        color: "fef2c0"
+        description: A number is claimed and nothing measures it
+      - name: duplicate
+        color: "cfd3d7"
+        description: Already covered by an issue named in the thread
+      - name: wontfix
+        color: "ffffff"
+        description: A decision, with the reasoning in the thread and usually in the register

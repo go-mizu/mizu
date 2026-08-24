@@ -1,0 +1,49 @@
+name: Labels
+
+# The label set is reconciled from .github/labels.yml whenever that file lands
+# on main. Editing labels therefore means opening a pull request, which is the
+# only way the set stays reviewed.
+#
+# It can also be run by hand, which is what you want after somebody has been
+# clicking around in the settings page.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/labels.yml"
+      - "tools/milestonebot/**"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Report the drift without changing anything"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: labels
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: tools/milestonebot/go.sum
+
+      - name: Sync labels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          go -C tools/milestonebot run . sync-labels \
+            -file "$GITHUB_WORKSPACE/.github/labels.yml" \
+            ${{ inputs.dry-run && '-n' || '' }}

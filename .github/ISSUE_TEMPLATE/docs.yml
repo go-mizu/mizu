@@ -1,0 +1,35 @@
+name: Documentation
+description: A doc comment, an error message, or a diagnostic that is wrong, missing, or confusing
+labels: ["type/docs", "status/needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Error messages count as documentation here. A message somebody had to
+        read three times is a bug in the message, and the fix belongs in the
+        same repository as the code that prints it.
+
+        Pages on go-mizu.dev belong in [go-mizu/docs](https://github.com/go-mizu/docs/issues/new) instead.
+
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: A file and line, a package name, or the diagnostic code.
+      placeholder: cache/cache.go, the doc comment on Flexible
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What it says now, and what is wrong with it
+      description: If it is wrong, say what is true instead. If it is confusing, say what you thought it meant, because that is the part we cannot guess.
+    validations:
+      required: true
+
+  - type: textarea
+    id: better
+    attributes:
+      label: What it could say
+      description: A suggested wording, if you have one. Not required.

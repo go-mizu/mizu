@@ -1,0 +1,48 @@
+name: Pull request
+
+# Labels a pull request from its title, the paths it touches, its size, and the
+# checklist item it says it finishes, and fails if the title is not in the
+# conventional-commit shape the repository uses.
+#
+# This runs on pull_request_target rather than pull_request because a pull
+# request from a fork gets a read-only token under pull_request, and a
+# contributor's first pull request is exactly the one that needs labelling.
+#
+# pull_request_target hands a write token to a workflow that runs from the base
+# branch, so the rule that makes it safe is that nothing here executes code from
+# the pull request. The checkout is pinned to the base commit and the only thing
+# built is tools/milestonebot from that commit. Adding a step that builds,
+# tests, or installs anything from the head would hand the repository to whoever
+# opened it, so do not.
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Label
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: tools/milestonebot/go.sum
+
+      - name: Label and check the title
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go -C tools/milestonebot run . label-pr -pr ${{ github.event.pull_request.number }} -strict

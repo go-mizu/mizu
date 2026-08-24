@@ -1,0 +1,53 @@
+name: Bug
+description: Behaviour that contradicts the documentation or the tests
+labels: ["type/bug", "status/needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful bug report is one somebody else can reproduce in under a minute.
+        A short program that fails beats three paragraphs describing a program that fails.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        cache.Remember returned the stale value after Forget.
+        I expected the next Get to miss and call the loader.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: A program that compiles, or the commands to run. Keep it as small as it can be and still fail.
+      render: go
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `mizu version`, or the module version from go.mod.
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: go
+    attributes:
+      label: Go and platform
+      description: The output of `go version`.
+      placeholder: go version go1.26.6 darwin/arm64
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: The full error, a stack trace, or a diagnostic code like MZ0310 if there was one.
