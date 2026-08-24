@@ -401,9 +401,6 @@ func (h *console) painted() int {
 }
 
 // wantColor decides whether the writer can take escape sequences.
-//
-// It asks the writer whether it is a character device rather than importing a
-// terminal package, which is the whole of what such a package would do here.
 func wantColor(w io.Writer, c Color) bool {
 	switch c {
 	case ColorAlways:
@@ -414,10 +411,5 @@ func wantColor(w io.Writer, c Color) bool {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return false
 	}
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return isTerminal(w)
 }

@@ -70,6 +70,41 @@
 // one in a hundred, counts them in a fixed table of counters rather than behind
 // a lock, and never drops an error.
 //
+// # Writing to a file
+//
+// A program that keeps its own logs writes to a [File], which renames itself
+// out of the way when it gets large, keeps the last few of the old ones and
+// gzips them.
+//
+//	f, err := log.NewFile("/var/log/blog/app.log", log.RotateOptions{Compress: true})
+//	if err != nil {
+//		return err
+//	}
+//	defer f.Close()
+//	slog.SetDefault(slog.New(log.NewJSONHandler(f, log.JSONOptions{})))
+//
+// It is an [io.Writer], so any handler goes on top of it, and [File.Rotate]
+// starts a new file on demand for a program that is told when to.
+//
+// Under a process manager that already collects standard output there is
+// nothing to do here. Write to os.Stdout and let it deal with the disk.
+//
+// # From a configuration
+//
+// [New] builds all of the above from a [github.com/go-mizu/mizu/config.Log],
+// which is the struct an application loads from files and the environment.
+//
+//	logger, closer, err := log.New(cfg.Log)
+//	if err != nil {
+//		return err
+//	}
+//	defer closer.Close()
+//	slog.SetDefault(logger)
+//
+// That covers the level, the format, the destination, rotation and sampling.
+// Anything past it, a second destination or a filter of its own, is a program
+// putting the handlers together itself, which is all New does.
+//
 // # Cost
 //
 // Both handlers format into a pooled buffer and write it with one call, so a
