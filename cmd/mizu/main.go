@@ -1,9 +1,10 @@
 // Command mizu is the toolkit's command line tool.
 //
-// It does one thing today.
+// It does two things today.
 //
 //	mizu version          print the version, one fact per line
 //	mizu version -json    print the same facts as JSON
+//	mizu hash:tune        measure argon2id here and print the cost to configure
 //
 // The rest of the command tree arrives with the generators. What is here now
 // is the shape the rest hangs off: a run function that takes its arguments
@@ -39,6 +40,7 @@ type command struct {
 }
 
 var commands = []command{
+	{"hash:tune", "measure argon2id on this machine", runHashTune},
 	{"version", "print version information", runVersion},
 }
 
