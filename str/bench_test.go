@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	sinkInt int
-	sinkStr string
+	sinkInt  int
+	sinkStr  string
+	sinkBool bool
 )
 
 // The three shapes of text worth measuring separately, because the segmenter
@@ -275,5 +276,56 @@ func BenchmarkSingular(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		sinkStr = str.Singular("categories")
+	}
+}
+
+// The three shapes a pattern can take, since the anchors are a prefix and a
+// suffix test while the middle is a search.
+func BenchmarkIsPrefix(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.Is("admin/*", "admin/users/1/edit")
+	}
+}
+
+func BenchmarkIsMiddle(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.Is("admin/*/edit", "admin/users/1/edit")
+	}
+}
+
+func BenchmarkIsNoStar(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.Is("admin/users", "admin/users")
+	}
+}
+
+func BenchmarkIsAscii(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.IsAscii(plainASCII)
+	}
+}
+
+func BenchmarkIsURL(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.IsURL("https://example.com/a/b?c=1#d")
+	}
+}
+
+func BenchmarkIsUUID(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.IsUUID("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+	}
+}
+
+func BenchmarkIsULID(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkBool = str.IsULID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 	}
 }

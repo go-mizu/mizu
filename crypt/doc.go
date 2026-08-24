@@ -134,10 +134,11 @@
 // Everything here draws from the operating system, through crypto/rand, so
 // there is no seed to get wrong and no fast path that is not random enough.
 //
-//	crypt.Token(32)  // a session id, a reset link, an unguessable URL
-//	crypt.String(20) // characters a person can read back to you
-//	crypt.Digits(6)  // a code somebody types into a phone
-//	crypt.Bytes(16)  // bytes for something else to use
+//	crypt.Token(32)    // a session id, a reset link, an unguessable URL
+//	crypt.String(20)   // characters a person can read back to you
+//	crypt.Digits(6)    // a code somebody types into a phone
+//	crypt.Password(24) // a first password for an account somebody else opened
+//	crypt.Bytes(16)    // bytes for something else to use
 //
 // None of them return an error. The standard library's random source fills the
 // slice or crashes the program, and a program that cannot get random bytes has

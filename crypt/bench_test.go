@@ -82,6 +82,24 @@ func BenchmarkDigits(b *testing.B) {
 	}
 }
 
+// Password is drawn again when a class did not come up, so a short one costs
+// more draws than a long one even though it is fewer characters.
+func BenchmarkPassword(b *testing.B) {
+	b.ReportAllocs()
+
+	for b.Loop() {
+		sinkString = Password(24)
+	}
+}
+
+func BenchmarkPasswordShort(b *testing.B) {
+	b.ReportAllocs()
+
+	for b.Loop() {
+		sinkString = Password(8)
+	}
+}
+
 func BenchmarkIntn(b *testing.B) {
 	b.ReportAllocs()
 

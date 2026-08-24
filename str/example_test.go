@@ -307,3 +307,59 @@ func ExamplePlural_case() {
 	// People
 	// order_line_items
 }
+
+func ExampleIs() {
+	fmt.Println(str.Is("admin/*", "admin/users/1"))
+	fmt.Println(str.Is("*.jpg", "photo.png"))
+	fmt.Println(str.Is("v1", "v1"))
+	// Output:
+	// true
+	// false
+	// true
+}
+
+// A star crosses a slash, which is what makes this the one to reach for on
+// route and permission patterns. [path.Match] stops a star at the separator.
+func ExampleIs_paths() {
+	for _, pattern := range []string{"admin/*", "admin/*/edit", "*/edit"} {
+		fmt.Printf("%-14s %v\n", pattern, str.Is(pattern, "admin/users/1/edit"))
+	}
+	// Output:
+	// admin/*        true
+	// admin/*/edit   true
+	// */edit         true
+}
+
+func ExampleIsAscii() {
+	fmt.Println(str.IsAscii("plain text"))
+	fmt.Println(str.IsAscii("café"))
+	// Output:
+	// true
+	// false
+}
+
+func ExampleIsURL() {
+	for _, s := range []string{"https://example.com/a?b=1", "example.com", "mailto:someone@example.com"} {
+		fmt.Printf("%-27s %v\n", s, str.IsURL(s))
+	}
+	// Output:
+	// https://example.com/a?b=1   true
+	// example.com                 false
+	// mailto:someone@example.com  false
+}
+
+func ExampleIsUUID() {
+	fmt.Println(str.IsUUID("f47ac10b-58cc-4372-a567-0e02b2c3d479"))
+	fmt.Println(str.IsUUID("f47ac10b58cc4372a5670e02b2c3d479"))
+	// Output:
+	// true
+	// false
+}
+
+func ExampleIsULID() {
+	fmt.Println(str.IsULID("01ARZ3NDEKTSV4RRFFQ69G5FAV"))
+	fmt.Println(str.IsULID("01ARZ3NDEKTSV4RRFFQ69G5FAI"))
+	// Output:
+	// true
+	// false
+}
