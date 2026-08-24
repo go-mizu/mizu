@@ -9,13 +9,22 @@ import (
 	"github.com/go-mizu/mizu/archtest"
 )
 
-// The toolkit depends on the standard library and on nothing else.
+// The toolkit depends on the standard library, on the golang.org/x
+// repositories, and on nothing else.
 //
-// That is a promise to whoever runs go get github.com/go-mizu/mizu: one line
-// in a go.mod, no transitive graph, no upgrade to schedule, no advisory to
-// read that is not ours. It is worth a lot and it is easy to lose, because
-// every third-party library arrives as a reasonable pull request that solves
-// a real problem.
+// That is a promise to whoever runs go get github.com/go-mizu/mizu: a short
+// go.mod, no transitive graph to audit, no upgrade to schedule, no advisory to
+// read that is not ours or the Go team's. It is worth a lot and it goes
+// quietly, because every third-party library arrives as a reasonable pull
+// request that solves a real problem.
+//
+// The golang.org/x repositories are the exception, and they are one because
+// they are not third-party. They are written and reviewed by the Go team under
+// the same proposal process as the standard library, they are where standard
+// library packages are incubated, and they are covered by the same security
+// process and the same vulnerability database. Refusing them does not avoid a
+// dependency; it means writing cryptography by hand, which is a worse trade
+// than the one it was meant to avoid.
 //
 // So the rule is enforced here rather than remembered. Two tests, because a
 // dependency can arrive two ways. The import graph catches what the toolkit
@@ -29,11 +38,21 @@ import (
 //
 // To add an exception, put it in allowedModules below with a comment saying
 // what it buys and why the standard library cannot, and write it up in the
-// decision register. The list being empty is the point.
-var allowedModules = []string{}
+// decision register. The list being short is the point.
+var allowedModules = []string{
+	// argon2 and bcrypt for mizu/hash. Neither is in the standard library and
+	// both are password hashes, which is the last thing to write by hand: the
+	// bugs are silent, the tests pass either way, and what is at stake is every
+	// password the application stores.
+	"golang.org/x/crypto",
+
+	// CPU feature detection, which is how x/crypto picks its assembly. It
+	// arrives with x/crypto rather than on its own.
+	"golang.org/x/sys",
+}
 
 // allowedPatterns is the same rule stated against the import graph.
-var allowedPatterns = []archtest.Pattern{"std"}
+var allowedPatterns = []archtest.Pattern{"std", "golang.org/x/..."}
 
 func TestModuleGraphIsStandardLibraryOnly(t *testing.T) {
 	g, err := archtest.Load(".", "./...")
