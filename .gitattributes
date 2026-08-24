@@ -9,3 +9,4 @@
 
 # The golden files under gen/testdata are compared byte for byte.
 gen/testdata/** -text
+gen/configgen/testdata/** -text

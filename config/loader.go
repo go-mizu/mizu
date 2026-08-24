@@ -105,6 +105,23 @@ type Value struct {
 	TOML   *toml.Value
 }
 
+// Str is the value as text, which is what a [Parser] written by hand almost
+// always wants.
+//
+// Every layer except a file is text already, because an environment variable
+// and a command line argument have nothing else to be. A file keeps the type
+// the value was written with, so a number or a boolean there is not text, and
+// this reports that rather than inventing a spelling for it.
+func (v Value) Str() (string, error) {
+	if v.TOML == nil {
+		return v.Text, nil
+	}
+	if v.TOML.Kind != toml.KindString {
+		return "", wantErr("a string", v)
+	}
+	return v.TOML.Str, nil
+}
+
 // Display is the value written out for a person to read, for config:show and
 // config:diff. Strings are shown without quotes, because the reader wants the
 // value and not the syntax.
@@ -120,6 +137,10 @@ func (v Value) Display() string {
 // A value from a file gets a file, a line and a column, and a value from
 // anywhere else gets the name of its layer, so an error either way says where
 // to go and change it.
+//
+// It is for code holding a value and no field, such as a check that runs after
+// everything is read. A [Parse] does not need it, because [Get] already knows
+// the field and the place and puts both in front of whatever the parser said.
 func (v Value) Errorf(format string, args ...any) error {
 	msg := fmt.Sprintf(format, args...)
 	if v.TOML != nil {

@@ -26,6 +26,11 @@
 // a type that reads itself can be a [Parser] or an [encoding.TextUnmarshaler]
 // and go through [Config] or [Text]. There is no reflection anywhere in it.
 //
+// A parser written by hand reads its text with [Value.Str], which is the value
+// from whichever layer had it, and an error when a file wrote it as a number or
+// a boolean instead. It returns an error that says what it wanted and nothing
+// about where, since [Get] puts the field and the line in front of it.
+//
 // Nothing returns an error as it goes. A field that will not read is recorded
 // and the next one is read anyway, so an application with three settings wrong
 // hears about all three at once, from [Loader.Err] at the end.

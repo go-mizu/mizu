@@ -1,0 +1,10 @@
+# Settings for one developer's machine, read after app.toml and winning over it.
+
+[app]
+debug = true
+
+[database]
+max_open_conns = 10
+
+[cache]
+driver = "memory"

@@ -108,7 +108,7 @@ func (l *Loader) indirect(f Field, v Value) (Value, error) {
 	if !f.Secret {
 		return v, nil
 	}
-	s, err := text(v)
+	s, err := v.Str()
 	if err != nil || s == "" {
 		return v, nil // let the parser be the one to complain about the kind
 	}

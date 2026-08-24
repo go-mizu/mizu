@@ -1,0 +1,57 @@
+# Settings shared by every environment.
+# The generator's test reads this one and then local.toml on top of it.
+
+[app]
+name = "example"
+lang = "fr"
+
+[http]
+host = "example.test"
+read_timeout = "45s"
+max_header_bytes = 2097152
+trusted_proxies = ["10.0.0.0/8", "192.168.0.0/16"]
+bind_to = "0.0.0.0"
+origins = ["https://example.test", "https://admin.example.test"]
+
+[http.timeouts]
+upload = "5m"
+webhook = "3s"
+
+[log]
+level = "warn"
+format = "json"
+sample = 0.25
+
+[log.fields]
+service = "web"
+region = "eu"
+
+[database]
+max_open_conns = 50
+conn_max_lifetime = "2h"
+replicas = ["replica-1", "replica-2"]
+migrated = 2026-02-03T04:05:06Z
+
+[cache]
+driver = "redis"
+max_bytes = "128M"
+shards = 32
+
+[queue]
+workers = 8
+retries = 5
+queues = ["high", "low"]
+
+[queue.weights]
+high = 3
+low = 1
+
+[mail]
+from = "noreply@example.test"
+port = 587
+
+[billing]
+currency = "eur"
+minimum = "1.25"
+rate = 0.015
+enabled = true
