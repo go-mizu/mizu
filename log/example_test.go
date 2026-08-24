@@ -94,6 +94,76 @@ func Example_contextData() {
 	// 10:44:02.113 INF rebuilt                      tenant_id=acme docs=4021
 }
 
+// ExampleNewMultiHandler sends every record to two places at once, which is
+// what a program that wants a readable terminal and a collectable file does.
+func ExampleNewMultiHandler() {
+	h := log.NewMultiHandler(
+		log.NewConsoleHandler(os.Stdout, log.ConsoleOptions{}),
+		log.NewJSONHandler(os.Stdout, log.JSONOptions{Level: slog.LevelWarn}),
+	)
+	l := slog.New(fixed{h})
+
+	// The console takes everything, and the JSON handler only takes warnings,
+	// since each handler decides for itself.
+	l.Info("listening", "addr", ":8080")
+	l.Warn("slow query", "dur", 812*time.Millisecond)
+
+	// Output:
+	// 10:44:02.113 INF listening                    addr=:8080
+	// 10:44:02.113 WRN slow query                   dur=812ms
+	// {"time":"2026-08-24T10:44:02.113Z","level":"WARN","msg":"slow query","dur":812000000}
+}
+
+// ExampleNewFilterHandler drops the records a level cannot describe. Here it is
+// the health check that runs every second and says the same thing every time.
+func ExampleNewFilterHandler() {
+	h := log.NewFilterHandler(
+		log.NewConsoleHandler(os.Stdout, log.ConsoleOptions{}),
+		func(ctx context.Context, r slog.Record) bool {
+			keep := true
+			r.Attrs(func(a slog.Attr) bool {
+				if a.Key == "path" && a.Value.String() == "/healthz" {
+					keep = false
+				}
+				return keep
+			})
+			return keep
+		},
+	)
+	l := slog.New(fixed{h})
+
+	l.Info("request", "path", "/healthz", "status", 200)
+	l.Info("request", "path", "/posts", "status", 200)
+
+	// Output:
+	// 10:44:02.113 INF request                      path=/posts status=200
+}
+
+// ExampleNewSamplingHandler keeps a message that repeats from filling a disk.
+// It writes the first few of each message in each interval and then counts the
+// rest.
+func ExampleNewSamplingHandler() {
+	h := log.NewSamplingHandler(
+		log.NewConsoleHandler(os.Stdout, log.ConsoleOptions{}),
+		log.SampleOptions{Initial: 2, Every: 1000, Interval: time.Minute},
+	)
+	l := slog.New(fixed{h})
+
+	for range 5 {
+		l.Warn("the queue is behind", "depth", 40000)
+	}
+	// An error is written every time, whatever the count says.
+	for range 2 {
+		l.Error("the queue stopped")
+	}
+
+	// Output:
+	// 10:44:02.113 WRN the queue is behind          depth=40000
+	// 10:44:02.113 WRN the queue is behind          depth=40000
+	// 10:44:02.113 ERR the queue stopped
+	// 10:44:02.113 ERR the queue stopped
+}
+
 // fixed gives every record the same time, since an example has to write down
 // what it prints. A program has no use for it.
 type fixed struct{ slog.Handler }

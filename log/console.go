@@ -169,9 +169,11 @@ func (h *console) Handle(ctx context.Context, r slog.Record) error {
 	b = append(b, ' ')
 
 	b = append(b, r.Message...)
+	message := len(b)
 	for range h.width - len(r.Message) {
 		b = append(b, ' ')
 	}
+	padded := len(b)
 
 	for e := range ctxdata.All(ctx) {
 		if !e.Logged {
@@ -201,6 +203,13 @@ func (h *console) Handle(ctx context.Context, r slog.Record) error {
 		b = append(b, f.File...)
 		b = append(b, ':')
 		b = strconv.AppendInt(b, int64(f.Line), 10)
+	}
+
+	// The message is padded so that the attributes line up. A record with no
+	// attributes has nothing to line up with, and the padding would be
+	// trailing whitespace.
+	if len(b) == padded {
+		b = b[:message]
 	}
 
 	b = append(b, '\n')
