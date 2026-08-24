@@ -1,6 +1,7 @@
 package crypt_test
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
@@ -190,6 +191,73 @@ func ExampleCrypt_Rotate() {
 	// Output:
 	// needs rewrap: true
 	// needs rewrap: false
+}
+
+// ExampleCrypt_Sign is a value that stays readable and cannot be changed, which
+// is what an unsubscribe link or a user id in a cookie wants.
+func ExampleCrypt_Sign() {
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	b := c.Sign([]byte("user:42"))
+	fmt.Println(bytes.Contains(b, []byte("user:42")))
+
+	who, err := c.Verify(b)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%s\n", who)
+
+	// Somebody who edits the message and hands it back gets nothing.
+	forged := bytes.Replace(b, []byte("42"), []byte("43"), 1)
+	_, err = c.Verify(forged)
+	fmt.Println("forged:", err)
+
+	// Output:
+	// true
+	// user:42
+	// forged: crypt: this value does not carry a tag from the key it names
+}
+
+// ExampleSeal is a value in and a value out, with the encoding and the
+// encryption in between.
+func ExampleSeal() {
+	type Session struct {
+		User  string `json:"user"`
+		Admin bool   `json:"admin"`
+	}
+
+	c, err := crypt.New(crypt.GenerateKey())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	token, err := crypt.Seal(c, Session{User: "42", Admin: true}, crypt.AD("session"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	s, err := crypt.Unseal[Session](c, token, crypt.AD("session"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%+v\n", s)
+
+	// The same token read as something else, which is what a cookie from before
+	// a deploy looks like.
+	_, err = crypt.Unseal[[]string](c, token, crypt.AD("session"))
+	fmt.Println("as a list:", err != nil)
+
+	// Output:
+	// {User:42 Admin:true}
+	// as a list: true
 }
 
 // Example_logging shows what a handler does with these types. Both of them

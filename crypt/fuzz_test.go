@@ -153,6 +153,76 @@ func FuzzDecrypt(f *testing.F) {
 	})
 }
 
+// FuzzVerify is FuzzDecrypt for the other half: anything can arrive, and a
+// message only comes back if the tag says it should.
+func FuzzVerify(f *testing.F) {
+	c, err := New(keyOf(f, bytes.Repeat([]byte{2}, KeySize)))
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	f.Add([]byte(nil), []byte(nil))
+	f.Add([]byte("mizu"), []byte("session"))
+	f.Add(c.Sign([]byte("user:42")), []byte(nil))
+	f.Add(c.Sign([]byte("user:42"), AD("session")), []byte("session"))
+	f.Add(c.Encrypt([]byte("user:42")), []byte(nil))
+
+	f.Fuzz(func(t *testing.T, b, ad []byte) {
+		got, err := c.Verify(b, AD(ad))
+		if err != nil {
+			if got != nil {
+				t.Fatal("a message came back with an error")
+			}
+			return
+		}
+
+		// It verified, so it is something this package wrote, and the message
+		// has to be the bytes that are sitting there in the clear.
+		if len(b) < SignOverhead {
+			t.Fatalf("%d bytes verified", len(b))
+		}
+		if !bytes.Equal(got, b[prefixSize:len(b)-hmacSize]) {
+			t.Fatalf("the message came back as %q", got)
+		}
+		if !bytes.Equal(c.Sign(got, AD(ad)), b) {
+			t.Fatal("signing what came out does not give back what went in")
+		}
+	})
+}
+
+// FuzzSignRoundTrip is the signing direction: any message, bound to anything,
+// comes back as itself, and comes back only under the same binding.
+func FuzzSignRoundTrip(f *testing.F) {
+	c, err := New(GenerateKey())
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	f.Add([]byte(nil), []byte(nil))
+	f.Add([]byte("user:42"), []byte("session"))
+	f.Add(bytes.Repeat([]byte{0}, 1000), []byte("\x00\xff"))
+
+	f.Fuzz(func(t *testing.T, message, ad []byte) {
+		b := c.Sign(message, AD(ad))
+		if len(b) != len(message)+SignOverhead {
+			t.Fatalf("a %d byte message came out %d bytes", len(message), len(b))
+		}
+
+		got, err := c.Verify(b, AD(ad))
+		if err != nil {
+			t.Fatalf("what this package signed does not verify: %v", err)
+		}
+		if !bytes.Equal(got, message) {
+			t.Fatalf("%q came back as %q", message, got)
+		}
+
+		other := AD(append(bytes.Clone(ad), 'x'))
+		if _, err := c.Verify(b, other); err == nil {
+			t.Fatalf("%q verified under %q", ad, other)
+		}
+	})
+}
+
 // FuzzRoundTrip is the other direction: any message, bound to anything, comes
 // back as itself, and comes back only under the same binding.
 func FuzzRoundTrip(f *testing.F) {

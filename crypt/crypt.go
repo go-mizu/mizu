@@ -1,31 +1,37 @@
 package crypt
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"io"
 
 	"github.com/go-mizu/mizu/errs"
 )
 
-// A ciphertext is a header and then AES-256-GCM output:
+// Everything this package writes starts with the same prefix, and then differs
+// by what the algorithm needs:
 //
 //	magic 4 | version 1 | alg 1 | key id 8 | nonce 24 | ciphertext | tag 16
+//	magic 4 | version 1 | alg 1 | key id 8 | message              | tag 32
 //
-// The header is in the clear, since a program has to read the key id before it
-// can decrypt anything, and it is authenticated: it goes in as additional data,
-// so changing the key id or the version of a stored value makes it stop
-// opening rather than open as something else.
+// The prefix is in the clear, since a program has to read the key id before it
+// can do anything else, and it is authenticated, so changing the key id or the
+// version of a stored value makes it stop opening rather than open as something
+// else.
 const (
 	version = 1
 
-	// algXAES is XAES-256-GCM, which is what everything here writes. The byte
-	// is in the format so that a later release can add one and still read what
+	// algXAES is XAES-256-GCM and algHMAC is HMAC-SHA256. The byte is in the
+	// format so that a later release can add an algorithm and still read what
 	// this one wrote.
 	algXAES = 1
+	algHMAC = 2
 
 	keyIDSize  = 8
-	headerSize = 4 + 1 + 1 + keyIDSize + nonceSize
+	prefixSize = 4 + 1 + 1 + keyIDSize
+	headerSize = prefixSize + nonceSize
 
 	// Overhead is how much longer a ciphertext is than the message in it: the
 	// header and the tag, 54 bytes. A column that holds encrypted text needs
@@ -118,15 +124,10 @@ func (c *Crypt) ActiveID() string { return c.active.key.ID() }
 // [Crypt.EncryptString] for something that goes in a cookie, a URL or a column
 // of characters.
 func (c *Crypt) Encrypt(plaintext []byte, ad ...AD) []byte {
-	out := make([]byte, headerSize, headerSize+len(plaintext)+tagSize)
+	out := prefix(make([]byte, 0, headerSize+len(plaintext)+tagSize), algXAES, c.active)
+	out = out[:headerSize]
 
-	copy(out, magic[:])
-	out[4] = version
-	out[5] = algXAES
-	id := c.active.key.id()
-	copy(out[6:], id[:])
-
-	nonce := out[6+keyIDSize : headerSize]
+	nonce := out[prefixSize:headerSize]
 	rand.Read(nonce)
 
 	gcm, nx := c.active.aead(nonce)
@@ -145,12 +146,12 @@ func (c *Crypt) Encrypt(plaintext []byte, ad ...AD) []byte {
 // None of that says anything about the plaintext, and it is all the caller gets
 // to know: a value that does not open is a value that never existed.
 func (c *Crypt) Decrypt(b []byte, ad ...AD) ([]byte, error) {
-	k, err := c.keyFor(b)
+	k, err := c.keyFor(b, encrypted)
 	if err != nil {
 		return nil, err
 	}
 
-	gcm, nx := k.aead(b[6+keyIDSize : headerSize])
+	gcm, nx := k.aead(b[prefixSize:headerSize])
 	out, err := gcm.Open(nil, nx, b[headerSize:], additional(b[:headerSize], ad))
 	if err != nil {
 		return nil, errs.New(errs.Invalid, "crypt.tampered", "crypt: this ciphertext does not open with the key it names")
@@ -196,9 +197,9 @@ func (c *Crypt) Rotate(next Key) (*Crypt, error) {
 	return New(next, previous...)
 }
 
-// NeedsRewrap is whether a ciphertext was written under a key that is no longer
-// the active one, which is how a program finds the rows still holding the old
-// key after a rotation.
+// NeedsRewrap is whether a value was written under a key that is no longer the
+// active one, which is how a program finds the rows still holding the old key
+// after a rotation.
 //
 //	if c.NeedsRewrap(row.Card) {
 //		plain, err := c.Decrypt(row.Card)
@@ -206,18 +207,21 @@ func (c *Crypt) Rotate(next Key) (*Crypt, error) {
 //		row.Card = c.Encrypt(plain)
 //	}
 //
-// Something that is not a ciphertext this package wrote answers false. Nothing
-// is going to fix that by encrypting it again.
+// Ciphertexts and signed values both answer. Something this package did not
+// write answers false, since nothing is going to fix that by encrypting it
+// again.
 func (c *Crypt) NeedsRewrap(b []byte) bool {
-	if err := check(b); err != nil {
-		return false
+	for _, f := range []form{encrypted, signed} {
+		if f.check(b) == nil {
+			return [keyIDSize]byte(b[6:6+keyIDSize]) != c.active.key.id()
+		}
 	}
-	return [keyIDSize]byte(b[6:6+keyIDSize]) != c.active.key.id()
+	return false
 }
 
-// keyFor is the key a ciphertext names, once the header holds together.
-func (c *Crypt) keyFor(b []byte) (*keyed, error) {
-	if err := check(b); err != nil {
+// keyFor is the key a value names, once its prefix holds together.
+func (c *Crypt) keyFor(b []byte, f form) (*keyed, error) {
+	if err := f.check(b); err != nil {
 		return nil, err
 	}
 
@@ -229,29 +233,49 @@ func (c *Crypt) keyFor(b []byte) (*keyed, error) {
 	return k, nil
 }
 
-// check is whether b starts like a ciphertext this package wrote and is long
-// enough to hold one.
-func check(b []byte) error {
+// A form is one of the two things this package writes. They differ in the
+// algorithm byte, in how much they add to the message, and in what to call them
+// when one of them is wrong.
+type form struct {
+	alg      byte
+	overhead int
+	noun     string
+}
+
+var (
+	encrypted = form{algXAES, Overhead, "a ciphertext"}
+	signed    = form{algHMAC, SignOverhead, "a signed value"}
+)
+
+// check is whether b starts like something this package wrote in this form and
+// is long enough to hold it.
+func (f form) check(b []byte) error {
 	const code = "crypt.malformed"
 	switch {
-	case len(b) < Overhead:
-		return errs.New(errs.Invalid, code, "crypt: this is too short to be a ciphertext")
+	case len(b) < f.overhead:
+		return errs.Newf(errs.Invalid, code, "crypt: this is too short to be %s", f.noun)
 	case [4]byte(b[:4]) != magic:
-		return errs.New(errs.Invalid, code, "crypt: this is not a ciphertext")
+		return errs.Newf(errs.Invalid, code, "crypt: this is not %s", f.noun)
 	case b[4] != version:
-		return errs.Newf(errs.Invalid, code, "crypt: this ciphertext is version %d and this is version %d", b[4], version)
-	case b[5] != algXAES:
-		return errs.Newf(errs.Invalid, code, "crypt: this ciphertext uses algorithm %d, which this version does not have", b[5])
+		return errs.Newf(errs.Invalid, code, "crypt: this value is version %d and this is version %d", b[4], version)
+	case b[5] != f.alg:
+		return errs.Newf(errs.Invalid, code, "crypt: this value uses algorithm %d, and %s is algorithm %d", b[5], f.noun, f.alg)
 	}
 	return nil
 }
 
+// prefix is the bytes at the front of a value: the magic number, the version,
+// the algorithm and the id of the key that wrote it.
+func prefix(dst []byte, alg byte, k *keyed) []byte {
+	dst = append(dst, magic[:]...)
+	dst = append(dst, version, alg)
+	id := k.key.id()
+	return append(dst, id[:]...)
+}
+
 // additional is what the tag covers besides the message: the header, and then
-// whatever the caller bound the value to.
-//
-// Each piece is written after its own length, so that two of them cannot be
-// rearranged into the same bytes as two others. With nothing bound, this is the
-// header itself and costs no copy.
+// whatever the caller bound the value to. With nothing bound, this is the header
+// itself and costs no copy.
 func additional(header []byte, ad []AD) []byte {
 	if len(ad) == 0 {
 		return header
@@ -262,11 +286,18 @@ func additional(header []byte, ad []AD) []byte {
 		size += binary.MaxVarintLen64 + len(a)
 	}
 
-	out := make([]byte, 0, size)
-	out = append(out, header...)
+	buf := bytes.NewBuffer(make([]byte, 0, size))
+	buf.Write(header)
+	bind(buf, ad)
+	return buf.Bytes()
+}
+
+// bind writes what a value is tied to, each piece after its own length, so that
+// two of them cannot be rearranged into the same bytes as two others.
+func bind(w io.Writer, ad []AD) {
+	var size [binary.MaxVarintLen64]byte
 	for _, a := range ad {
-		out = binary.AppendUvarint(out, uint64(len(a)))
-		out = append(out, a...)
+		w.Write(binary.AppendUvarint(size[:0], uint64(len(a))))
+		w.Write(a)
 	}
-	return out
 }

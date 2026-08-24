@@ -3,6 +3,8 @@ package crypt
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/sha256"
 )
 
 // The algorithm is XAES-256-GCM, specified at https://c2sp.org/XAES-256-GCM.
@@ -39,11 +41,15 @@ type keyed struct {
 	key   Key
 	block cipher.Block
 	k1    [aes.BlockSize]byte
+
+	// signKey is what HMAC uses, so that signing and encrypting never touch the
+	// same bytes. One key in a configuration file, two keys underneath it.
+	signKey [KeySize]byte
 }
 
 // newKeyed is the state a key needs before it can encrypt anything: the AES-256
-// block cipher, and K1, which is the encryption of a block of zeroes doubled in
-// the field.
+// block cipher, K1, which is the encryption of a block of zeroes doubled in the
+// field, and the signing subkey.
 func newKeyed(k Key) *keyed {
 	// A key is 32 bytes and a wrong length is the only thing NewCipher rejects,
 	// so there is no error here to report to anybody.
@@ -52,7 +58,15 @@ func newKeyed(k Key) *keyed {
 	var l [aes.BlockSize]byte
 	block.Encrypt(l[:], l[:])
 
-	return &keyed{key: k, block: block, k1: double(l)}
+	// A Key is already 32 uniform random bytes, which is what Expand wants, so
+	// there is no salt to extract with. It fails on a length no hash can produce
+	// and 32 bytes of SHA-256 is not that.
+	sub, _ := hkdf.Expand(sha256.New, k.b[:], signLabel, KeySize)
+
+	out := &keyed{key: k, block: block, k1: double(l)}
+	copy(out.signKey[:], sub)
+	clear(sub)
+	return out
 }
 
 // aead is the AES-256-GCM cipher and the 96 bit nonce that XAES-256-GCM derives

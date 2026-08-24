@@ -86,6 +86,37 @@
 // something the caller already knows at decryption time, not something it reads
 // out of the ciphertext, which is what makes it worth anything.
 //
+// # Signing
+//
+// [Crypt.Sign] leaves the message readable and adds a tag that says it came from
+// here, which is what a value that is not secret but must not be changed needs:
+// a user id in a cookie, an unsubscribe link, a payload that goes out to a
+// service and comes back.
+//
+//	b := c.Sign([]byte("user:42"))
+//	who, err := c.Verify(b)
+//
+// [Crypt.Verify] is the only way to read one. A message nobody checked the tag
+// on is a message somebody else may have written, so there is no call here that
+// hands it back without checking.
+//
+// Signing is HMAC-SHA256 under a subkey derived from the key, so the bytes that
+// sign are never the bytes that encrypt. It has no nonce, so the same message
+// signs the same way every time.
+//
+// # Values
+//
+// [Seal] and [Unseal] are a value in and a value out, encoded as JSON and
+// encrypted, which is what a session cookie or a signed URL parameter usually
+// holds.
+//
+//	token, err := crypt.Seal(c, Session{User: id}, crypt.AD("session"))
+//	s, err := crypt.Unseal[Session](c, token, crypt.AD("session"))
+//
+// They are functions rather than methods because Go methods cannot have their
+// own type parameters. A token that no longer decodes as a T fails the same way
+// a changed one does, which is what a cookie from before a deploy looks like.
+//
 // # Rotation
 //
 // [Crypt.Rotate] returns a Crypt that writes with a new key and still reads
