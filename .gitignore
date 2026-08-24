@@ -50,3 +50,6 @@ build/
 .env
 .env.*
 *.local
+
+# Caches left behind by tools run inside a blueprint
+.wrangler/

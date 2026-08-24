@@ -12,6 +12,37 @@
 //	}
 //	v, ok := l.Lookup(config.Field{Path: "database.dsn", Env: "DATABASE_URL"})
 //
+// # Reading a value into a field
+//
+// [Get] is [Loader.Lookup] with a type on the end of it. It takes a [Parse],
+// which is any function that reads a value into a destination, and this package
+// has one for each of the types a setting is usually written as.
+//
+//	config.Get(l, &c.DB.DSN, dsn, config.String)
+//	config.Get(l, &c.HTTP.ReadTimeout, timeout, config.Duration)
+//	config.Get(l, &c.HTTP.TrustedProxies, proxies, config.Slice(config.Prefix))
+//
+// A field of a type this package has never heard of is one function away, and
+// a type that reads itself can be a [Parser] or an [encoding.TextUnmarshaler]
+// and go through [Config] or [Text]. There is no reflection anywhere in it.
+//
+// Nothing returns an error as it goes. A field that will not read is recorded
+// and the next one is read anyway, so an application with three settings wrong
+// hears about all three at once, from [Loader.Err] at the end.
+//
+// # Secrets
+//
+// A field marked [Field.Secret] never prints, and its value may point somewhere
+// else instead of being the secret: file:/run/secrets/db reads a file, and
+// env:OTHER_NAME reads another variable. Both are for a container that mounts
+// its secrets rather than passing them in, and neither applies to a field that
+// is not a secret, since file:/tmp/app.sqlite is a real database DSN.
+//
+// cmd:... runs a command and takes what it printed, and works only when the
+// caller supplies [Sources.Command]. This package starts no processes of its
+// own, because a configuration file that can run a program is something a
+// caller has to ask for on purpose.
+//
 // # Order
 //
 // Six layers, and a later one wins over an earlier one.
