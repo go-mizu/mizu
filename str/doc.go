@@ -51,11 +51,30 @@
 // the carriage return and newline pair, the marks that attach forwards, is the
 // annex as written.
 //
+// # When something is not there
+//
+// [Before], [BeforeLast], [After] and [AfterLast] hand back the whole string
+// when they do not find what they were given. That is the one surprise in the
+// package, and it is there because it makes the four of them chain: After of a
+// path with no slash in it is the path, which is usually what the next call
+// wants. Code that has to tell a match from a miss wants [strings.Cut], which
+// returns a bool for exactly that.
+//
+// [Excerpt] goes the other way and returns nothing when the phrase is absent,
+// because an excerpt of something that is not there is nothing rather than
+// everything.
+//
 // # Naming
 //
 // Two functions are named differently from the spec. Ucfirst and Lcfirst are
 // [UpperFirst] and [LowerFirst], and Swap is [SwapCase], because the first two
 // are names from PHP and the third says nothing about what it swaps.
+//
+// Four more were dropped for being a name over a line of [strings]. WordCount
+// is len(strings.Fields(s)), Lower and Upper are [strings.ToLower] and
+// [strings.ToUpper], and Squish is strings.Join(strings.Fields(s), " "). The
+// hand-written Squish was measured against that line and came out slower, so
+// there was nothing left to argue for it.
 //
 // # Cost
 //
@@ -74,6 +93,13 @@
 // together, which is around ten allocations for a name of three or four words.
 // They are for names and headings, which is code that runs once, not code in a
 // loop.
+//
+// The cutting functions are [strings.Index] and a slice, so they allocate
+// nothing and cost what a search costs. The slicing functions pay for the walk
+// that finds the character offsets, which is linear in the part of the string
+// they have to cross: [Take] of the first ten characters is ten clusters of
+// work whatever the string after it looks like, and [Substr] with a negative
+// start has to measure the whole string before it can count back from the end.
 //
 // Timings came from an Apple M4 with other work running on it, so read them as
 // ceilings. The allocation counts do not move.
