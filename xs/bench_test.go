@@ -1,6 +1,7 @@
 package xs_test
 
 import (
+	"cmp"
 	"iter"
 	"slices"
 	"strconv"
@@ -478,5 +479,55 @@ func BenchmarkUnion(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		sink = len(xs.Union(a, c))
+	}
+}
+
+// The chaining wrapper is the free functions with a shorter spelling, so what
+// is worth measuring is whether the spelling costs anything.
+
+func BenchmarkChain(b *testing.B) {
+	data := make([]int, 1000)
+	odd := func(n int) bool { return n%2 == 1 }
+
+	b.Run("chained", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Of(data).Filter(odd).Take(100).Seq() {
+				sink = v
+			}
+		}
+	})
+	b.Run("free functions", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for v := range xs.Take(xs.Filter(slices.Values(data), odd), 100) {
+				sink = v
+			}
+		}
+	})
+}
+
+func BenchmarkMapTo(b *testing.B) {
+	data := make([]int, 1000)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for v := range xs.MapTo(xs.Of(data), double).Seq() {
+			sink = v
+		}
+	}
+}
+
+// BenchmarkSortFunc is the one method that reads everything before it yields
+// anything, so the Take after it saves nothing above it.
+func BenchmarkSortFunc(b *testing.B) {
+	data := make([]int, 1000)
+	for i := range data {
+		data[i] = len(data) - i
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = len(xs.Of(data).SortFunc(cmp.Compare).Take(10).Slice())
 	}
 }

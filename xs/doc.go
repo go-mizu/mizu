@@ -127,6 +127,31 @@
 // order is the order of first appearance rather than whatever a map iteration
 // would give, which keeps the answer stable enough to test and to print.
 //
+// # Reading left to right
+//
+// Free functions nest, and a pipeline of four of them reads inside out, which
+// is the wrong way round from the order the elements move in. [Of] and [From]
+// start a chain over the same [iter.Seq], with the operations as methods:
+//
+//	recent := xs.Of(posts).
+//		Filter(Post.published).
+//		Drop(page * 20).
+//		Take(20).
+//		Slice()
+//
+// It is the same laziness and the same cost. A chain allocates nothing that the
+// free functions do not, and runs about seven percent slower on a pipeline of
+// two stages over a thousand elements, which is the method call that the
+// compiler does not inline through.
+//
+// The chain cannot cover everything, and the reason is a language rule rather
+// than a decision: a method cannot have type parameters of its own, and it
+// cannot narrow the ones on its receiver. So Map, Unique, Sum, GroupBy and
+// every other function here that introduces a result type, a key or a
+// constraint has no method. [MapTo] is a free function taking a chain and
+// returning a chain, which covers the common one, and [Seq.Seq] hands the plain
+// sequence to the free functions for the rest.
+//
 // # What the standard library already does
 //
 // [slices] and [maps] cover more of this than people expect, and anything they
