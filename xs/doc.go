@@ -69,6 +69,37 @@
 // ones that run out. [Unzip] is the only function here that collects, and its
 // doc comment explains why it has no choice.
 //
+// # Ending a pipeline
+//
+// A pipeline ends in a range loop, in [slices.Collect], or in one of the
+// functions that reads the sequence and returns an answer instead of another
+// sequence:
+//
+//	total := xs.Sum(xs.Map(items, Item.total))
+//	admin, found := xs.Find(users, User.isAdmin)
+//	if xs.Any(rows, Row.invalid) { ... }
+//
+// [Reduce] combines the elements with each other and starts from the first one,
+// so it reports whether there was anything to start from. [Fold] starts from a
+// value you pass and builds something of another type, which is the one to
+// reach for most of the time. [Sum], [Product], [Min], [Max], [MinBy], [MaxBy],
+// [Count] and [CountBy] are the everyday folds under their own names.
+//
+// [First], [Find], [Index], [Any], [All] and [None] stop as soon as they know
+// the answer, and over a lazy pipeline that means the work behind the elements
+// they never reach is never done. [Last] and [Count] have to read everything,
+// since there is no way to know which element was the last one until the
+// sequence ends.
+//
+// The ones that can come back empty return a second bool rather than a zero
+// value on its own, because a sum of zero and an empty sequence are different
+// answers and only the caller knows which one matters. [slices.Min] panics
+// instead, which it can afford to do because the caller could have checked the
+// length first. A sequence has no length to check.
+//
+// [CollectErr] is the terminal for the [iter.Seq2] shape from the errors
+// section above, and it stops and returns nothing at the first error.
+//
 // # What the standard library already does
 //
 // [slices] and [maps] cover more of this than people expect, and anything they
@@ -79,10 +110,12 @@
 //	slices.Sorted(seq)    // a sequence as a sorted slice
 //	slices.All(s)         // index and value
 //	slices.Chunk(s, n)    // a slice in batches
+//	slices.MinFunc(s, f)  // smallest under a comparison
 //
 // There is no xs.Collect for that reason. [Chunk] here is the one for
 // sequences, which is a different function that happens to share a name with
-// [slices.Chunk].
+// [slices.Chunk], and the same goes for [All], which is a question here and a
+// sequence of index and value pairs there.
 //
 // # Cost
 //
@@ -111,6 +144,15 @@
 // for Chunk and one per element for Window. [Unique] and [UniqueBy] are a map
 // insert per element, about 70 nanoseconds, and hold every distinct element
 // they have seen.
+//
+// The functions that end a pipeline allocate a small fixed amount, around 90
+// bytes, whenever the compiler cannot inline the whole thing. A range over a
+// function turns the loop body into a closure, and a closure over a running
+// total puts that total on the heap when it cannot see where the sequence takes
+// it. The amount is the same over ten elements and over a hundred thousand,
+// which is what to check if you are wondering whether it matters. [CountBy] is
+// the exception that grows, since it builds a map with one entry per distinct
+// key.
 //
 // Timings were taken on a machine with other work on it, so read them as
 // ceilings. The allocation counts do not move.
