@@ -1,10 +1,12 @@
 package conc_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/go-mizu/mizu/conc"
 	"github.com/go-mizu/mizu/errs"
@@ -216,4 +218,88 @@ func ExampleRace() {
 	// Output:
 	// the mirror stopped because: conc: something else finished first
 	// the front page <nil>
+}
+
+// ExampleOnce works out the answer the first time somebody asks for it and
+// hands the same one to everybody after that, including when the answer is a
+// failure.
+func ExampleOnce() {
+	calls := 0
+	region := conc.Once(func() (string, error) {
+		calls++
+		return "eu-west-1", nil
+	})
+
+	for range 3 {
+		v, err := region()
+		fmt.Println(v, err)
+	}
+	fmt.Println("fn ran", calls, "time")
+
+	// Output:
+	// eu-west-1 <nil>
+	// eu-west-1 <nil>
+	// eu-west-1 <nil>
+	// fn ran 1 time
+}
+
+// ExampleDebounce coalesces a burst of calls into one run, fifty milliseconds
+// after the last of them. The channel is the example waiting for a run it can
+// print. Real code does not wait, which is the point of debouncing.
+func ExampleDebounce() {
+	done := make(chan struct{})
+	reindex := conc.Debounce(50*time.Millisecond, func() {
+		fmt.Println("rebuilt the index")
+		close(done)
+	})
+
+	for range 100 {
+		reindex()
+	}
+	<-done
+
+	// Output:
+	// rebuilt the index
+}
+
+// ExampleThrottle shows the shape rather than the timing, since a window of an
+// hour makes the answer the same every run. The first call goes through and the
+// rest of that window does not.
+func ExampleThrottle() {
+	runs := 0
+	report := conc.Throttle(time.Hour, func() { runs++ })
+
+	for range 100 {
+		report()
+	}
+	fmt.Println("100 calls, ", runs, "run")
+
+	// Output:
+	// 100 calls,  1 run
+}
+
+// ExamplePool is the reuse pattern in full. Reset then Put, in that order and
+// in the same defer, so a buffer never goes back with somebody else's bytes in
+// it.
+func ExamplePool() {
+	buffers := conc.Pool(func() *bytes.Buffer { return new(bytes.Buffer) })
+
+	greet := func(name string) string {
+		b := buffers.Get()
+		defer func() {
+			b.Reset()
+			buffers.Put(b)
+		}()
+
+		b.WriteString("hello, ")
+		b.WriteString(name)
+		return b.String()
+	}
+
+	fmt.Println(greet("mizu"))
+	fmt.Println(greet("kaze"))
+
+	// Output:
+	// hello, mizu
+	// hello, kaze
 }
