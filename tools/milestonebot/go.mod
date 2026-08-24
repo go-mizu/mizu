@@ -3,6 +3,6 @@
 // github.com/go-mizu/mizu` never pulls a YAML parser along with it.
 module github.com/go-mizu/mizu/tools/milestonebot
 
-go 1.26
+go 1.27
 
 require gopkg.in/yaml.v3 v3.0.1

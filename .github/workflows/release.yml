@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       - name: Vet
         run: go vet ./...
@@ -78,7 +78,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: "1.27"
 
       # The archives are reproducible as well as the binaries inside them. A
       # tar records a modification time and a gzip header records another, and

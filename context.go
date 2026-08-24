@@ -170,18 +170,7 @@ func (c *Ctx) BindJSON(v any, max int64) error {
 		r = http.MaxBytesReader(c.writer, r, max)
 	}
 
-	dec := newJSONDecoder(r)
-	decDisallowUnknownFields(dec)
-
-	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
-	}
-
-	// Must be exactly one JSON value.
-	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return errors.New("invalid JSON: trailing data")
-		}
+	if err := jsonDecodeStrict(r, v); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
@@ -232,9 +221,7 @@ func (c *Ctx) JSON(code int, v any) error {
 		c.writer.WriteHeader(c.status)
 		c.wroteHeader = true
 	}
-	enc := newJSONEncoder(c.writer)
-	encSetEscapeHTML(enc, false)
-	return enc.Encode(v)
+	return jsonWrite(c.writer, v)
 }
 
 func (c *Ctx) HTML(code int, html string) error {

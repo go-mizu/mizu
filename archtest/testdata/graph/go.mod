@@ -3,4 +3,4 @@
 // depends on nothing, so loading it works offline.
 module mizu.test/graph
 
-go 1.26
+go 1.27

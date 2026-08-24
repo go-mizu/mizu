@@ -13,7 +13,7 @@ go test ./...
 go test -race ./...
 ```
 
-Go 1.26 or later.
+Go 1.27 or later.
 There is nothing else to install.
 If a change ever requires a tool that is not in the standard distribution, that is a decision to argue for in an issue before writing the code.
 

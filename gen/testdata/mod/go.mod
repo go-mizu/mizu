@@ -2,4 +2,4 @@
 // toolkit, because the go command ignores everything under testdata.
 module mizu.test/gen
 
-go 1.26
+go 1.27
