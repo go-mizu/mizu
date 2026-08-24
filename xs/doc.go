@@ -47,6 +47,28 @@
 // to instead of ending the sequence. What to do about it is the caller's
 // decision, taken in the loop at the end, which is where the caller is.
 //
+// # Changing the shape
+//
+// Not every step keeps one element as one element. [Chunk] gathers them into
+// batches of a fixed size, which is what a bulk insert and a batch API both
+// want, and [Window] gathers them into overlapping runs, which is how you look
+// at an element and its neighbour:
+//
+//	for batch := range xs.Chunk(ids, 500) { load(ctx, batch) }
+//	for pair := range xs.Window(prices, 2) { change(pair[0], pair[1]) }
+//
+// [FlatMap] goes the other way, turning one element into several or into none,
+// which makes it a [Filter] and a [Map] at once. [Flatten] is the same thing
+// for a sequence that already holds sequences. [Unique] and [UniqueBy] leave
+// out the repeats, wherever in the sequence they turned up, which is what
+// [slices.Compact] does not do.
+//
+// [Enumerate] pairs each element with its position, and [Zip] pairs two
+// sequences together and ends with the shorter one. [Interleave] takes one
+// element from each of several sequences in turn and carries on without the
+// ones that run out. [Unzip] is the only function here that collects, and its
+// doc comment explains why it has no choice.
+//
 // # What the standard library already does
 //
 // [slices] and [maps] cover more of this than people expect, and anything they
@@ -81,6 +103,14 @@
 // megabytes for the version that maps into a new slice and then takes ten of
 // it. That is the difference the shape buys, and it grows with the input while
 // the per-stage cost does not.
+//
+// Four of these cost more than a function call per element, and the doc comment
+// on each one says so. [Zip] and [Interleave] read through [iter.Pull], which
+// is a coroutine switch per element and about 80 nanoseconds. [Chunk] and
+// [Window] hand out a slice the caller owns, which is one allocation per batch
+// for Chunk and one per element for Window. [Unique] and [UniqueBy] are a map
+// insert per element, about 70 nanoseconds, and hold every distinct element
+// they have seen.
 //
 // Timings were taken on a machine with other work on it, so read them as
 // ceilings. The allocation counts do not move.

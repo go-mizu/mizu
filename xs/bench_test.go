@@ -141,3 +141,105 @@ func double(n int) int { return n * 2 }
 func keep(n int) bool  { return n%3 != 0 }
 
 var sink int
+
+// The reshaping functions are the ones that cost something per element rather
+// than per pipeline, so each of them gets a number.
+
+func BenchmarkEnumerate(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for i, v := range xs.Enumerate(in) {
+			sink = i + v
+		}
+	}
+}
+
+// BenchmarkZip pulls one side onto a coroutine, so this is the cost of that
+// against the range loop the other side gets.
+func BenchmarkZip(b *testing.B) {
+	a := slices.Values(make([]int, 1000))
+	c := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for x, y := range xs.Zip(a, c) {
+			sink = x + y
+		}
+	}
+}
+
+func BenchmarkFlatMap(b *testing.B) {
+	batches := make([][]int, 100)
+	for i := range batches {
+		batches[i] = make([]int, 10)
+	}
+	in := slices.Values(batches)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for v := range xs.FlatMap(in, slices.Values) {
+			sink = v
+		}
+	}
+}
+
+// BenchmarkChunk is one allocation per batch, so the interesting number is what
+// it costs per element at a batch size somebody would use.
+func BenchmarkChunk(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	for _, n := range []int{10, 500} {
+		b.Run("batches of "+strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				for batch := range xs.Chunk(in, n) {
+					sink = len(batch)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkWindow is one allocation per element rather than per batch, which is
+// the price of the windows overlapping.
+func BenchmarkWindow(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for w := range xs.Window(in, 3) {
+			sink = len(w)
+		}
+	}
+}
+
+// BenchmarkUnique is a map lookup and an insert per element, and the map is
+// what the memory warning in the doc comment is about.
+func BenchmarkUnique(b *testing.B) {
+	in := make([]int, 1000)
+	for i := range in {
+		in[i] = i
+	}
+	seq := slices.Values(in)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for v := range xs.Unique(seq) {
+			sink = v
+		}
+	}
+}
+
+func BenchmarkInterleave(b *testing.B) {
+	a := slices.Values(make([]int, 500))
+	c := slices.Values(make([]int, 500))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		for v := range xs.Interleave(a, c) {
+			sink = v
+		}
+	}
+}

@@ -20,6 +20,48 @@ func Concat[T any](seqs ...iter.Seq[T]) iter.Seq[T] {
 	}
 }
 
+// Interleave takes one element from each sequence in turn.
+//
+//	mixed := xs.Interleave(fromEurope, fromAsia, fromAmericas)
+//
+// A sequence that runs out drops out and the rest carry on without it, so this
+// ends when the last one does rather than when the first one does. That is the
+// difference from [Zip], which stops at the shorter one because it has to
+// produce pairs.
+//
+// It is for spreading a few sources out evenly: results from three regions, or
+// a page that should not show six posts from the same author in a row. Every
+// sequence past the first is read through [iter.Pull], which means a goroutine
+// each, so this is for a handful of sequences and not for thousands.
+func Interleave[T any](seqs ...iter.Seq[T]) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		nexts := make([]func() (T, bool), 0, len(seqs))
+		for _, seq := range seqs {
+			next, stop := iter.Pull(seq)
+			defer stop()
+			nexts = append(nexts, next)
+		}
+
+		for len(nexts) > 0 {
+			// live is written over the front of nexts as the round goes on. The
+			// write index never gets ahead of the read index, so an entry is
+			// always read before anything is written over it.
+			live := nexts[:0]
+			for _, next := range nexts {
+				v, ok := next()
+				if !ok {
+					continue
+				}
+				if !yield(v) {
+					return
+				}
+				live = append(live, next)
+			}
+			nexts = live
+		}
+	}
+}
+
 // Repeat returns in n times over.
 //
 //	laps := xs.Repeat(slices.Values(course), 3)
