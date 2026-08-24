@@ -37,7 +37,7 @@ These are checked by CI or by a test, so breaking one produces a red build rathe
 
 - **No `internal/`.** Anywhere. If it should not be exported, do not write it.
 - **No package imports the composition root.** Every package works standalone. This is the rule the whole toolkit claim rests on.
-- **The core depends on the standard library and `golang.org/x`, and nothing else.** `deps_test.go` asserts the import graph and the `require` list, so a test-only dependency fails too. The list is `golang.org/x/crypto` and the `golang.org/x/sys` it brings with it. Adding another `golang.org/x` repository means an entry in `allowedModules` with the reason next to it. Anything outside `golang.org/x` goes in its own module, the way `tools/milestonebot` does, and needs an entry in the decision register.
+- **The core depends on the standard library and `golang.org/x`, and nothing else.** `deps_test.go` asserts the import graph and the `require` list, so a test-only dependency fails too. The list is `golang.org/x/crypto`, the `golang.org/x/sys` it brings with it, and `golang.org/x/text` for Unicode casing. Adding another `golang.org/x` repository means an entry in `allowedModules` with the reason next to it. Anything outside `golang.org/x` goes in its own module, the way `tools/milestonebot` does, and needs an entry in the decision register.
 - **Generated code is checked in and byte-identical across platforms, architectures, `GOMAXPROCS` values, and input order.**
 - **`gofmt` is clean and `go vet` passes.**
 - **New behaviour has a test that fails without the change.**

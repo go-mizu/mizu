@@ -49,6 +49,13 @@ var allowedModules = []string{
 	// CPU feature detection, which is how x/crypto picks its assembly. It
 	// arrives with x/crypto rather than on its own.
 	"golang.org/x/sys",
+
+	// Unicode casing for mizu/str. strings.Title has been deprecated since Go
+	// 1.18 because it capitalises the wrong letter in half the world's
+	// languages, and nothing replaced it in the standard library. x/text/cases
+	// is the replacement the deprecation notice points at, and it carries the
+	// casing tables that the alternative would mean copying in by hand.
+	"golang.org/x/text",
 }
 
 // allowedPatterns is the same rule stated against the import graph.
