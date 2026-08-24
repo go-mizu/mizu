@@ -4,6 +4,7 @@ import (
 	"iter"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-mizu/mizu/xs"
@@ -379,4 +380,103 @@ func BenchmarkCollectErr(b *testing.B) {
 			sink = len(slices.Collect(plain))
 		}
 	})
+}
+
+// The terminals that build a collection cost what the collection costs, and the
+// slice-shaped helpers are here against the loop they replace.
+
+func BenchmarkGroupBy(b *testing.B) {
+	in := make([]int, 1000)
+	for i := range in {
+		in[i] = i % 10
+	}
+	seq := slices.Values(in)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = len(xs.GroupBy(seq, func(n int) int { return n }))
+	}
+}
+
+func BenchmarkKeyBy(b *testing.B) {
+	in := make([]int, 1000)
+	for i := range in {
+		in[i] = i
+	}
+	seq := slices.Values(in)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = len(xs.KeyBy(seq, func(n int) int { return n }))
+	}
+}
+
+func BenchmarkPartitionBy(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		yes, _ := xs.PartitionBy(in, keep)
+		sink = len(yes)
+	}
+}
+
+// BenchmarkJoin against strings.Join over the collected slice is the comparison
+// that says whether skipping the slice was worth a function.
+func BenchmarkJoin(b *testing.B) {
+	data := make([]string, 1000)
+	for i := range data {
+		data[i] = strconv.Itoa(i)
+	}
+	seq := slices.Values(data)
+
+	b.Run("xs.Join", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(xs.Join(seq, ","))
+		}
+	})
+	b.Run("strings.Join over slices.Collect", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(strings.Join(slices.Collect(seq), ","))
+		}
+	})
+}
+
+func BenchmarkShuffle(b *testing.B) {
+	data := make([]int, 1000)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		xs.Shuffle(data)
+	}
+}
+
+// BenchmarkSample at two sizes out of the same slice shows the work is
+// proportional to what was asked for, apart from the copy.
+func BenchmarkSample(b *testing.B) {
+	data := make([]int, 1000)
+
+	for _, n := range []int{10, 1000} {
+		b.Run("taking "+strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				sink = len(xs.Sample(data, n))
+			}
+		})
+	}
+}
+
+func BenchmarkUnion(b *testing.B) {
+	a := make([]int, 500)
+	c := make([]int, 500)
+	for i := range a {
+		a[i], c[i] = i, i+250
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = len(xs.Union(a, c))
+	}
 }

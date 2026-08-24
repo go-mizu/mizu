@@ -97,8 +97,35 @@
 // instead, which it can afford to do because the caller could have checked the
 // length first. A sequence has no length to check.
 //
-// [CollectErr] is the terminal for the [iter.Seq2] shape from the errors
-// section above, and it stops and returns nothing at the first error.
+// [GroupBy], [KeyBy] and [PartitionBy] build a collection out of the elements
+// rather than a single answer. GroupBy keeps every element under its key, KeyBy
+// keeps one, and PartitionBy splits into the two sides of a predicate. [Join]
+// writes the elements of a sequence of strings into one string without building
+// the slice in between.
+//
+// [CollectErr] and [EachErr] are the terminals for the [iter.Seq2] shape from
+// the errors section above. Both stop at the first error, and EachErr stops on
+// an error from either side, the sequence or the function it was given.
+//
+// # Slices
+//
+// Seven functions here take a slice instead of a sequence, because a slice is
+// what you have often enough that going through a sequence to do one of these
+// would be the long way round.
+//
+//	xs.Shuffle(deck)                  // in place
+//	page := xs.Sample(rows, 3)        // three of them, no position twice
+//	row := xs.Pad(fields, 5, "")      // padded to five with the zero value
+//	gone := xs.Diff(before, after)    // in the first and not the second
+//
+// [Shuffle], [Sample] and [Random] use [math/rand/v2], which is seeded
+// differently in every process and is not suitable for anything an attacker
+// cares about the outcome of. A shuffled ballot or a token wants crypto/rand.
+//
+// [Diff], [Intersect] and [Union] are set operations, so each element turns up
+// at most once in the result even when it turned up twice in the input. The
+// order is the order of first appearance rather than whatever a map iteration
+// would give, which keeps the answer stable enough to test and to print.
 //
 // # What the standard library already does
 //
@@ -116,6 +143,13 @@
 // sequences, which is a different function that happens to share a name with
 // [slices.Chunk], and the same goes for [All], which is a question here and a
 // sequence of index and value pairs there.
+//
+// There is no xs.Each either. Calling a function for every element is a range
+// loop, and a range loop says what it does without anybody having to remember
+// which argument comes first. [EachErr] is here because the error shape has two
+// places an error can come from and getting that right once is worth a
+// function. [Tap] is the one for the middle of a pipeline, where there is no
+// loop to put the call in.
 //
 // # Cost
 //
@@ -150,9 +184,14 @@
 // function turns the loop body into a closure, and a closure over a running
 // total puts that total on the heap when it cannot see where the sequence takes
 // it. The amount is the same over ten elements and over a hundred thousand,
-// which is what to check if you are wondering whether it matters. [CountBy] is
-// the exception that grows, since it builds a map with one entry per distinct
-// key.
+// which is what to check if you are wondering whether it matters. The ones that
+// build a collection are the exception and grow with what they build:
+// [CountBy], [GroupBy] and [KeyBy] build a map, [PartitionBy] builds two slices
+// and [Sample] copies the input before it picks.
+//
+// [Join] does about half the allocation of [strings.Join] over [slices.Collect]
+// of the same sequence, a thousand short strings costing about 12 kilobytes
+// against about 39, because the slice of strings is never built.
 //
 // Timings were taken on a machine with other work on it, so read them as
 // ceilings. The allocation counts do not move.
