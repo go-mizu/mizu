@@ -243,3 +243,140 @@ func BenchmarkInterleave(b *testing.B) {
 		}
 	}
 }
+
+// The terminals are all one pass with nothing allocated, apart from the two
+// that build a map. What is worth measuring is which of them stop early and
+// what the ones that build something cost against the hand-written loop.
+
+func BenchmarkFold(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = xs.Fold(in, 0, func(acc, v int) int { return acc + v })
+	}
+}
+
+// BenchmarkSum against the range loop over the same slice is the honest
+// comparison, since Sum is that loop with a function call around the sequence.
+func BenchmarkSum(b *testing.B) {
+	data := make([]int, 1000)
+	seq := slices.Values(data)
+
+	b.Run("xs.Sum", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = xs.Sum(seq)
+		}
+	})
+	b.Run("range over the slice", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			total := 0
+			for _, v := range data {
+				total += v
+			}
+			sink = total
+		}
+	})
+}
+
+func BenchmarkMinBy(b *testing.B) {
+	data := make([]int, 1000)
+	for i := range data {
+		data[i] = len(data) - i
+	}
+	seq := slices.Values(data)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink, _ = xs.MinBy(seq, func(n int) int { return n })
+	}
+}
+
+// BenchmarkCountBy builds a map, so it is the expensive one of the terminals
+// and the number moves with how many distinct keys there are.
+func BenchmarkCountBy(b *testing.B) {
+	in := make([]int, 1000)
+	for i := range in {
+		in[i] = i % 10
+	}
+	seq := slices.Values(in)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink = len(xs.CountBy(seq, func(n int) int { return n }))
+	}
+}
+
+// BenchmarkFirst over a big sequence with a Map in front of it is the case the
+// stopping early is for. It should not move with the length of the input.
+func BenchmarkFirst(b *testing.B) {
+	for _, n := range []int{1000, 1_000_000} {
+		in := slices.Values(make([]int, n))
+		b.Run(strconv.Itoa(n)+" elements", func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				sink, _ = xs.First(xs.Map(in, double))
+			}
+		})
+	}
+}
+
+// BenchmarkFind is First with a predicate, measured at both ends of the input
+// so the cost of reaching the match is visible.
+func BenchmarkFind(b *testing.B) {
+	data := make([]int, 1000)
+	for i := range data {
+		data[i] = i
+	}
+	seq := slices.Values(data)
+
+	for _, at := range []int{0, 999} {
+		b.Run("match at "+strconv.Itoa(at), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				sink, _ = xs.Find(seq, func(n int) bool { return n == at })
+			}
+		})
+	}
+}
+
+func BenchmarkAll(b *testing.B) {
+	in := slices.Values(make([]int, 1000))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if xs.All(in, func(n int) bool { return n == 0 }) {
+			sink++
+		}
+	}
+}
+
+// BenchmarkCollectErr against slices.Collect over the same data shows what
+// carrying the error alongside every element costs.
+func BenchmarkCollectErr(b *testing.B) {
+	data := make([]int, 1000)
+	withErr := func(yield func(int, error) bool) {
+		for _, v := range data {
+			if !yield(v, nil) {
+				return
+			}
+		}
+	}
+	plain := slices.Values(data)
+
+	b.Run("xs.CollectErr", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			out, _ := xs.CollectErr(withErr)
+			sink = len(out)
+		}
+	})
+	b.Run("slices.Collect", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			sink = len(slices.Collect(plain))
+		}
+	})
+}
