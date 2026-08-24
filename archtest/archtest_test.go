@@ -122,6 +122,73 @@ func TestLoadReportsGoCommandErrors(t *testing.T) {
 	}
 }
 
+// go list reports "C" as an import of any package that uses cgo, and never
+// reports a package record for it, because it is a marker rather than a
+// package. On Linux with CGO_ENABLED=1, net imports it, so leaving it in the
+// graph fails a standard-library-only rule on a standard library package.
+//
+// The output here is what go list writes on that platform, trimmed to the
+// fields that matter. Feeding it in directly is the only way to test this
+// somewhere the local toolchain would not produce it.
+const cgoOutput = `
+{
+	"ImportPath": "example.com/app",
+	"Module": {"Path": "example.com/app"},
+	"Imports": ["net"]
+}
+{
+	"ImportPath": "net",
+	"Standard": true,
+	"DepOnly": true,
+	"Imports": ["C", "internal/bytealg", "unsafe"]
+}
+{
+	"ImportPath": "internal/bytealg",
+	"Standard": true,
+	"DepOnly": true,
+	"Imports": ["unsafe"]
+}
+{
+	"ImportPath": "unsafe",
+	"Standard": true,
+	"DepOnly": true
+}
+`
+
+func TestCgoPseudoImportIsNotADependency(t *testing.T) {
+	g, err := parse(strings.NewReader(cgoOutput))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if got := g.Roots(); !slices.Equal(got, []string{"example.com/app"}) {
+		t.Errorf("Roots() = %v, want just the app", got)
+	}
+	if deps := g.DepsOf("example.com/app"); slices.Contains(deps, "C") {
+		t.Errorf("C is in the dependencies: %v", deps)
+	}
+	if v := g.AllowOnly("std"); len(v) != 0 {
+		t.Errorf("a cgo build failed a standard library rule:\n%s", join(v))
+	}
+	if net, ok := g.Lookup("net"); !ok {
+		t.Error("net is missing")
+	} else if slices.Contains(net.Imports, "C") {
+		t.Errorf("net still lists C: %v", net.Imports)
+	}
+
+	// unsafe is the other pseudo-package people think of, and it is not one.
+	// go list gives it a record and marks it standard, so it stays.
+	if !slices.Contains(g.DepsOf("example.com/app"), "unsafe") {
+		t.Error("unsafe was dropped, and it is a real package")
+	}
+}
+
+func TestParseRejectsBadOutput(t *testing.T) {
+	if _, err := parse(strings.NewReader(`{"ImportPath": "a"} not json`)); err == nil {
+		t.Fatal("parse accepted malformed output")
+	}
+}
+
 func TestDepsOf(t *testing.T) {
 	g := load(t, "./...")
 

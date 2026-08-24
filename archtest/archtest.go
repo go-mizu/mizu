@@ -69,9 +69,23 @@ func Load(dir string, patterns ...string) (*Graph, error) {
 		return nil, err
 	}
 
+	g, err := parse(bytes.NewReader(out))
+	if err != nil {
+		return nil, err
+	}
+	if len(g.roots) == 0 {
+		return nil, fmt.Errorf("archtest: %v matched no packages in %s", patterns, dir)
+	}
+	return g, nil
+}
+
+// parse reads the stream of JSON objects that go list -deps -json writes.
+// It is separate from Load so that the decoding can be tested against output
+// the local toolchain would not produce, cgo being the one that matters.
+func parse(r io.Reader) (*Graph, error) {
 	g := &Graph{pkgs: make(map[string]*Package)}
 
-	dec := json.NewDecoder(bytes.NewReader(out))
+	dec := json.NewDecoder(r)
 	for {
 		var raw struct {
 			ImportPath string
@@ -89,7 +103,7 @@ func Load(dir string, patterns ...string) (*Graph, error) {
 		p := &Package{
 			ImportPath: raw.ImportPath,
 			Standard:   raw.Standard,
-			Imports:    raw.Imports,
+			Imports:    withoutPseudoImports(raw.Imports),
 		}
 		if raw.Module != nil {
 			p.Module = raw.Module.Path
@@ -99,10 +113,26 @@ func Load(dir string, patterns ...string) (*Graph, error) {
 			g.roots = append(g.roots, p.ImportPath)
 		}
 	}
-	if len(g.roots) == 0 {
-		return nil, fmt.Errorf("archtest: %v matched no packages in %s", patterns, dir)
-	}
 	return g, nil
+}
+
+// withoutPseudoImports drops "C" from an import list.
+//
+// "C" is not a package. It is the marker that tells the compiler a file uses
+// cgo, and go list reports it as an import while never reporting a package
+// record for it. Left in, it looks like a dependency on something outside the
+// standard library, which is how net ends up failing a rule about the
+// standard library on any platform where it resolves DNS through cgo.
+//
+// Whether a package uses cgo is a real question and a different one. It is
+// not answered by pretending "C" is a dependency.
+func withoutPseudoImports(imports []string) []string {
+	i := slices.Index(imports, "C")
+	if i < 0 {
+		return imports
+	}
+	out := slices.Clone(imports)
+	return slices.Delete(out, i, i+1)
 }
 
 func run(dir string, args ...string) ([]byte, error) {
