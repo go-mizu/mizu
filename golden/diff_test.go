@@ -142,3 +142,73 @@ func TestLinesIgnoresATrailingNewline(t *testing.T) {
 		t.Errorf("lines of nothing gave %v, want nothing", got)
 	}
 }
+
+// TestEscape covers what a line looks like in a report. A line with nothing
+// odd about it is printed as it is, and anything invisible is quoted, since a
+// difference the reader cannot see is a failure they cannot act on.
+func TestEscape(t *testing.T) {
+	tests := map[string]struct{ in, want string }{
+		"ordinary":          {"hello", "hello"},
+		"a tab inside":      {"a\tb", "a\tb"},
+		"trailing space":    {"value ", `"value "`},
+		"trailing tab":      {"value\t", `"value\t"`},
+		"a control byte":    {"a\x01b", `"a\x01b"`},
+		"a carriage return": {"a\rb", `"a\rb"`},
+		"nothing":           {"", ""},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := escape(tt.in); got != tt.want {
+				t.Errorf("escape(%q) = %s, want %s", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestIsBinaryTrimsAPartialRune pins the reason the sniff loop is there. The
+// cut at 8000 bytes lands inside a three-byte rune, and without the trim the
+// file reads as binary because of where the sniff stopped rather than because
+// of anything in it.
+func TestIsBinaryTrimsAPartialRune(t *testing.T) {
+	var b []byte
+	for len(b) < 8002 {
+		b = append(b, "日"...) // three bytes, so 8000 is not a boundary
+	}
+
+	if isBinary(b) {
+		t.Error("a valid utf-8 file reads as binary because the sniff cut a rune")
+	}
+}
+
+// TestDiffStopsInEveryDirection walks the cap through each of the four runs the
+// report is built from, since each one returns early on its own.
+func TestDiffStopsInEveryDirection(t *testing.T) {
+	long := func(s string, n int) string { return strings.Repeat(s+"\n", n) }
+
+	tests := map[string]struct{ want, got string }{
+		"the leading context is long": {
+			want: long("same", 100) + long("old", 100),
+			got:  long("same", 100) + long("new", 100),
+		},
+		"only the golden file is long": {
+			want: long("old", 100),
+			got:  "new\n",
+		},
+		"only what the test produced is long": {
+			want: "old\n",
+			got:  long("new", 100),
+		},
+		"the trailing context is long": {
+			want: "old\n" + long("same", 100),
+			got:  "new\n" + long("same", 100),
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			out := diff("x", []byte(tt.want), []byte(tt.got))
+			if n := strings.Count(out, "\n"); n > maxLines+6 {
+				t.Errorf("the report is %d lines, want it capped near %d", n, maxLines)
+			}
+		})
+	}
+}

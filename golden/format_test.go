@@ -1,6 +1,7 @@
 package golden
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -159,4 +160,28 @@ func TestAssertSQLStillSeesARealChange(t *testing.T) {
 	AssertSQL(r, "select id, name from users", dir)
 
 	r.says(t, "select id from users", "select id, name from users")
+}
+
+// TestAssertJSONReportsAValueItCannotEncode keeps the failure at the assertion
+// rather than letting a channel or a function reach the comparison as an empty
+// document that happens to match.
+func TestAssertJSONReportsAValueItCannotEncode(t *testing.T) {
+	r, dir := newRecorder(t, "TestThing")
+
+	AssertJSON(r, make(chan int), dir)
+
+	r.says(t, "cannot marshal", "chan int")
+}
+
+// TestAssertJSONTakesRawMessage is the third of the three pass-through cases,
+// for a test holding a document it decoded and did not want re-encoded.
+func TestAssertJSONTakesRawMessage(t *testing.T) {
+	r, dir := newRecorder(t, "TestThing")
+
+	updating(t, func() { AssertJSON(r, json.RawMessage(`{"a":1}`), dir) })
+	AssertJSON(r, map[string]int{"a": 1}, dir)
+
+	if r.failed {
+		t.Errorf("a RawMessage did not match the value it encodes: %s", r.msg)
+	}
 }

@@ -32,7 +32,17 @@ func (r *recorder) Errorf(f string, a ...any) { r.fail(fmt.Sprintf(f, a...)) }
 func (r *recorder) Fatalf(f string, a ...any) { r.fail(fmt.Sprintf(f, a...)) }
 func (r *recorder) Fatal(a ...any)            { r.fail(fmt.Sprint(a...)) }
 func (r *recorder) Error(a ...any)            { r.fail(fmt.Sprint(a...)) }
-func (r *recorder) fail(msg string)           { r.failed = true; r.msg = msg }
+
+// fail keeps the first message rather than the last. A real Fatalf stops the
+// goroutine and this cannot, so an assertion that gave up part way through
+// carries on here and fails a second time on the consequences of the first.
+// The first one is the one that says what went wrong.
+func (r *recorder) fail(msg string) {
+	if !r.failed {
+		r.msg = msg
+	}
+	r.failed = true
+}
 
 // says checks that the assertion failed and that its message mentions each of
 // want, which is how every test here that is about wording is written.
@@ -246,5 +256,44 @@ func TestScrubTakesAPatternOfYourOwn(t *testing.T) {
 func TestPackageArgNamesThisPackage(t *testing.T) {
 	if got := packageArg(&recorder{}); got != "./golden" {
 		t.Errorf("packageArg gave %q, want ./golden", got)
+	}
+}
+
+// TestAssertReportsAFileItCannotRead is the read failure that is not a missing
+// file, where the advice to run -update would be wrong and the error itself is
+// the whole story.
+func TestAssertReportsAFileItCannotRead(t *testing.T) {
+	dir := t.TempDir()
+	r := &recorder{name: "TestThing"}
+
+	// A directory where the golden file should be. Reading it fails with
+	// something that is not os.ErrNotExist, which is the branch under test.
+	if err := os.Mkdir(filepath.Join(dir, "TestThing.golden"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+
+	Assert(r, []byte("x"), Dir(dir))
+	r.says(t, "TestThing.golden")
+	if strings.Contains(r.msg, "-update") {
+		t.Errorf("the failure suggests -update for an error -update will not fix:\n%s", r.msg)
+	}
+}
+
+// TestAssertReportsAFileItCannotWrite covers the other half: -update is on and
+// the file cannot be written, which is a real thing on a read-only checkout and
+// a confusing one if the test simply passes.
+func TestAssertReportsAFileItCannotWrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "wall"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := &recorder{name: "TestThing"}
+
+	// The parent of the golden file is a regular file, so making the directory
+	// fails before anything is written.
+	updating(t, func() { Assert(r, []byte("x"), Dir(filepath.Join(dir, "wall", "under"))) })
+
+	if !r.failed {
+		t.Fatal("writing into a path that is not a directory passed, want it to fail")
 	}
 }
