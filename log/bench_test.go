@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -192,5 +194,39 @@ func BenchmarkSampling(b *testing.B) {
 				log.LogAttrs(ctx, slog.LevelInfo, "request", slog.Int("status", 200))
 			}
 		})
+	})
+}
+
+// BenchmarkFile is what rotation costs on the path a record takes, which is a
+// comparison and an add on top of the write. The file itself is the thing being
+// measured next to it: an operating system write of a hundred bytes.
+func BenchmarkFile(b *testing.B) {
+	ctx := context.Background()
+	record := func(b *testing.B, w io.Writer) {
+		log := slog.New(NewJSONHandler(w, JSONOptions{}))
+		b.ReportAllocs()
+		for b.Loop() {
+			log.LogAttrs(ctx, slog.LevelInfo, "request", slog.String("path", "/posts"), slog.Int("status", 200))
+		}
+	}
+
+	b.Run("file", func(b *testing.B) {
+		f, err := NewFile(filepath.Join(b.TempDir(), "app.log"), RotateOptions{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer f.Close()
+		record(b, f)
+	})
+
+	// The same writes without the rotating in front of them, to say what the
+	// rotating costs and what the file system does.
+	b.Run("os.File", func(b *testing.B) {
+		f, err := os.Create(filepath.Join(b.TempDir(), "app.log"))
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer f.Close()
+		record(b, f)
 	})
 }

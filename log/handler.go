@@ -2,7 +2,9 @@ package log
 
 import (
 	"errors"
+	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 
@@ -85,6 +87,22 @@ func kindOf(err error) (errs.Kind, bool) {
 	}
 	k := errs.KindOf(err)
 	return k, k != errs.Internal
+}
+
+// isTerminal says whether a writer is a terminal, which is what decides colour
+// and, when a configuration does not say, the format.
+//
+// It asks the writer whether it is a character device rather than importing a
+// terminal package, which is the whole of what such a package would do here. A
+// pipe, a file and a container's output are all not one, which is the answer
+// that matters.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 // levelTag is the three letters a level prints as. It is a comparison rather

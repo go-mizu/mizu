@@ -2,10 +2,14 @@ package log_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/go-mizu/mizu/config"
 	"github.com/go-mizu/mizu/ctxdata"
 	"github.com/go-mizu/mizu/errs"
 	"github.com/go-mizu/mizu/log"
@@ -171,4 +175,86 @@ type fixed struct{ slog.Handler }
 func (h fixed) Handle(ctx context.Context, r slog.Record) error {
 	r.Time = time.Date(2026, 8, 24, 10, 44, 2, 113_000_000, time.UTC)
 	return h.Handler.Handle(ctx, r)
+}
+
+// ExampleNew builds the logger a configuration asks for, which is what an
+// application does once at startup and never again.
+func ExampleNew() {
+	dir, err := os.MkdirTemp("", "log")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer os.RemoveAll(dir)
+
+	cfg := config.Log{Level: slog.LevelInfo, Format: "json", Output: filepath.Join(dir, "app.log")}
+	cfg.Rotate.MaxSizeMB = 10
+	cfg.Rotate.MaxFiles = 5
+
+	logger, closer, err := log.New(cfg)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	logger.Debug("this one is below the level")
+	logger.Info("request", "status", 200)
+	if err := closer.Close(); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	written, err := os.ReadFile(cfg.Output)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	var record struct {
+		Level  string `json:"level"`
+		Msg    string `json:"msg"`
+		Status int    `json:"status"`
+	}
+	if err := json.Unmarshal(written, &record); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Printf("%s %s status=%d\n", record.Level, record.Msg, record.Status)
+
+	// Output:
+	// INFO request status=200
+}
+
+// ExampleNewFile writes to a file that rotates, and rotates it by hand, which
+// is what a program does when something tells it to.
+func ExampleNewFile() {
+	dir, err := os.MkdirTemp("", "log")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer os.RemoveAll(dir)
+
+	f, err := log.NewFile(filepath.Join(dir, "app.log"), log.RotateOptions{MaxSizeMB: 10})
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer f.Close()
+
+	l := slog.New(log.NewJSONHandler(f, log.JSONOptions{}))
+	l.Info("before")
+	if err := f.Rotate(); err != nil {
+		fmt.Println(err)
+		return
+	}
+	l.Info("after")
+
+	names, err := filepath.Glob(filepath.Join(dir, "*.log"))
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(len(names), "files")
+
+	// Output:
+	// 2 files
 }
