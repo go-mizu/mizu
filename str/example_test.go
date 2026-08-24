@@ -222,3 +222,88 @@ func ExampleUnwrap() {
 	// value
 	// "value
 }
+
+func ExampleAscii() {
+	fmt.Println(str.Ascii("crème brûlée"))
+	fmt.Println(str.Ascii("Køge Æblegrød"))
+	// A script with no ASCII spelling is dropped rather than guessed at.
+	fmt.Printf("%q\n", str.Ascii("日本語"))
+	// Output:
+	// creme brulee
+	// Koge AEblegrod
+	// ""
+}
+
+func ExampleSlug() {
+	fmt.Println(str.Slug("Hello, World!"))
+	fmt.Println(str.Slug("crème brûlée 2026"))
+	// Output:
+	// hello-world
+	// creme-brulee-2026
+}
+
+func ExampleOrdinal() {
+	for _, n := range []int{1, 2, 3, 11, 21, 112} {
+		fmt.Print(str.Ordinal(n), " ")
+	}
+	fmt.Println()
+	// Output: 1st 2nd 3rd 11th 21st 112th
+}
+
+func ExampleFinish() {
+	fmt.Println(str.Finish("https://example.com", "/"))
+	// Repeats collapse, so this settles after one call.
+	fmt.Println(str.Finish("https://example.com///", "/"))
+	// Output:
+	// https://example.com/
+	// https://example.com/
+}
+
+func ExampleStart() {
+	fmt.Println(str.Start("api/users", "/"))
+	fmt.Println(str.Start("//api/users", "/"))
+	// Output:
+	// /api/users
+	// /api/users
+}
+
+func ExampleReplaceLast() {
+	fmt.Println(str.ReplaceLast("a, b, c", ", ", " and "))
+	// Output: a, b and c
+}
+
+func ExamplePlural() {
+	for _, w := range []string{"user", "city", "person", "sheep", "analysis"} {
+		fmt.Print(str.Plural(w), " ")
+	}
+	fmt.Println()
+	// Output: users cities people sheep analyses
+}
+
+func ExampleSingular() {
+	for _, w := range []string{"users", "cities", "people", "sheep", "analyses"} {
+		fmt.Print(str.Singular(w), " ")
+	}
+	fmt.Println()
+	// Output: user city person sheep analysis
+}
+
+func ExamplePluralN() {
+	for _, n := range []int{0, 1, 2} {
+		fmt.Printf("%d %s\n", n, str.PluralN("file", n))
+	}
+	// Output:
+	// 0 files
+	// 1 file
+	// 2 files
+}
+
+// The case of the word is kept, which is what makes this usable on a type name
+// on its way to becoming a table name.
+func ExamplePlural_case() {
+	fmt.Println(str.Plural("Person"))
+	fmt.Println(str.Snake(str.Plural("OrderLineItem")))
+	// Output:
+	// People
+	// order_line_items
+}

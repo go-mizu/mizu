@@ -212,3 +212,68 @@ func BenchmarkTakeFromAShortString(b *testing.B) {
 		sinkStr = str.Take("the quick", 5)
 	}
 }
+
+func BenchmarkAscii(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Ascii("Crème Brûlée à la Køge")
+	}
+}
+
+func BenchmarkAsciiPlain(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Ascii("the quick brown fox")
+	}
+}
+
+func BenchmarkSlug(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Slug("Hello, World! A Title With Punctuation.")
+	}
+}
+
+func BenchmarkOrdinal(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Ordinal(112)
+	}
+}
+
+func BenchmarkFinish(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Finish("https://example.com", "/")
+	}
+}
+
+func BenchmarkReplaceLast(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.ReplaceLast(plainASCII, "fox", "cat")
+	}
+}
+
+// BenchmarkPluralRule and BenchmarkPluralIrregular are separate because they
+// take different paths: one is a suffix test and the other is a map lookup.
+func BenchmarkPluralRule(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Plural("category")
+	}
+}
+
+func BenchmarkPluralIrregular(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Plural("person")
+	}
+}
+
+func BenchmarkSingular(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Singular("categories")
+	}
+}
