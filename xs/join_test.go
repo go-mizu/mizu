@@ -160,3 +160,62 @@ func TestCycleReadsTheInputEveryTimeRound(t *testing.T) {
 		t.Errorf("it read the input %d times to produce five elements, want 3", starts)
 	}
 }
+
+func TestInterleave(t *testing.T) {
+	a := slices.Values([]int{1, 4, 7})
+	b := slices.Values([]int{2, 5, 8})
+	c := slices.Values([]int{3, 6, 9})
+
+	got := slices.Collect(xs.Interleave(a, b, c))
+	if want := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}; !slices.Equal(got, want) {
+		t.Errorf("Interleave gave %v, want %v", got, want)
+	}
+}
+
+// TestInterleaveCarriesOnWithoutTheShortOnes is the difference from Zip. A
+// sequence that runs out drops out and the rest keep going.
+func TestInterleaveCarriesOnWithoutTheShortOnes(t *testing.T) {
+	a := slices.Values([]int{1})
+	b := slices.Values([]int{2, 20, 200})
+	c := slices.Values([]int{3, 30})
+
+	got := slices.Collect(xs.Interleave(a, b, c))
+	if want := []int{1, 2, 3, 20, 30, 200}; !slices.Equal(got, want) {
+		t.Errorf("Interleave gave %v, want %v", got, want)
+	}
+}
+
+func TestInterleaveWithNothing(t *testing.T) {
+	if got := slices.Collect(xs.Interleave[int]()); len(got) != 0 {
+		t.Errorf("Interleave of nothing gave %v, want nothing", got)
+	}
+}
+
+func TestInterleaveWithOne(t *testing.T) {
+	got := slices.Collect(xs.Interleave(slices.Values([]int{1, 2, 3})))
+	if want := []int{1, 2, 3}; !slices.Equal(got, want) {
+		t.Errorf("Interleave of one sequence gave %v, want %v", got, want)
+	}
+}
+
+func TestInterleaveWhenEveryOneIsEmpty(t *testing.T) {
+	empty := slices.Values([]int(nil))
+	if got := slices.Collect(xs.Interleave(empty, empty)); len(got) != 0 {
+		t.Errorf("Interleave gave %v, want nothing", got)
+	}
+}
+
+func TestInterleaveStopsWhenTheCallerDoes(t *testing.T) {
+	a, readA := counted([]int{1, 2, 3})
+	b, readB := counted([]int{4, 5, 6})
+
+	for range xs.Interleave(a, b) {
+		break
+	}
+	if *readA != 1 {
+		t.Errorf("it read %d elements of the first sequence, want 1", *readA)
+	}
+	if *readB != 0 {
+		t.Errorf("it read %d elements of the second sequence, want none", *readB)
+	}
+}

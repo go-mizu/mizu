@@ -186,3 +186,167 @@ func ExampleCycle() {
 	// Output:
 	// [red green blue red green]
 }
+
+func ExampleEnumerate() {
+	lines := slices.Values([]string{"package main", "import \"fmt\"", "func main() {}"})
+
+	for i, line := range xs.Enumerate(lines) {
+		fmt.Printf("%d  %s\n", i+1, line)
+	}
+
+	// Output:
+	// 1  package main
+	// 2  import "fmt"
+	// 3  func main() {}
+}
+
+// ExampleZip ends with the shorter of the two, so the fourth name is not
+// reached and the fourth score is never read.
+func ExampleZip() {
+	names := slices.Values([]string{"ana", "ben", "cleo"})
+	scores := slices.Values([]int{10, 20, 30, 40})
+
+	for name, score := range xs.Zip(names, scores) {
+		fmt.Println(name, score)
+	}
+
+	// Output:
+	// ana 10
+	// ben 20
+	// cleo 30
+}
+
+// ExampleZip_endless is the usual reason to reach for it. One side decides how
+// long the result is and the other one supplies whatever it needs.
+func ExampleZip_endless() {
+	rows := slices.Values([]string{"ana", "ben", "cleo"})
+	stripes := xs.Cycle(slices.Values([]string{"light", "dark"}))
+
+	for name, stripe := range xs.Zip(rows, stripes) {
+		fmt.Println(name, stripe)
+	}
+
+	// Output:
+	// ana light
+	// ben dark
+	// cleo light
+}
+
+// ExampleUnzip is the one function here that collects, because two sequences
+// read at different speeds cannot come out of one without somewhere to keep the
+// difference.
+func ExampleUnzip() {
+	pairs := func(yield func(string, int) bool) {
+		yield("ana", 10)
+		yield("ben", 20)
+	}
+
+	names, scores := xs.Unzip(pairs)
+	fmt.Println(names, scores)
+
+	// Output:
+	// [ana ben] [10 20]
+}
+
+func ExampleFlatten() {
+	pages := slices.Values([]iter.Seq[string]{
+		slices.Values([]string{"a", "b"}),
+		slices.Values([]string{"c"}),
+	})
+
+	fmt.Println(slices.Collect(xs.Flatten(pages)))
+
+	// Output:
+	// [a b c]
+}
+
+// ExampleFlatMap over a sequence of slices is what [xs.Flatten] would be if it
+// took slices, and slices.Values is the whole of the difference.
+func ExampleFlatMap() {
+	posts := slices.Values([][]string{{"go", "http"}, {"go"}})
+	fmt.Println(slices.Collect(xs.FlatMap(posts, slices.Values)))
+
+	// Output:
+	// [go http go]
+}
+
+// ExampleFlatMap_dropping shows the filter half. An element that turns into an
+// empty sequence is not in the result at all.
+func ExampleFlatMap_dropping() {
+	in := slices.Values([]string{"12", "not a number", "34"})
+
+	numbers := xs.FlatMap(in, func(s string) iter.Seq[int] {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return slices.Values([]int(nil))
+		}
+		return slices.Values([]int{n})
+	})
+
+	fmt.Println(slices.Collect(numbers))
+
+	// Output:
+	// [12 34]
+}
+
+// ExampleChunk turns a sequence of any length into work of a fixed size, which
+// is what a bulk insert or a batch API wants.
+func ExampleChunk() {
+	ids := slices.Values([]int{1, 2, 3, 4, 5})
+
+	for batch := range xs.Chunk(ids, 2) {
+		fmt.Println("loading", batch)
+	}
+
+	// Output:
+	// loading [1 2]
+	// loading [3 4]
+	// loading [5]
+}
+
+// ExampleWindow is for looking at neighbours. Batches from [xs.Chunk] do not
+// overlap and these do, which is what makes a difference between one element
+// and the next possible to write.
+func ExampleWindow() {
+	prices := slices.Values([]int{100, 104, 99, 99})
+
+	for pair := range xs.Window(prices, 2) {
+		fmt.Printf("%+d\n", pair[1]-pair[0])
+	}
+
+	// Output:
+	// +4
+	// -5
+	// +0
+}
+
+// ExampleUnique keeps the first of each and the order they arrived in.
+// slices.Compact is the one that only looks at neighbours.
+func ExampleUnique() {
+	tags := slices.Values([]string{"go", "http", "go", "db", "http"})
+	fmt.Println(slices.Collect(xs.Unique(tags)))
+
+	// Output:
+	// [go http db]
+}
+
+func ExampleUniqueBy() {
+	names := slices.Values([]string{"Ana", "BEN", "ana", "Cleo"})
+	fmt.Println(slices.Collect(xs.UniqueBy(names, strings.ToLower)))
+
+	// Output:
+	// [Ana BEN Cleo]
+}
+
+// ExampleInterleave takes one from each in turn, and a sequence that runs out
+// drops away while the rest carry on.
+func ExampleInterleave() {
+	europe := slices.Values([]string{"eu-1", "eu-2", "eu-3"})
+	asia := slices.Values([]string{"ap-1"})
+	americas := slices.Values([]string{"us-1", "us-2"})
+
+	fmt.Println(slices.Collect(xs.Interleave(europe, asia, americas)))
+
+	// Output:
+	// [eu-1 ap-1 us-1 eu-2 us-2 eu-3]
+}
