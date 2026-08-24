@@ -102,18 +102,24 @@ This is not a cleanup pass before 1.0, it is part of the milestone that introduc
 If something is exported it is documented and supported, and if it should not be either of those then it should not be exported.
 Hiding a package behind `internal/` is a way of avoiding that decision rather than making it.
 
-**The standard library, and nothing else.**
-`go get github.com/go-mizu/mizu` adds one line to your `go.mod` and pulls in no transitive graph.
-No third-party upgrade to schedule, no advisory to read that is not ours, no diamond conflict with whatever else you depend on.
+**The standard library and `golang.org/x`, and nothing else.**
+`go get github.com/go-mizu/mizu` pulls in a graph you can read in one screen.
+No third-party upgrade to schedule, no advisory to read that is not ours or the Go team's, no diamond conflict with whatever else you depend on.
 `deps_test.go` checks both the import graph and the `require` list, so a dependency cannot arrive through a test either.
 
-A library that needs a third-party package goes in a module of its own, the way `tools/milestonebot` does with its YAML parser.
+The `golang.org/x` repositories count as the standard library here.
+They go through the same proposal process, they are reviewed by the same people, they are where standard library packages are incubated, and they are in the same vulnerability database.
+The rule was absolute until M0-07, when it meant writing argon2id and BLAKE2b by hand, and then Blowfish after that to read a bcrypt hash out of an existing database.
+A password hash written by somebody who has not written one before is code where a bug is silent and the tests pass either way, so the rule was costing security rather than buying it.
+`D-075` in the decision register has the argument in full.
+
+Adding one is still a change with a reason attached, in `allowedModules` and in the review.
+Today the list is `golang.org/x/crypto` and the `golang.org/x/sys` it brings with it.
+
+Everything else is a third-party dependency and stays out of the core.
+A library that needs one goes in a module of its own, the way `tools/milestonebot` does with its YAML parser.
 A nested module keeps its dependencies to itself, and somebody who imports the toolkit never sees them.
 That is also where database drivers and cloud clients will live.
-
-The rule covers `golang.org/x/*` as well.
-Those packages are maintained by the Go team and they are still separate modules that a consumer has to resolve, so they get the same treatment as anything else: a real reason, written down in the decision register, and an entry in `allowedModules` saying what it buys.
-The list is empty today.
 
 **Doc comments say what it does not do.**
 The sentence that saves somebody an hour is almost never the one describing the happy path.
