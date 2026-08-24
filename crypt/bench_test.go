@@ -174,6 +174,68 @@ func BenchmarkAEAD(b *testing.B) {
 	}
 }
 
+func BenchmarkSign(b *testing.B) {
+	c := benchCrypt(b)
+
+	for _, size := range sizes {
+		message := make([]byte, size)
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+
+			for b.Loop() {
+				sinkSlice = c.Sign(message)
+			}
+		})
+	}
+}
+
+func BenchmarkVerify(b *testing.B) {
+	c := benchCrypt(b)
+
+	for _, size := range sizes {
+		signed := c.Sign(make([]byte, size))
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+
+			for b.Loop() {
+				sinkSlice, sinkErr = c.Verify(signed)
+			}
+		})
+	}
+}
+
+// BenchmarkSeal and BenchmarkUnseal are what a session cookie costs on every
+// request, encoding and all.
+func BenchmarkSeal(b *testing.B) {
+	c := benchCrypt(b)
+	v := benchSession{User: "42", Admin: true}
+	b.ReportAllocs()
+
+	for b.Loop() {
+		sinkString, sinkErr = Seal(c, v)
+	}
+}
+
+func BenchmarkUnseal(b *testing.B) {
+	c := benchCrypt(b)
+	token, err := Seal(c, benchSession{User: "42", Admin: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+
+	for b.Loop() {
+		sinkSession, sinkErr = Unseal[benchSession](c, token)
+	}
+}
+
+type benchSession struct {
+	User  string `json:"user"`
+	Admin bool   `json:"admin"`
+}
+
 // BenchmarkNeedsRewrap is a header read with no decryption, which is what a
 // rewrap job does to every row it looks at.
 func BenchmarkNeedsRewrap(b *testing.B) {
@@ -197,12 +259,13 @@ func benchCrypt(b *testing.B) *Crypt {
 }
 
 var (
-	sinkKey    Key
-	sinkBytes8 [8]byte
-	sinkBool   bool
-	sinkSlice  []byte
-	sinkString string
-	sinkInt    int
-	sinkErr    error
-	sinkAEAD   cipher.AEAD
+	sinkKey     Key
+	sinkBytes8  [8]byte
+	sinkBool    bool
+	sinkSlice   []byte
+	sinkString  string
+	sinkInt     int
+	sinkErr     error
+	sinkAEAD    cipher.AEAD
+	sinkSession benchSession
 )
