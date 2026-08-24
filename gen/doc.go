@@ -15,6 +15,8 @@
 //			// and t.Object is the declaration to generate from
 //		}
 //	}
+//	w := &gen.Writer{Dir: "."}
+//	results, err := w.Write(files...)
 //
 // # Markers
 //
@@ -39,6 +41,29 @@
 // The same rule is why anything reading markers off an [go/ast.CommentGroup]
 // by hand has to walk Doc.List. The marker is in the parsed file. It is not in
 // Text.
+//
+// # Writing
+//
+// [Writer] formats what a generator produced, compares it with what is on
+// disk, and writes only the files that differ, through a temporary file and a
+// rename.
+//
+// Comparing first is not an optimisation. Writing a file that did not change
+// moves its mtime, which wakes every watcher and rebuilds everything
+// downstream of it, and a generator that does that on every save is one people
+// turn off. It is also most of the cost: on an SSD a rewrite is a few
+// milliseconds and a compare is tens of microseconds, so a run that changes
+// nothing finishes in the time a single write would have taken.
+//
+// Two rules keep the writer off hand-written code. Every file it writes has to
+// carry the header from [Header], and a file already on disk without one is
+// never overwritten. Together they mean the writer only ever replaces its own
+// output, and it can tell which files those are by looking at them rather than
+// by keeping a list.
+//
+// [Writer.Check] is what mizu gen --check runs. It reports what would change
+// and touches nothing, using the same code as a real run, which is the only
+// way the answer is worth anything in CI.
 //
 // # Why not go/packages
 //
