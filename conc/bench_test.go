@@ -1,11 +1,13 @@
 package conc_test
 
 import (
+	"bytes"
 	"context"
 	"slices"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-mizu/mizu/conc"
 )
@@ -234,6 +236,66 @@ func BenchmarkRace(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		sink, err = conc.Race(ctx, winner, loser, loser)
+	}
+}
+
+// BenchmarkDebounce is the call that does not run anything, which is the one
+// that happens over and over. Every one of them stops a timer and starts
+// another.
+func BenchmarkDebounce(b *testing.B) {
+	nudge := conc.Debounce(time.Hour, func() {})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		nudge()
+	}
+}
+
+// BenchmarkThrottle is the call that is turned away, since the one that runs is
+// whatever fn costs plus a timer.
+func BenchmarkThrottle(b *testing.B) {
+	report := conc.Throttle(time.Hour, func() {})
+	report()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		report()
+	}
+}
+
+// BenchmarkOnce is the call after the first, which is what a lazily built
+// dependency pays on every use.
+func BenchmarkOnce(b *testing.B) {
+	region := conc.Once(func() (int, error) { return 1, nil })
+	region()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		sink, err = region()
+	}
+}
+
+// BenchmarkPool is a Get and a Put together, since neither happens without the
+// other.
+func BenchmarkPool(b *testing.B) {
+	p := conc.Pool(func() *bytes.Buffer { return new(bytes.Buffer) })
+
+	b.ReportAllocs()
+	for b.Loop() {
+		v := p.Get()
+		p.Put(v)
+	}
+}
+
+// BenchmarkSyncPool is the same thing untyped, so the difference between the
+// two is what the type costs. It should be nothing.
+func BenchmarkSyncPool(b *testing.B) {
+	p := sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		v := p.Get().(*bytes.Buffer)
+		p.Put(v)
 	}
 }
 
