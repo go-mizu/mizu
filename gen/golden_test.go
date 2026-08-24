@@ -261,7 +261,11 @@ func golden(t *testing.T, name string, got []byte) {
 	if err != nil {
 		t.Fatalf("%v\nrun go test ./gen -update to write the golden files", err)
 	}
-	if !bytes.Equal(got, want) {
-		t.Errorf("%s does not match its golden file.\nrun go test ./gen -update and read the diff\n\ngot:\n%s\nwant:\n%s", name, got, want)
+	if bytes.Equal(got, want) {
+		return
 	}
+	if bytes.Equal(got, bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))) {
+		t.Fatalf("%s differs from its golden file only in line endings, so this checkout turned LF into CRLF.\nthe repository's .gitattributes asks for LF, and git config core.autocrlf=false makes it stick", name)
+	}
+	t.Errorf("%s does not match its golden file.\nrun go test ./gen -update and read the diff\n\ngot:\n%s\nwant:\n%s", name, got, want)
 }
