@@ -128,6 +128,10 @@ Pages live in [go-mizu/docs](https://github.com/go-mizu/docs) and every code sam
 No sample is written in markdown.
 If a sample would not compile, the site build fails, which is the entire point.
 
+The site checklist stays in this repository even though the work merges over there, because the roadmap is one list and splitting it across three repositories would mean nobody could see the whole thing.
+So a pull request in go-mizu/docs or go-mizu/shizuku writes `Checklist: site-04` exactly as one here would, and the same tool ticks the box on [issue #12](https://github.com/go-mizu/mizu/issues/12).
+Those repositories check `tools/milestonebot` out of this one rather than keeping a copy, so a fix to the labelling rules lands in all three at once.
+
 ## Reporting a security problem
 
 Open a [private advisory](https://github.com/go-mizu/mizu/security/advisories/new) rather than an issue.

@@ -30,20 +30,31 @@ func TestTypeFromTitle(t *testing.T) {
 func TestAreasFromPaths(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
+		repo  string
 		paths []string
 		want  string
 	}{
-		{"seams", []string{"errs/kind.go", "errs/kind_test.go"}, "area/seams"},
-		{"two areas", []string{"cache/cache.go", "db/db.go"}, "area/async area/db"},
-		{"codegen beats cli", []string{"cmd/mizu/gen/rpc.go"}, "area/codegen"},
-		{"cli", []string{"cmd/mizu/new.go"}, "area/cli"},
-		{"workflows", []string{".github/workflows/ci.yml"}, "area/ci"},
-		{"the bot is repository tooling", []string{"tools/milestonebot/main.go"}, "area/ci"},
-		{"top level router file", []string{"router.go"}, "area/router"},
-		{"unknown path gets nothing", []string{"NOTICE"}, ""},
+		{"seams", "go-mizu/mizu", []string{"errs/kind.go", "errs/kind_test.go"}, "area/seams"},
+		{"two areas", "go-mizu/mizu", []string{"cache/cache.go", "db/db.go"}, "area/async area/db"},
+		{"codegen beats cli", "go-mizu/mizu", []string{"cmd/mizu/gen/rpc.go"}, "area/codegen"},
+		{"cli", "go-mizu/mizu", []string{"cmd/mizu/new.go"}, "area/cli"},
+		{"workflows", "go-mizu/mizu", []string{".github/workflows/ci.yml"}, "area/ci"},
+		{"the bot is repository tooling", "go-mizu/mizu", []string{"tools/milestonebot/main.go"}, "area/ci"},
+		{"top level router file", "go-mizu/mizu", []string{"router.go"}, "area/router"},
+		{"unknown path gets nothing", "go-mizu/mizu", []string{"NOTICE"}, ""},
+
+		// The same paths mean different things in the three repositories, which
+		// is why each has its own rule set.
+		{"a page in the site", "go-mizu/docs", []string{"content/docs/cache.mdx"}, "area/content"},
+		{"the site application", "go-mizu/docs", []string{"src/layouts/Doc.astro"}, "area/site"},
+		{"the ingest pipeline", "go-mizu/docs", []string{"artefacts/api-index.json"}, "area/artefacts"},
+		{"content is not a site path in the toolkit", "go-mizu/mizu", []string{"content/docs/cache.mdx"}, ""},
+		{"a design token", "go-mizu/shizuku", []string{"css/tokens/color.css"}, "area/tokens"},
+		{"a component beats the token rule by order", "go-mizu/shizuku", []string{"css/button.css"}, "area/components"},
+		{"an unknown repository falls back to the toolkit", "someone/fork", []string{"errs/kind.go"}, "area/seams"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := strings.Join(AreasFromPaths(tc.paths), " ")
+			got := strings.Join(AreasFromPaths(rulesFor(tc.repo), tc.paths), " ")
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}
@@ -97,7 +108,7 @@ func TestClassify(t *testing.T) {
 		Deletions: 40,
 		Labels:    []Label{{Name: "type/feature"}},
 	}
-	got := Classify(pr, []string{"cache/memory.go", "cache/memory_test.go"})
+	got := Classify("go-mizu/mizu", pr, []string{"cache/memory.go", "cache/memory_test.go"})
 	want := "type/feature area/async size/m milestone/M6"
 	if joined := strings.Join(got.Labels(), " "); joined != want {
 		t.Errorf("labels = %q, want %q", joined, want)
@@ -124,11 +135,11 @@ func TestResolveNeverInventsALabel(t *testing.T) {
 
 func TestClassifyMarksBreaking(t *testing.T) {
 	pr := &PullRequest{Title: "refactor(errs)!: rename Kind", Additions: 10}
-	if !Classify(pr, nil).Breaking {
+	if !Classify("go-mizu/mizu", pr, nil).Breaking {
 		t.Error("the exclamation mark in the title should mark it breaking")
 	}
 	pr = &PullRequest{Title: "refactor(errs): rename Kind", Body: "BREAKING CHANGE: Kind is now closed.", Additions: 10}
-	if !Classify(pr, nil).Breaking {
+	if !Classify("go-mizu/mizu", pr, nil).Breaking {
 		t.Error("the footer should mark it breaking")
 	}
 }

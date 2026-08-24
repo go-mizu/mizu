@@ -70,14 +70,17 @@ func TypeFromTitle(title string) (label string, breaking bool) {
 	return typeByPrefix[m[1]], m[3] == "!"
 }
 
-// areaRules maps a path prefix to an area label. The list is ordered from
-// most specific to least, and the first prefix that matches wins, so
-// `cmd/mizu/gen/` reaches codegen before `cmd/` reaches the CLI.
+// An areaRule maps a path prefix to an area label.
+type areaRule struct{ prefix, label string }
+
+// areaRules is the toolkit's rule set. The list is ordered from most specific
+// to least, and the first prefix that matches wins, so `cmd/mizu/gen/` reaches
+// codegen before `cmd/` reaches the CLI.
 //
 // A path that matches nothing gets no area label. That is deliberate: a
 // missing label is a question for the reviewer, and a wrong one is a lie in
 // the search index.
-var areaRules = []struct{ prefix, label string }{
+var areaRules = []areaRule{
 	{".github/", "area/ci"},
 	{"tools/", "area/ci"},
 	{"cmd/mizu/gen/", "area/codegen"},
@@ -134,12 +137,56 @@ var areaRules = []struct{ prefix, label string }{
 	{"blueprints/", "area/cli"},
 }
 
+// siteAreaRules is the rule set for go-mizu/docs, and designAreaRules the one
+// for go-mizu/shizuku. They are separate lists rather than more entries in
+// areaRules because `content/` means nothing in the toolkit and everything in
+// the site, and one table covering three repositories would label by accident.
+var siteAreaRules = []areaRule{
+	{".github/", "area/ci"},
+	{"scripts/", "area/build"},
+	{"artefacts/", "area/artefacts"},
+	{"content/", "area/content"},
+	{"src/", "area/site"},
+	{"public/", "area/site"},
+	{"package", "area/build"},
+	{"astro.config", "area/build"},
+	{"tsconfig", "area/build"},
+}
+
+var designAreaRules = []areaRule{
+	{".github/", "area/ci"},
+	{"scripts/", "area/build"},
+	{"css/tokens", "area/tokens"},
+	{"css/fonts", "area/tokens"},
+	{"fonts/", "area/tokens"},
+	{"css/", "area/components"},
+	{"preview/", "area/preview"},
+	{"docs/", "area/docs"},
+	{"package", "area/build"},
+	{"stylelint.config", "area/build"},
+}
+
+// rulesFor picks the rule set for a repository, given in owner/name form. An
+// unknown repository gets the toolkit's rules, which is the least surprising
+// answer for a fork.
+func rulesFor(repo string) []areaRule {
+	_, name, _ := strings.Cut(repo, "/")
+	switch strings.ToLower(name) {
+	case "docs":
+		return siteAreaRules
+	case "shizuku":
+		return designAreaRules
+	default:
+		return areaRules
+	}
+}
+
 // AreasFromPaths derives the area labels for a set of changed files.
-func AreasFromPaths(paths []string) []string {
+func AreasFromPaths(rules []areaRule, paths []string) []string {
 	seen := map[string]bool{}
 	for _, p := range paths {
 		p = strings.TrimPrefix(p, "./")
-		for _, r := range areaRules {
+		for _, r := range rules {
 			if strings.HasPrefix(p, r.prefix) {
 				seen[r.label] = true
 				break
@@ -208,13 +255,14 @@ func MilestoneLabel(ids []string) string {
 	return "milestone/" + ms
 }
 
-// Classify puts the four rules together.
-func Classify(pr *PullRequest, paths []string) Classification {
+// Classify puts the four rules together. The repository is in owner/name form
+// and only picks the area rule set.
+func Classify(repo string, pr *PullRequest, paths []string) Classification {
 	typ, breaking := TypeFromTitle(pr.Title)
 	ids := ChecklistIDs(pr.Body)
 	return Classification{
 		Type:      typ,
-		Areas:     AreasFromPaths(paths),
+		Areas:     AreasFromPaths(rulesFor(repo), paths),
 		Size:      SizeLabel(pr.Additions, pr.Deletions),
 		Milestone: MilestoneLabel(ids),
 		Breaking:  breaking || strings.Contains(pr.Body, "BREAKING CHANGE:"),

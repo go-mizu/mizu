@@ -67,9 +67,17 @@ func run(args []string) error {
 	// request. They are not when the work happens somewhere else, which is
 	// true of the site: its checklist lives in go-mizu/mizu and its pull
 	// requests merge in go-mizu/docs.
+	//
+	// That case gets its own token if one is set. A workflow token only ever
+	// reaches its own repository, and one token holding both grants is a
+	// bigger key than either job needs.
 	t := c
 	if tracker != nil && *tracker != "" && *tracker != *repo {
-		t = NewClient(*tracker, token)
+		tt := os.Getenv("TRACKING_TOKEN")
+		if tt == "" {
+			tt = token
+		}
+		t = NewClient(*tracker, tt)
 		t.DryRun = *dry
 	}
 
@@ -111,8 +119,10 @@ Common flags:
 Authentication is GITHUB_TOKEN.
 
 Pass -tracking-repo when the checklist lives somewhere other than the
-repository the pull request merged in. That needs a token with write access to
-both, so the workflow token is not enough for it.
+repository the pull request merged in. The tracking repository is then read and
+written with TRACKING_TOKEN if that is set, and with GITHUB_TOKEN if it is not.
+Two tokens is the point: a workflow token only reaches its own repository, and
+one token holding both grants is a bigger key than either job needs.
 
 A pull request names the checklist item it finishes with a trailer in its
 description:

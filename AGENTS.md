@@ -80,6 +80,10 @@ fix(router): keep the trailing slash on a wildcard match
 refactor(errs)!: close the Kind taxonomy
 ```
 
+The same tool runs in go-mizu/docs and go-mizu/shizuku, which check it out of here rather than keeping a copy.
+Each of the three has its own `.github/labels.yml`, and the area rules are chosen by repository name in `classify.go`, because `content/` means nothing here and everything on the site.
+The site checklist stays on issue #12 in this repository even though that work merges in the other two.
+
 To see where things stand without reading eleven issues:
 
 ```bash

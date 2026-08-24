@@ -30,7 +30,7 @@ func LabelPR(ctx context.Context, c *Client, number int, strict bool) error {
 	if err != nil {
 		return err
 	}
-	class := Classify(pr, paths)
+	class := Classify(c.Repo, pr, paths)
 	want, unknown := resolve(class.Labels(), existing)
 	for _, u := range unknown {
 		fmt.Printf("#%d: no label named %q on this repository, skipping it\n", number, u)
@@ -70,8 +70,8 @@ func LabelPR(ctx context.Context, c *Client, number int, strict bool) error {
 // tracker, which is usually the same client. They differ when the work happens
 // in one repository and the checklist lives in another, which is the case for
 // the site: its items are tracked in go-mizu/mizu and merged in go-mizu/docs.
-// That case needs a token with write access to both, so GITHUB_TOKEN is not
-// enough for it.
+// The two clients can carry different tokens, which is how each one gets only
+// the access it needs.
 //
 // Two properties matter more than they look. It is idempotent, so re-running a
 // workflow does not tick anything twice or double-comment. And it fails loudly
