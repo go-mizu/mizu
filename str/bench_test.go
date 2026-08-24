@@ -103,3 +103,112 @@ func BenchmarkSwapCase(b *testing.B) {
 		sinkStr = str.SwapCase(plainASCII)
 	}
 }
+
+func BenchmarkBefore(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Before("user@example.com", "@")
+	}
+}
+
+func BenchmarkAfterLast(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.AfterLast("/var/log/mizu/app.log", "/")
+	}
+}
+
+func BenchmarkBetween(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Between("<title>the page</title>", "<title>", "</title>")
+	}
+}
+
+func BenchmarkSubstrASCII(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Substr(plainASCII, 100, 50)
+	}
+}
+
+func BenchmarkSubstrEmoji(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Substr(emoji, 10, 20)
+	}
+}
+
+func BenchmarkLimit(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Limit(plainASCII, 80, "...")
+	}
+}
+
+func BenchmarkWords(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Words(plainASCII, 20, "...")
+	}
+}
+
+func BenchmarkExcerpt(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Excerpt(plainASCII, "brown", 40, "...")
+	}
+}
+
+func BenchmarkMask(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Mask("4111111111111111", '*', 4)
+	}
+}
+
+func BenchmarkReverseASCII(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Reverse(plainASCII)
+	}
+}
+
+func BenchmarkReverseEmoji(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Reverse(emoji)
+	}
+}
+
+func BenchmarkPadLeft(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.PadLeft("42", 12, "0")
+	}
+}
+
+func BenchmarkPad(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Pad("title", 40, "-")
+	}
+}
+
+// BenchmarkTakeFromALongString and BenchmarkTakeFromAShortString are here as a
+// pair, because what matters is that they cost about the same. Taking the first
+// few characters walks those few characters and stops, so the length of the
+// string behind them does not come into it.
+func BenchmarkTakeFromALongString(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Take(plainASCII, 5)
+	}
+}
+
+func BenchmarkTakeFromAShortString(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		sinkStr = str.Take("the quick", 5)
+	}
+}
