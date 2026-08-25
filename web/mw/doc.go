@@ -11,6 +11,8 @@
 //		mw.Logger(log),
 //		mw.CORS(policy),
 //		mw.Secure(headers),
+//		mw.Compress(),
+//		mw.ETag(),
 //		mw.MaxBody(1<<20),
 //		mw.Timeout(10*time.Second),
 //		mw.MethodOverride(),
@@ -21,7 +23,7 @@
 // Outermost first, which is the order [github.com/go-mizu/mizu/web.Chain] takes
 // them in and the order they are listed above.
 //
-// Five of the pairs are wrong rather than different in the other order, and none
+// Six of the pairs are wrong rather than different in the other order, and none
 // of them look wrong from the outside:
 //
 // [Recover] goes outside everything, because a panic anywhere under it is what
@@ -39,6 +41,14 @@
 // [CORS] goes above anything that does real work, because it answers a preflight
 // itself. An OPTIONS that runs the whole chain first is a session lookup and a
 // database round trip spent answering a question about the route table.
+//
+// [Compress] goes outside [ETag], so the tag is for the page rather than for the
+// compression of it. In the other order a client that takes gzip and a client
+// that does not end up holding two validators for one page, and a cache in front
+// of the service keeps two copies of it.
+//
+// Both go inside [Logger], so the byte count on the log line is what went out
+// rather than what the handler offered.
 //
 // [MethodOverride] goes innermost, next to the router, because it reads the
 // body. Outside [MaxBody] it reads a body that has not been capped, and the ten
@@ -64,12 +74,19 @@
 // ones. [MethodOverride] costs nothing on a request that is not a form post, and
 // a request copy plus a ParseForm on one that is.
 //
+// [Compress] and [ETag] are the two that cost real work, and both cost it only
+// on the responses they act on. Compress holds the first 1400 bytes to find out
+// whether the response is worth compressing, and once it is compressing it takes
+// a gzip or flate writer from a pool and gives it back at the end of the
+// response, which keeps the 32KB window off the allocator. ETag holds the body
+// up to a megabyte and makes one SHA-256 pass over it, so it costs a buffer the
+// size of the response, and a body past that ceiling or a response the handler
+// flushed goes out untouched.
+//
 // # What is not here yet
 //
 // The table in doc 07 section 5.3 has twenty six of these and this package has
-// ten. Compress and ETag are the two left on the response side, and both need a
-// place to sit under [github.com/go-mizu/mizu/web.Recorder] where they can see
-// the bytes, so they arrive together with that. The other twelve each need a
-// package that does not exist yet: sessions and CSRF, the auth guards, rate
-// limiting, tracing and metrics, locales, maintenance mode and Telescope.
+// twelve. The other fourteen each need a package that does not exist yet:
+// sessions and CSRF, the auth guards, rate limiting and signed URLs, tracing and
+// metrics, locales, maintenance mode and Telescope.
 package mw

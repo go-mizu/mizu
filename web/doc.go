@@ -87,9 +87,15 @@
 // wraps the response writer once and http.ResponseController still reaches the
 // server's writer through it.
 //
+// Middleware that wants to change the response body rather than watch it calls
+// [Recorder.Through], which puts a writer underneath the Recorder rather than
+// around it. That is how a compressor sees bytes the handler wrote through
+// [Ctx.Writer], which is the Recorder itself and so has nothing above it.
+//
 // The middleware nearly every service needs is in
 // [github.com/go-mizu/mizu/web/mw], which is where RequestID, RealIP, Logger,
-// Recover, Timeout, MaxBody and Concurrency live.
+// Recover, Timeout, MaxBody, Concurrency, CORS, Secure, MethodOverride, Compress
+// and ETag live.
 //
 // # What is not here yet
 //
