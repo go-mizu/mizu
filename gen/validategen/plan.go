@@ -725,23 +725,27 @@ func exact(ft types.Type, b bnd) bool {
 	if b.kind == bFloat {
 		return k == types.Float64
 	}
+	// The comparisons below are in int64 rather than in int, because the widest
+	// of them is wider than an int on a 32-bit machine and the generator has to
+	// build there whatever it is generating for.
+	n := int64(b.i)
 	switch k {
 	case types.Int8:
-		return b.i >= math.MinInt8 && b.i <= math.MaxInt8
+		return n >= math.MinInt8 && n <= math.MaxInt8
 	case types.Int16:
-		return b.i >= math.MinInt16 && b.i <= math.MaxInt16
+		return n >= math.MinInt16 && n <= math.MaxInt16
 	case types.Int, types.Int32:
-		return b.i >= math.MinInt32 && b.i <= math.MaxInt32
+		return n >= math.MinInt32 && n <= math.MaxInt32
 	case types.Int64:
-		return b.i >= -(1<<53) && b.i <= 1<<53
+		return n >= -(1<<53) && n <= 1<<53
 	case types.Uint8:
-		return b.i >= 0 && b.i <= math.MaxUint8
+		return n >= 0 && n <= math.MaxUint8
 	case types.Uint16:
-		return b.i >= 0 && b.i <= math.MaxUint16
+		return n >= 0 && n <= math.MaxUint16
 	case types.Uint, types.Uint32:
-		return b.i >= 0 && b.i <= math.MaxUint32
+		return n >= 0 && n <= math.MaxUint32
 	case types.Uint64:
-		return b.i >= 0 && b.i <= 1<<53
+		return n >= 0 && n <= 1<<53
 	case types.Float64:
 		return true
 	case types.String:

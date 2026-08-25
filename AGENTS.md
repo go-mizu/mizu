@@ -68,10 +68,11 @@ go -C tools/milestonebot test ./...   # a module of its own
 These carry a header saying a tool wrote them, and an edit by hand is gone at the next run.
 What mizu wrote comes back with `mizu gen`.
 
-| Written by         | Files                   |
-| ------------------ | ----------------------- |
-| mizu gen agents v1 | AGENTS.md               |
-| mizu gen bind v1   | bench/micro/bind_gen.go |
+| Written by           | Files                       |
+| -------------------- | --------------------------- |
+| mizu gen agents v1   | AGENTS.md                   |
+| mizu gen bind v1     | bench/micro/bind_gen.go     |
+| mizu gen validate v1 | bench/micro/validate_gen.go |
 
 ## Notes
 
