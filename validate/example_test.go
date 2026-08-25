@@ -104,6 +104,44 @@ func ExampleIsEmail() {
 	// Output: 1 Email must be an email address.
 }
 
+// The builder is for the rules a struct tag cannot say: one that depends on
+// another field, or on an answer from somewhere else.
+func ExampleV() {
+	in := struct {
+		Type    string
+		Email   string
+		Website string
+		VAT     string
+	}{Type: "company", Email: "someone@localhost", Website: ""}
+
+	taken := false // what a lookup would have said
+
+	v := validate.New()
+	v.Field("email", in.Email).Required().Email().That(!taken, "unique")
+	v.Field("website", in.Website).Optional().URL()
+	v.When(in.Type == "company", func(v *validate.V) {
+		v.Field("vat", in.VAT).Required().Min(4)
+	})
+
+	for field, msgs := range v.Errors().All() {
+		fmt.Println(field, msgs)
+	}
+
+	// Unordered output:
+	// email [Email must be an email address.]
+	// vat [Vat is required.]
+}
+
+// A chain stops at its first failure, so a blank field says the one thing that
+// is wrong with it.
+func ExampleCheck() {
+	v := validate.New()
+	v.Field("email", "").Required().Email().Min(5)
+
+	fmt.Println(v.Errors().Len(), v.Errors().First("email"))
+	// Output: 1 Email is required.
+}
+
 // shouty stands in for a translation, which is a Messages like any other.
 type shouty struct{}
 

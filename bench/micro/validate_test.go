@@ -9,6 +9,37 @@ import (
 func init() {
 	register("validate/report", benchValidateReport)
 	register("validate/format", benchValidateFormat)
+	register("validate/build", benchValidateBuild)
+}
+
+// benchValidateBuild is a builder doing what a handler would: four fields, ten
+// rules, everything passing.
+//
+// The builder is the mode for rules a tag cannot say, so it is the one a
+// handler writes by hand and the one nobody generates. Every rule reads the
+// value's type at runtime, where a generated validator knows it at build time,
+// and that is the cost the row is here to show.
+//
+// It comes to 3 allocations, which is the V, the slice literal in the
+// benchmark, and the closure passed to When. The Check a chain runs through
+// does not escape, so a field costs nothing to start. That is worth pinning:
+// one more field on Check, or one method that takes its address somewhere the
+// compiler cannot see, turns 3 into one allocation per field.
+func benchValidateBuild(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		v := validate.New()
+		v.Field("email", "first.last@example.com").Required().Email()
+		v.Field("title", "A reasonable title").Required().Min(3).Max(120)
+		v.Field("tags", []string{"go", "web"}).Required().Max(5)
+		v.Field("website", "").Optional().URL()
+		v.When(true, func(v *validate.V) {
+			v.Field("id", "01ARZ3NDEKTSV4RRFFQ69G5FAV").Required().ULID()
+		})
+		if err := v.Err(); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 // benchValidateReport is what a rejected form costs after the checks have run:

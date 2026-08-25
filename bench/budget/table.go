@@ -83,6 +83,11 @@ var rows = []Row{
 		Time: 300 * time.Nanosecond, Allocs: 3,
 	},
 	{
+		ID: "validate/build", Group: httpPath, Doc: "08",
+		Op:   "4 fields, 10 rules, all passing, programmatic builder",
+		Time: 500 * time.Nanosecond, Allocs: 3,
+	},
+	{
 		ID: "validate/format", Group: httpPath, Doc: "08",
 		Op:   "An email, a URL, a UUID and an IP address checked, all passing",
 		Time: 600 * time.Nanosecond, Allocs: 2,
