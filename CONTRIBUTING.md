@@ -181,6 +181,9 @@ The hour is nightly, in `.github/workflows/fuzz.yml`, one job per target so that
 
 **Generated code is checked in and deterministic.**
 `mizu gen --check` is clean, and the same input produces byte-identical output across platforms, architectures, `GOMAXPROCS` values, and input order.
+None of that is taken on trust.
+`cmd/mizu/determinism_test.go` copies a fixture package into siblings, hands them to each generator in eight orders at two `GOMAXPROCS` values, and compares the bytes that land on disk, and the `Generator determinism` job runs `mizu gen --check` over this repository on Linux and macOS on both architectures.
+The failure this is looking for is a map ranged over on the way to the output, which is why the same order is tried more than once.
 
 ## Documentation comes first
 
