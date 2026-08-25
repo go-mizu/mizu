@@ -81,6 +81,14 @@
 // Help for a command is printed without parsing its arguments, because "what
 // does this take" is the question somebody asks when they do not have them yet.
 //
+// [App.Before] runs between understanding a command line and running the
+// command, and what it returns runs once the command has finished. It is where
+// the work that belongs to every command goes: reading the configuration the
+// global flags point at, opening what the commands share, starting a profile.
+// It does not run for help, for an unknown command or for a command line that
+// did not parse, because somebody asking what a command takes should not wait
+// for a database to answer first.
+//
 // # Running a command as a process
 //
 // [App.Main] is the whole of a main function. It returns the code to exit with:

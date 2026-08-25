@@ -1,53 +1,44 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/go-mizu/mizu/console"
+	"github.com/go-mizu/mizu/console/consoletest"
 	"github.com/go-mizu/mizu/hash"
 )
 
 // A target of a millisecond is under what the floor costs on any machine, so
 // every test here stops after one measurement. The command is exercised end to
 // end and the suite does not spend ten seconds hashing to prove it.
-const quick = "-target=1ms"
+const quick = "--target=1ms"
 
 func TestHashTune(t *testing.T) {
-	var out, errOut bytes.Buffer
+	r := consoletest.Run(t, &HashTune{}, consoletest.Args(quick)).AssertSuccess()
 
-	if err := run([]string{"hash:tune", quick}, &out, &errOut); err != nil {
-		t.Fatalf("hash:tune: %v", err)
-	}
-
-	got := out.String()
 	for _, want := range []string{"memory", "passes", "lanes", "[hash]", "19456"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("the output does not mention %q:\n%s", want, got)
-		}
+		r.AssertOutputContains(want)
 	}
 
 	// The note that it is working goes to the error stream, so that a shell
 	// redirecting the output gets the answer and nothing else.
-	if !strings.Contains(errOut.String(), "Measuring") {
-		t.Errorf("nothing said it was working: %q", errOut.String())
-	}
-	if strings.Contains(got, "Measuring") {
+	r.AssertErrorContains("Measuring")
+	if strings.Contains(r.Stdout(), "Measuring") {
 		t.Error("the note that it is working landed in the output")
 	}
 }
 
 func TestHashTuneJSON(t *testing.T) {
-	var out, errOut bytes.Buffer
-
-	if err := run([]string{"hash:tune", quick, "-json"}, &out, &errOut); err != nil {
-		t.Fatalf("hash:tune: %v", err)
-	}
+	r := consoletest.Run(t, &HashTune{},
+		consoletest.Args(quick),
+		consoletest.With(console.Options{JSON: true}),
+	).AssertSuccess()
 
 	var got tuning
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("the output is not JSON: %v\n%s", err, out.String())
+	if err := json.Unmarshal([]byte(r.Stdout()), &got); err != nil {
+		t.Fatalf("the output is not JSON: %v\n%s", err, r.Stdout())
 	}
 	if got.Memory != 19456 || got.Passes != 2 || got.Lanes != 1 {
 		t.Errorf("the cost came back as %d KiB, %d passes, %d lanes", got.Memory, got.Passes, got.Lanes)
@@ -63,21 +54,22 @@ func TestHashTuneJSON(t *testing.T) {
 	}
 
 	// Nothing but the object is on the output, or a shell reading it with jq
-	// gets a parse error instead of an answer.
-	if n := strings.Count(strings.TrimSpace(out.String()), "\n{"); n != 0 {
-		t.Errorf("there is more than one object on the output:\n%s", out.String())
+	// gets a parse error instead of an answer. The note about measuring is on
+	// the other stream, which is what JSON mode is for.
+	if n := strings.Count(strings.TrimSpace(r.Stdout()), "\n{"); n != 0 {
+		t.Errorf("there is more than one object on the output:\n%s", r.Stdout())
 	}
+	r.AssertNoErrorOutput()
 }
 
 func TestHashTuneFlags(t *testing.T) {
-	var out, errOut bytes.Buffer
-
-	if err := run([]string{"hash:tune", quick, "-passes=3", "-lanes=2", "-json"}, &out, &errOut); err != nil {
-		t.Fatalf("hash:tune: %v", err)
-	}
+	r := consoletest.Run(t, &HashTune{},
+		consoletest.Args(quick, "--passes=3", "--lanes=2"),
+		consoletest.With(console.Options{JSON: true}),
+	).AssertSuccess()
 
 	var got tuning
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+	if err := json.Unmarshal([]byte(r.Stdout()), &got); err != nil {
 		t.Fatalf("the output is not JSON: %v", err)
 	}
 	if got.Passes != 3 || got.Lanes != 2 {
@@ -88,28 +80,48 @@ func TestHashTuneFlags(t *testing.T) {
 func TestHashTuneRejects(t *testing.T) {
 	cases := map[string][]string{
 		"an argument":                     {"hash:tune", "please"},
-		"a flag it has not":               {"hash:tune", "-memory=1024"},
-		"a target that is not a duration": {"hash:tune", "-target=soon"},
+		"a flag it has not":               {"hash:tune", "--memory=1024"},
+		"a target that is not a duration": {"hash:tune", "--target=soon"},
 	}
 
-	for name, args := range cases {
-		var out, errOut bytes.Buffer
-		if err := run(args, &out, &errOut); err == nil {
-			t.Errorf("%s: no error", name)
-		}
+	for name, argv := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, errOut := say(t)
+			if code := newApp().Start(t.Context(), nil, out, errOut, argv); code != console.CodeUsage {
+				t.Errorf("exited %d, want %d", code, console.CodeUsage)
+			}
+			if out.Len() != 0 {
+				t.Errorf("a command line that did not parse still printed %q", out)
+			}
+		})
+	}
+}
+
+// A target that parses and still makes no sense is the tuner's to refuse, not
+// the flag parser's, and what it says has to reach the person who typed it.
+func TestHashTuneReportsWhatTheTunerRefused(t *testing.T) {
+	err := consoletest.Run(t, &HashTune{},
+		consoletest.Args(quick, "--passes=-1"),
+	).AssertFailure()
+
+	if !strings.Contains(err.Error(), "negative") {
+		t.Errorf("the error is %q, want it to say why", err)
 	}
 }
 
 func TestHashTuneHelp(t *testing.T) {
-	var out, errOut bytes.Buffer
-
-	if err := run([]string{"hash:tune", "-h"}, &out, &errOut); err == nil {
-		t.Error("asking for help is not an error, and it has to be one to exit 2")
+	out, errOut := say(t)
+	if code := newApp().Start(t.Context(), nil, out, errOut, []string{"hash:tune", "--help"}); code != console.CodeOK {
+		t.Errorf("asking for help exited %d", code)
 	}
-	for _, want := range []string{"Usage: mizu hash:tune", "GOMEMLIMIT", "-target", "-json"} {
-		if !strings.Contains(errOut.String(), want) {
-			t.Errorf("the help does not mention %q:\n%s", want, errOut.String())
+	for _, want := range []string{"mizu hash:tune", "GOMEMLIMIT", "--target", "--json"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the help does not mention %q:\n%s", want, out)
 		}
+	}
+	// Help is an answer, so it goes to stdout and can be piped into a pager.
+	if errOut.Len() != 0 {
+		t.Errorf("help went to stderr: %q", errOut)
 	}
 }
 
@@ -117,13 +129,7 @@ func TestHashTuneHelp(t *testing.T) {
 // result that says nothing about being stuck at the floor is one somebody acts
 // on without knowing they should not.
 func TestReport(t *testing.T) {
-	base := hash.Tuning{
-		Params:     hash.Params{Memory: 65536, Passes: 2, Lanes: 1},
-		Target:     250_000_000,
-		Elapsed:    250_000_000,
-		Concurrent: 8,
-		Runs:       4,
-	}
+	base := onTarget()
 
 	cases := []struct {
 		about string
@@ -147,6 +153,18 @@ func TestReport(t *testing.T) {
 	// because the floor is the reason and the reader needs the reason.
 	if got := report(withFloor(base)); strings.Contains(got, "ran out of steps") {
 		t.Errorf("the floor is reported as noise as well:\n%s", got)
+	}
+}
+
+// onTarget is a result from a machine that answered the question it was asked,
+// which is the one the report says least about.
+func onTarget() hash.Tuning {
+	return hash.Tuning{
+		Params:     hash.Params{Memory: 65536, Passes: 2, Lanes: 1},
+		Target:     250_000_000,
+		Elapsed:    250_000_000,
+		Concurrent: 8,
+		Runs:       4,
 	}
 }
 
