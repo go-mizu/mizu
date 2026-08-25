@@ -69,6 +69,10 @@ type IO struct {
 	colorOut bool
 	colorErr bool
 	width    int
+	// errWidth is the width of the other stream, which is where a progress bar
+	// is drawn. They are usually the same terminal and are not always: a
+	// command whose output is piped still has a person watching stderr.
+	errWidth int
 
 	interactive bool
 	// reader is built by the first prompt and kept, because it buffers. See
@@ -91,6 +95,7 @@ func New(in io.Reader, out, err io.Writer, opts Options) *IO {
 		colorOut:    colorEnabled(out, opts.Color, os.Getenv),
 		colorErr:    colorEnabled(err, opts.Color, os.Getenv),
 		width:       terminalWidth(out, opts.Width),
+		errWidth:    terminalWidth(err, opts.Width),
 		interactive: canPrompt(in, err, opts.Interaction),
 	}
 }
