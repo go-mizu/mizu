@@ -108,7 +108,8 @@
 // closes what it opened. A second signal exits at once, because somebody
 // pressing Ctrl-C twice has stopped asking. [App.Start] is the same thing
 // without the process, for a test: it takes the streams and a context and
-// returns the code rather than reaching for os.
+// returns the code rather than reaching for os. [Report] is what both of them
+// end with, for a program that runs one command without an App around it.
 //
 // The error a command returns is printed as one line. Its chain of causes is
 // printed under it from --verbose up, because the answer is usually three wraps
@@ -167,12 +168,17 @@
 // errors still go to stderr, where they cannot corrupt what a parser is
 // reading.
 //
-// # What is not here yet
+// # The two packages next to this one
 //
-// The generator that turns struct tags into a Spec lives in
+// The generator that turns struct tags into a Spec is
 // github.com/go-mizu/mizu/gen/commandgen, so a command can be a struct with a
-// Run method and nothing else. The test fixture that scripts an answer to a
-// prompt is specified and not written.
+// Run method and nothing else.
+//
+// Testing one is github.com/go-mizu/mizu/console/consoletest, which runs it
+// against buffers with scripted answers to its questions and asserts on what it
+// wrote and what it would have exited with.
+//
+// # What is not here yet
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can

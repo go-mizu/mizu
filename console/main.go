@@ -194,7 +194,7 @@ func (a *App) Start(ctx context.Context, in io.Reader, out, err io.Writer, argv 
 
 	c := New(in, out, err, g.Options())
 	if perr != nil {
-		return report(c, perr)
+		return Report(c, perr)
 	}
 
 	if g.Timeout > 0 {
@@ -202,7 +202,7 @@ func (a *App) Start(ctx context.Context, in io.Reader, out, err io.Writer, argv 
 		ctx, cancel = context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
 	}
-	return report(c, a.Run(ctx, c, kept))
+	return Report(c, a.Run(ctx, c, kept))
 }
 
 // strip takes the global flags out of a command line, wherever they appear, and
@@ -278,8 +278,14 @@ func wantsValue(globals []Flag, arg string) bool {
 	return i >= 0 && !isBool(globals[i].Value)
 }
 
-// report prints what went wrong, if anything, and says what to exit with.
-func report(c *IO, err error) int {
+// Report prints what a command returned, if anything went wrong, and returns
+// the code to exit with.
+//
+// It is the last thing [App.Main] and [App.Start] do, exported for a program
+// whose main runs one command without an App around it and for a test fixture
+// that wants the code a process would have exited with. A command that returns
+// nil prints nothing and gets [CodeOK].
+func Report(c *IO, err error) int {
 	switch {
 	case err == nil:
 		return CodeOK
