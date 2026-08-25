@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -75,16 +76,28 @@ func (c *Ctx) Form(key string) string {
 // because a body that would not parse leaves r.Form set to exactly what a
 // request with no form leaves it set to, and asking twice about a body that is
 // already gone is asking twice about nothing.
+//
+// The two parses are separate because ParseMultipartForm throws away what
+// ParseForm said when the body turns out not to be multipart, and a body over
+// the limit in front of the handler is exactly that case. [Ctx.Bind] is what
+// reads the error afterwards, and [Ctx.Form] is what carries on without it.
 func (c *Ctx) values() url.Values {
-	if !c.form {
-		c.form = true
+	if c.form {
+		return c.r.Form
+	}
+	c.form = true
 
-		// ParseMultipartForm handles both shapes. It calls ParseForm itself,
-		// which reads the query string and an urlencoded body, and it stops
-		// there when the body is not multipart. The limit is how much of a
-		// multipart body stays in memory: the parts over it go to temporary
-		// files that net/http removes when the request is done.
-		_ = c.r.ParseMultipartForm(formMemory)
+	// ParseForm reads the query string, and an urlencoded body when there is
+	// one. It leaves a multipart body alone.
+	if c.formErr = c.r.ParseForm(); c.formErr != nil {
+		return c.r.Form
+	}
+
+	// The limit is how much of a multipart body stays in memory: the parts over
+	// it go to temporary files that net/http removes when the request is done.
+	// A body that is not multipart is not a failure, it is most requests.
+	if err := c.r.ParseMultipartForm(formMemory); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		c.formErr = err
 	}
 	return c.r.Form
 }

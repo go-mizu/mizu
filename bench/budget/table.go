@@ -58,14 +58,19 @@ var rows = []Row{
 		Time: 200 * time.Nanosecond, Allocs: 2,
 	},
 	{
-		ID: "bind/json", Group: httpPath, Doc: "08", Since: "M1",
-		Op:   "12-field struct from a 2 KB JSON body, generated binder",
-		Time: 4 * time.Microsecond, Allocs: 6,
+		ID: "bind/form", Group: httpPath, Doc: "08",
+		Op:   "12-field struct from a urlencoded form, reflection binder",
+		Time: 3 * time.Microsecond, Allocs: 70,
 	},
 	{
-		ID: "bind/form", Group: httpPath, Doc: "08", Since: "M1",
-		Op:   "Same struct from a urlencoded form",
-		Time: 3 * time.Microsecond, Allocs: 5,
+		ID: "bind/gen/form", Group: httpPath, Doc: "08", Since: "M1",
+		Op:   "The same form through a generated binder",
+		Time: 800 * time.Nanosecond, Allocs: 5,
+	},
+	{
+		ID: "bind/gen/json", Group: httpPath, Doc: "08", Since: "M1",
+		Op:   "The same struct from a 2 KB JSON body, generated binder",
+		Time: 4 * time.Microsecond, Allocs: 6,
 	},
 	{
 		ID: "validate/gen", Group: httpPath, Doc: "08", Since: "M1",

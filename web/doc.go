@@ -97,11 +97,54 @@
 // Recover, Timeout, MaxBody, Concurrency, CORS, Secure, MethodOverride, Compress
 // and ETag live.
 //
+// # Binding
+//
+// [Bind] fills a struct from the request, so that a handler reads its input
+// once, in one place, with the types it wanted rather than the strings that
+// arrived.
+//
+//	type search struct {
+//		Q       string   `query:"q"`
+//		Tags    []string `query:"tag"`
+//		Page    int
+//		PerPage int
+//	}
+//
+//	in, err := web.Bind[search](c)
+//
+// A path, header or cookie tag says where a field comes from and is the whole
+// answer. A form or query tag names the field in the query string and in a form
+// body, which net/http keeps together and so does this. A field with none of
+// those is read from the query and the form under the name in its json tag, or
+// under its own name in snake case, so a struct written for a JSON body binds
+// from a query string without a second set of tags on it. bind:"-" and json:"-"
+// are the two ways to say a field is not input, and they are what stops a
+// request from setting the fields the handler fills in itself.
+//
+// The body outranks the query string, so a search that posts a filter and
+// carries the page number in the URL works. An embedded struct is flattened and
+// a nested one is named under its field, which is address.city. A field the
+// request did not name is left alone, so binding into a struct that already has
+// something in it fills in the rest.
+//
+// A value that will not decode is reported rather than dropped. What comes back
+// is an [github.com/go-mizu/mizu/errs.Error] of kind Invalid, carrying one
+// Field per value, named as the request named it, with a code such as
+// invalid_number and a message to put next to the field. Every field is
+// reported, not the first, since a form should say everything wrong with it at
+// once.
+//
+// An empty value is treated as a field nobody filled in rather than as a
+// mistake, unless the field is a string, where an empty string is a value. A
+// blank number input posts an empty string and that is not a client sending
+// nonsense. Saying it had to be filled in is validation's job, and validation
+// is the next milestone.
+//
 // # What is not here yet
 //
-// Reading a request is here and so is enough writing to answer one. Binding,
-// validation, content negotiation, the pagination types and the RFC 9457
-// renderer arrive with their own milestones.
+// Reading a request is here and so is enough writing to answer one. The body
+// decoders for JSON and XML, file uploads, validation, content negotiation, the
+// pagination types and the RFC 9457 renderer arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They

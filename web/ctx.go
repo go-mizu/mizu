@@ -41,7 +41,12 @@ type Ctx struct {
 
 	body []byte // what BodyBytes read, kept so it reads once
 	read bool
-	form bool // whether the form has been parsed, see values
+
+	// form records that the form has been parsed and how that went, since
+	// net/http leaves a body that would not parse looking exactly like a
+	// request that carried no form. See values.
+	form    bool
+	formErr error
 
 	// gen is the generation counter the package comment describes. It counts
 	// up on every acquire and goes to zero on release, so zero means the
@@ -290,6 +295,7 @@ func (c *Ctx) reset() {
 	c.res, c.rec, c.r = nil, Recorder{}, nil
 	c.route, c.params = nil, router.Params{}
 	c.log, c.status = nil, 0
-	c.body, c.read, c.form = nil, false, false
+	c.body, c.read = nil, false
+	c.form, c.formErr = false, nil
 	c.was = ""
 }

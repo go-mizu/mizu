@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -83,11 +84,16 @@ func set(t *testing.T, f reflect.Value) {
 	case reflect.Func:
 		f.Set(reflect.MakeFunc(f.Type(), func([]reflect.Value) []reflect.Value { return nil }))
 	case reflect.Interface:
-		w := reflect.ValueOf(httptest.NewRecorder())
-		if !w.Type().Implements(f.Type()) {
-			t.Fatalf("Ctx reaches an interface of type %s and this test has nothing to put in it", f.Type())
+		for _, v := range []reflect.Value{
+			reflect.ValueOf(httptest.NewRecorder()),
+			reflect.ValueOf(errors.New("x")),
+		} {
+			if v.Type().Implements(f.Type()) {
+				f.Set(v)
+				return
+			}
 		}
-		f.Set(w)
+		t.Fatalf("Ctx reaches an interface of type %s and this test has nothing to put in it", f.Type())
 	default:
 		t.Fatalf("Ctx reaches a value of kind %s and this test has nothing to put in it", f.Kind())
 	}
