@@ -1,0 +1,3 @@
+[app]
+name = "shop"
+key = "cmd:op read op://vault/shop/key"

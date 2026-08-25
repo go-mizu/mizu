@@ -1,0 +1,1 @@
+error: app.toml:3:13: want = after the key production, got the end of the line

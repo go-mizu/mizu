@@ -1,0 +1,1 @@
+error: app.toml:3:9: App.Debug: want a boolean, got string

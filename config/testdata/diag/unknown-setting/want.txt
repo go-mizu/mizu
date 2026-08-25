@@ -1,0 +1,1 @@
+error: app.toml:3:8: unknown setting "app.nmae", did you mean "app.name"?

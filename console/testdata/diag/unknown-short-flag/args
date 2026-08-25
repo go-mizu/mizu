@@ -1,0 +1,5 @@
+users:prune
+-x
+-r
+spam
+acme
