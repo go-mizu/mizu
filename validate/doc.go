@@ -40,6 +40,41 @@
 // would make a field that is optional and a field that is optional-but-valid
 // impossible to tell apart.
 //
+// # Rules written out in order
+//
+// [New] starts a list of checks for the rules a struct tag cannot say: a rule
+// that depends on another field, on a row in a database, or on which branch of
+// a form was filled in.
+//
+//	v := validate.New()
+//	v.Field("email", in.Email).Required().Email().That(!taken, "unique")
+//	v.Field("website", in.Website).Optional().URL()
+//	v.When(in.Type == "company", func(v *validate.V) {
+//		v.Field("vat", in.VAT).Required().Min(4)
+//	})
+//	return v.Err()
+//
+// A chain stops at its first failure, so [Check.Required] guards everything
+// after it and a blank field says the one thing that is wrong with it rather
+// than a list of consequences. A field that may be left blank writes
+// [Check.Optional] instead, which stops the chain quietly when there is nothing
+// there.
+//
+// [Check.Min], [Check.Max], [Check.Between] and [Check.Size] read the value's
+// type to decide what they are counting: characters for a string, the number
+// itself for a number, elements for a list or a map, and length for a duration.
+// The bound keeps the type it was written with, so Min(3) says 3 in the
+// sentence and Min(time.Hour) says an hour.
+//
+// [Check.That] is the way in for anything with no method, including a check
+// that had to ask somebody else. [V.When] takes an ordinary Go expression, so a
+// condition that depends on another field is written where the condition is
+// rather than spelled out in a string on the field it is about.
+//
+// A struct that can be described in tags does not need any of this. The
+// generator writes a [Validator] method for it, which costs nothing at runtime
+// and reads in a debugger.
+//
 // # What comes out
 //
 // [Errors.OrNil] is nil when nothing failed and an [errs.Error] when something
