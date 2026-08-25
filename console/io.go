@@ -69,8 +69,18 @@ type IO struct {
 	colorOut bool
 	colorErr bool
 	width    int
+	// errWidth is the width of the other stream, which is where a progress bar
+	// is drawn. They are usually the same terminal and are not always: a
+	// command whose output is piped still has a person watching stderr.
+	errWidth int
 
 	interactive bool
+	// animate is whether stderr is worth drawing on, which is two questions:
+	// a pipe cannot be redrawn, and a command asked to be quiet or to speak
+	// JSON should not be decorating anything. It is decided once, like colour,
+	// rather than asked per redraw, because asking is an ioctl and a bar can
+	// be advanced a million times.
+	animate bool
 	// reader is built by the first prompt and kept, because it buffers. See
 	// [IO.readLine].
 	reader *bufio.Reader
@@ -82,7 +92,7 @@ type IO struct {
 // passing a buffer for one of them does not change the other. Whether prompts
 // ask is decided once here, for the same reason and from the same question.
 func New(in io.Reader, out, err io.Writer, opts Options) *IO {
-	return &IO{
+	c := &IO{
 		in:          in,
 		out:         out,
 		err:         err,
@@ -91,8 +101,11 @@ func New(in io.Reader, out, err io.Writer, opts Options) *IO {
 		colorOut:    colorEnabled(out, opts.Color, os.Getenv),
 		colorErr:    colorEnabled(err, opts.Color, os.Getenv),
 		width:       terminalWidth(out, opts.Width),
+		errWidth:    terminalWidth(err, opts.Width),
 		interactive: canPrompt(in, err, opts.Interaction),
 	}
+	c.animate = c.decorated() && isTerminal(err)
+	return c
 }
 
 // Stdio returns an IO on the process's own streams.

@@ -52,6 +52,22 @@
 // zero value for one is how a command ends up deleting three users because
 // nobody was there to say no.
 //
+// # Saying that something is happening
+//
+// [IO.Progress] is a bar for work whose size is known, [IO.Spinner] is for work
+// whose size is not, and [IO.Task] is a spinner around one function call with a
+// mark at the end saying how it went.
+//
+// All three are drawn on a terminal and written as lines anywhere else. The bar
+// writes a line every ten percent, which is eleven lines for a job of any
+// length, and the spinner writes one every thirty seconds. That is what keeps a
+// CI log readable: the usual failure is a bar redrawing into a file, which
+// leaves a megabyte of escape sequences on one line that nothing can read.
+//
+// A [Bar] is safe to use from several goroutines, which the rest of this
+// package is not, because a worker pool reporting its own progress is the
+// normal way to end up with one.
+//
 // # JSON
 //
 // An IO in JSON mode writes machine readable output and no decoration.
@@ -62,9 +78,9 @@
 //
 // # What is not here yet
 //
-// Progress bars, spinners, sections and trees are specified and not written. So
-// are the command structs and the flag generator that will call all of this,
-// and the test fixture that scripts an answer to a prompt.
+// Sections and trees are specified and not written. So are the command structs
+// and the flag generator that will call all of this, and the test fixture that
+// scripts an answer to a prompt.
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can

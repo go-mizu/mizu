@@ -87,6 +87,22 @@ func BenchmarkAsk(b *testing.B) {
 	}
 }
 
+// BenchmarkAdvance is what a loop pays for reporting its own progress. A
+// command that deletes a million rows advances a bar a million times, and the
+// answer should be that it never notices.
+//
+// The total is large enough that no step crosses into a new tenth, so this is
+// the cost of the lock and the arithmetic rather than the cost of a line.
+func BenchmarkAdvance(b *testing.B) {
+	io := New(strings.NewReader(""), io.Discard, io.Discard, Options{})
+	bar := io.Progress(1 << 40)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		bar.Advance(1)
+	}
+}
+
 // BenchmarkInfo is the cost of a status line, and of the same line when
 // --quiet turned it off. The second one is what a loop that reports progress
 // pays when nobody is reading, which should be close to nothing.

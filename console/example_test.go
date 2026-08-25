@@ -88,6 +88,26 @@ func ExampleIO_Confirm() {
 	// Delete 3 users? [y/N]: deleting
 }
 
+// A bar on a terminal redraws in place. Anywhere else, which includes every CI
+// job, it is a line every ten percent: enough to see that something is
+// happening, few enough that a job of a million steps is still ten lines.
+func ExampleIO_Progress() {
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{})
+
+	bar := io.Progress(5)
+	for range 5 {
+		bar.Advance(1)
+	}
+	bar.Done()
+
+	// Output:
+	// 20% (1/5)
+	// 40% (2/5)
+	// 60% (3/5)
+	// 80% (4/5)
+	// 100% (5/5)
+}
+
 // With no terminal, a prompt takes its default, and a prompt with no default is
 // an error. That is the difference between a build that stops with a sentence
 // about a missing value and one that holds a CI runner until it times out.
