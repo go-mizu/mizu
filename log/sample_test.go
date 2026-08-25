@@ -2,6 +2,7 @@ package log
 
 import (
 	"context"
+	"hash/maphash"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,32 @@ func sampled(h slog.Handler, o SampleOptions) (slog.Handler, *clock) {
 	c := new(clock)
 	s.now = c.nanos.Load
 	return s, c
+}
+
+// spread reseeds a sampler until the keys a test counts are in buckets of their
+// own.
+//
+// The table is a fixed size and the seed is random, so two messages land on the
+// same counter and share a budget now and then. That is a documented property
+// of the sampler and the trade it makes for an atomic add instead of a lock,
+// but it is not what the tests calling this are about, and once in a few
+// hundred runs it is what they measure instead. It ran out of luck on Windows
+// in CI, which is how anybody found out.
+func spread(tb testing.TB, h slog.Handler, keys ...key) {
+	tb.Helper()
+
+	s := h.(*sampler)
+	for range 1000 {
+		seen := make(map[uint64]bool, len(keys))
+		for _, k := range keys {
+			seen[maphash.Comparable(s.seed, k)%buckets] = true
+		}
+		if len(seen) == len(keys) {
+			return
+		}
+		s.seed = maphash.MakeSeed()
+	}
+	tb.Fatalf("a thousand seeds and none of them put %v in buckets of their own", keys)
 }
 
 func TestSampling(t *testing.T) {
@@ -67,6 +94,7 @@ func TestSamplingInterval(t *testing.T) {
 func TestSamplingCountsPerMessage(t *testing.T) {
 	rec := new(recorder)
 	h, _ := sampled(rec, SampleOptions{Initial: 1, Every: 1000})
+	spread(t, h, key{slog.LevelInfo, "first"}, key{slog.LevelInfo, "second"})
 	log := slog.New(h)
 
 	for range 5 {
@@ -101,6 +129,7 @@ func TestSamplingAttributesDoNotCount(t *testing.T) {
 func TestSamplingLevel(t *testing.T) {
 	rec := new(recorder)
 	h, _ := sampled(rec, SampleOptions{Initial: 1, Every: 1000})
+	spread(t, h, key{slog.LevelInfo, "retrying"}, key{slog.LevelWarn, "retrying"})
 	log := slog.New(h)
 
 	for range 3 {
