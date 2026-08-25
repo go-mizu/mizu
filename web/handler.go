@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/go-mizu/mizu/conc"
 	"github.com/go-mizu/mizu/router"
 )
 
@@ -30,12 +29,6 @@ type Middleware func(http.Handler) http.Handler
 
 // ErrorHandler turns an error a handler returned into a response.
 type ErrorHandler func(c *Ctx, err error)
-
-// pool is where a Ctx comes from between requests.
-//
-// In a build with the check on there is no pool and acquire allocates. Both
-// halves are in guard.go and guard_race.go.
-var pool = conc.Pool(func() *Ctx { return new(Ctx) })
 
 // H adapts a [Handler] to a net/http.Handler.
 //

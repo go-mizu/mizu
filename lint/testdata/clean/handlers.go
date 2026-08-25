@@ -8,6 +8,7 @@ package clean
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/go-mizu/mizu/web"
 )
@@ -53,4 +54,15 @@ func queue(c *web.Ctx) {
 	work := make(chan record, 1)
 	work <- record{id: c.Param("id")}
 	close(work)
+}
+
+// Replay serves a request on a goroutine of its own. The Ctx it uses is made
+// there and finished there, which is what tells this apart from a goroutine
+// that borrows the one its handler was given.
+func Replay(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		web.H(func(c *web.Ctx) error {
+			return c.Text(c.Param("id"))
+		}).ServeHTTP(w, r)
+	}()
 }

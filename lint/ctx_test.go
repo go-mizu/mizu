@@ -2,6 +2,7 @@ package lint
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/go-mizu/mizu/errs/diag"
@@ -60,6 +61,29 @@ func TestACtxInsideSomethingElseIsFound(t *testing.T) {
 		if d.Code != "MZ3001" {
 			t.Errorf("a field holding a Ctx was reported as %s", d.Code)
 		}
+	}
+}
+
+// TestOneMistakeInMoreThanOneShape covers what the corpus cannot say in one
+// case each: a channel written as a field is a channel and not a field, a
+// package level channel is both and is reported twice, and a pointer to
+// something that is not a Ctx is nobody's business.
+func TestOneMistakeInMoreThanOneShape(t *testing.T) {
+	found, err := Run([]*gen.Package{mustLoad(t, "awkward")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found.Sort()
+	var codes []diag.Code
+	for _, d := range found {
+		codes = append(codes, d.Code)
+	}
+	// In the order a person reads them: the field, then the variable and the
+	// channel it is, which are two reports about the same line.
+	want := []diag.Code{"MZ3003", "MZ3004", "MZ3003"}
+	if !slices.Equal(codes, want) {
+		t.Errorf("testdata/awkward produced %v, want %v:\n%s", codes, want, lines(found))
 	}
 }
 

@@ -196,7 +196,19 @@ func TestWantsJSON(t *testing.T) {
 		{accept: "text/plain", want: false},
 		{accept: "((broken))", want: false},
 		{accept: "application/json;q=nonsense", want: false},
+
+		// A q with no digits in front of the point, and a q above one. Both
+		// are worth nothing, since a header this broken is not evidence of
+		// anything.
+		{accept: "application/json;q=.5", want: false},
+		{accept: "application/json;q=0.5x", want: false},
+		{accept: "application/json;q=2", want: false},
+		{accept: "application/json;q=1.0", want: true},
+
 		{accept: "", body: "application/json", want: true},
+		{accept: "", body: "application/json; charset=utf-8", want: true},
+		{accept: "", body: "application/vnd.api+json; charset=utf-8", want: true},
+		{accept: "", body: "text/html; charset=utf-8", want: false},
 		{accept: "", body: "application/x-www-form-urlencoded", want: false},
 		{accept: "", body: "", want: false},
 	} {

@@ -151,6 +151,21 @@ func TestIPAnswersWithTheZeroAddressForSomethingThatIsNotOne(t *testing.T) {
 	}
 }
 
+// A RemoteAddr with no port, which is what a test that sets the field by hand
+// tends to write and what some proxies hand over.
+func TestIPReadsAnAddressWithNoPort(t *testing.T) {
+	for _, remote := range []string{"203.0.113.9", "2001:db8::1"} {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = remote
+		serve(t, r, func(c *Ctx) error {
+			if want := netip.MustParseAddr(remote); c.IP() != want {
+				t.Errorf("RemoteAddr %q gave the address %v, want %v", remote, c.IP(), want)
+			}
+			return nil
+		})
+	}
+}
+
 func TestIPUnmapsAnIPv4AddressThatArrivedAsIPv6(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "[::ffff:203.0.113.9]:5555"

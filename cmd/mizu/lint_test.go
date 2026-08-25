@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -86,6 +88,30 @@ func TestLintRefusesACheckThatDoesNotExist(t *testing.T) {
 	err := runLint(t, "--check=ctxs").AssertFailure()
 	if !strings.Contains(err.Error(), "ctxs") || !strings.Contains(err.Error(), "ctx") {
 		t.Errorf("the message does not say what was typed and what the checks are: %v", err)
+	}
+}
+
+// Packages that cannot be read are not packages with nothing wrong with them.
+func TestLintOnSomethingThatIsNotAProject(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	if err := runLint(t).AssertFailure(); err == nil {
+		t.Error("a directory that is not a module came back clean")
+	}
+}
+
+// Loading is the slow part and nothing in it takes a context, so a run somebody
+// interrupted stops after it rather than reading a project nobody is waiting to
+// hear about.
+func TestLintStopsWhenTheRunIsCancelled(t *testing.T) {
+	scratch(t, commands)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	r := consoletest.Run(t, &Lint{}, consoletest.Args(), consoletest.Context(ctx))
+	if err := r.AssertFailure(); !errors.Is(err, context.Canceled) {
+		t.Errorf("the command failed with %v, want it to stop", err)
 	}
 }
 

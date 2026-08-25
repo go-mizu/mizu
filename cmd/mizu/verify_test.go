@@ -279,6 +279,49 @@ func shut(t *testing.T, name string, mode fs.FileMode) {
 	t.Cleanup(func() { os.Chmod(name, 0o755) })
 }
 
+// The report goes in the stage output rather than being counted and thrown
+// away, since a stage that says a number and nothing else is a stage somebody
+// runs the underlying command after.
+func TestStageLintOnAProjectWithARuleBroken(t *testing.T) {
+	dir := scratch(t, commands)
+	add(t, filepath.Join(dir, "held", "job.go"), held)
+
+	out, err := stageLint(t.Context(), project{Dir: dir}, false)
+	if err == nil {
+		t.Fatal("a project that keeps a *web.Ctx in a field passed the lint stage")
+	}
+	if want := "1 problem, run mizu lint"; err.Error() != want {
+		t.Errorf("the error is %q, want %q", err, want)
+	}
+	for _, want := range []string{"MZ3001", "job.go", "req *web.Ctx"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the output does not mention %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b[") {
+		t.Error("the output carries escapes, and it is on its way to a log")
+	}
+}
+
+// Packages that cannot be read are not packages with nothing wrong with them.
+func TestStageLintOnSomethingThatIsNotAProject(t *testing.T) {
+	if _, err := stageLint(t.Context(), project{Dir: t.TempDir()}, false); err == nil {
+		t.Error("a directory that is not a module came back clean")
+	}
+}
+
+// Loading is the slow part, so a run somebody interrupted stops after it rather
+// than reporting on a project nobody is waiting to hear about.
+func TestStageLintStopsWhenTheRunIsCancelled(t *testing.T) {
+	dir := scratch(t, commands)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := stageLint(ctx, project{Dir: dir}, false); !errors.Is(err, context.Canceled) {
+		t.Errorf("stageLint() = %v, want it to stop", err)
+	}
+}
+
 // The generated check is the one stage verify runs itself, and running it twice
 // is most of a verify.
 func TestStageDoctorLeavesTheChecksVerifyAlreadyRan(t *testing.T) {
