@@ -15,6 +15,7 @@ import (
 	"github.com/go-mizu/mizu/gen/bindgen"
 	"github.com/go-mizu/mizu/gen/commandgen"
 	"github.com/go-mizu/mizu/gen/configgen"
+	"github.com/go-mizu/mizu/gen/validategen"
 )
 
 // A generator is one thing mizu gen runs.
@@ -37,6 +38,7 @@ var generators = []generator{
 	{"bind", "Write the BindRequest methods for the structs marked //mizu:bind", fromPackages(bindgen.Generate)},
 	{"command", "Write the Spec methods for the structs marked //mizu:command", fromPackages(commandgen.Generate)},
 	{"config", "Write the decoder for the struct marked //mizu:config", fromPackages(configgen.Generate)},
+	{"validate", "Write the Validate methods for the structs marked //mizu:validate", fromPackages(validategen.Generate)},
 }
 
 // fromPackages adapts a generator that has no use for the module root.

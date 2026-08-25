@@ -21,6 +21,7 @@ Install it with go install:
 	mizu gen:bind      write the BindRequest methods for the //mizu:bind structs
 	mizu gen:command   write the Spec methods for the //mizu:command structs
 	mizu gen:config    write the decoder for the //mizu:config struct
+	mizu gen:validate  write the Validate methods for the //mizu:validate structs
 	mizu doctor        check the project and the environment
 	mizu hash:tune     measure argon2id here and print the cost to configure
 	mizu version       print the version, one fact per line
@@ -76,9 +77,9 @@ skipped stages included, so a failure localises without reading any output.
 	mizu gen ./app/...   only these packages
 
 A generator is driven by a marker comment on a declaration, //mizu:bind,
-//mizu:command or //mizu:config, and writes a file next to the one the marker
-is in. Nothing is generated from a registry of types held somewhere else, so a
-declaration and the code written from it move together.
+//mizu:command, //mizu:config or //mizu:validate, and writes a file next to the
+one the marker is in. Nothing is generated from a registry of types held
+somewhere else, so a declaration and the code written from it move together.
 
 	mizu gen:bind
 
@@ -87,6 +88,14 @@ that method when the type has one and falls back to reflection when it does
 not, so a marker is a change to the struct and to nothing else. What it buys is
 the query string and the form body: a generated binder reads them a pair at a
 time instead of asking net/http for a map of every name the request carries.
+
+	mizu gen:validate
+
+writes a Validate method for every struct marked //mizu:validate, from the same
+validate tags validate.Struct would have read with reflection. The two agree on
+what failed, under what name, in what order, so adding the marker changes the
+speed and not the answer. A tag with a typo in it becomes a build failure
+instead of an error on the first request that hits the route.
 
 --check is what CI runs. It exits non-zero and names the first file that would
 have changed, since a generated file that disagrees with its source is a build

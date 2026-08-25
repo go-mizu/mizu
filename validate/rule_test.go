@@ -153,14 +153,40 @@ func TestARuleReadsThroughAPointer(t *testing.T) {
 		t.Errorf("a *string arrived as %q %#v, want code and abc", seen.Name, seen.Value)
 	}
 
-	// A nil pointer is nothing at all, rather than a pointer that has to be
-	// checked before it is read.
+	// A nil pointer arrives as the zero string rather than as a nil, so the
+	// assertion above is the whole of what a rule has to write.
 	if err := Struct(context.Background(), in{}); err != nil {
 		t.Fatalf("Struct: %v", err)
 	}
-	if seen.Value != nil {
-		t.Errorf("a nil *string arrived as %#v, want nil", seen.Value)
+	if seen.Value != any("") {
+		t.Errorf("a nil *string arrived as %#v, want an empty string", seen.Value)
 	}
+}
+
+// A size rule on a nil pointer counts the zero of what it points at, which is
+// nothing, rather than reaching a value there is nothing to count.
+func TestASizeRuleOnANilPointer(t *testing.T) {
+	type in struct {
+		Title *string   `json:"title" validate:"min=3"`
+		Tags  *[]string `json:"tags" validate:"max=2"`
+	}
+	wantFailures(t, in{}, "title:min")
+
+	three := []string{"a", "b", "c"}
+	wantFailures(t, in{Tags: &three}, "title:min", "tags:max")
+}
+
+// An element of a list that is nil is checked as the zero of what it points at,
+// and there is nothing under it to go into.
+func TestANilElementOfAList(t *testing.T) {
+	type line struct {
+		SKU string `json:"sku" validate:"required"`
+	}
+	type in struct {
+		Codes []*string `json:"codes" validate:"dive,required"`
+		Lines []*line   `json:"lines" validate:"dive"`
+	}
+	wantFailures(t, in{Codes: []*string{nil}, Lines: []*line{nil}}, "codes.0:required")
 }
 
 // The message table has no entry for a rule somebody registered, which is a

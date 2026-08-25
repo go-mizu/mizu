@@ -114,6 +114,17 @@ type fieldPlan struct {
 	dive  bool   // whether the rules go on into the field's elements
 	each  []step // what runs on each element
 	elem  *structPlan
+
+	// zero is what a nil pointer field is checked as, which is the zero value
+	// of the type it points at. A rule reads through a pointer anyway, so this
+	// only decides what a rule sees when there is nothing to read through to,
+	// and the answer is the same thing an absent value of that type would be.
+	// It is also what the generated validator has in its hands, since a field
+	// it cannot follow is a local holding that type's zero.
+	zero reflect.Value
+
+	// elemZero is the same thing for one element of a field that dived.
+	elemZero reflect.Value
 }
 
 // A step is one rule, resolved to the thing that runs it.
@@ -236,7 +247,7 @@ func (p *structPlan) field(b *build, t reflect.Type, sf reflect.StructField, at 
 		}
 	}
 
-	fp := fieldPlan{index: at, name: name, dive: dived}
+	fp := fieldPlan{index: at, name: name, dive: dived, zero: reflect.Zero(base(sf.Type))}
 	fp.rules = p.steps(b, t, sf, before, sf.Type)
 	if !dived {
 		p.fields = append(p.fields, fp)
@@ -250,6 +261,7 @@ func (p *structPlan) field(b *build, t reflect.Type, sf reflect.StructField, at 
 	}
 	fp.each = p.steps(b, t, sf, after, et)
 	fp.elem = b.elemPlan(base(et))
+	fp.elemZero = reflect.Zero(base(et))
 
 	p.fields = append(p.fields, fp)
 }
@@ -262,6 +274,12 @@ func (p *structPlan) field(b *build, t reflect.Type, sf reflect.StructField, at 
 // plan and the plan holding it are the same plan, so the recursion runs over
 // the values that arrived instead of over the types, and a list that is empty
 // is where it stops.
+//
+// The walk starts from an empty path rather than the one that got here, so the
+// plan for a type is the same plan wherever it was reached from. Carrying the
+// outer path in would mean a struct type checked one way inside an order and
+// another way on its own, which is not something anybody could predict from
+// reading the struct.
 func (b *build) elemPlan(st reflect.Type) *structPlan {
 	if st.Kind() != reflect.Struct {
 		return nil
@@ -273,10 +291,10 @@ func (b *build) elemPlan(st reflect.Type) *structPlan {
 	sub := &structPlan{}
 	b.elems[st] = sub
 
-	was := b.seen[st]
-	b.seen[st] = true
+	outer := b.seen
+	b.seen = map[reflect.Type]bool{st: true}
 	sub.walk(b, st, "", nil)
-	b.seen[st] = was
+	b.seen = outer
 
 	return sub
 }
@@ -414,6 +432,10 @@ func kindOf(t reflect.Type) string {
 // an hour and min=3 on anything else is the number three. The value keeps that
 // type, because the type is what the sentence prints: an hour reads 1h0m0s and
 // not a count of nanoseconds.
+//
+// A whole number comes back as an int rather than as a wider one, which is what
+// somebody writing Min(3) by hand would pass and what the generator writes into
+// the code it produces, so a bound reads the same however the rule got there.
 func bound(s string, ft reflect.Type) (any, error) {
 	if base(ft) == durationType {
 		d, err := time.ParseDuration(s)
@@ -422,7 +444,7 @@ func bound(s string, ft reflect.Type) (any, error) {
 		}
 		return d, nil
 	}
-	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+	if n, err := strconv.Atoi(s); err == nil {
 		return n, nil
 	}
 	if f, err := strconv.ParseFloat(s, 64); err == nil {
@@ -480,14 +502,23 @@ func (p *structPlan) run(ctx context.Context, v *V, rv reflect.Value, prefix str
 			name = prefix + fp.name
 		}
 
-		c := v.Field(name, fv.Interface())
+		// The pointers come off here rather than in each rule. A rule reads
+		// through them anyway, and doing it once means a nil pointer arrives
+		// as the zero value of what it points at instead of as a nil that a
+		// size rule has nothing to count.
+		val := deref(fv)
+		if !val.IsValid() {
+			val = fp.zero
+		}
+
+		c := v.Field(name, val.Interface())
 		if err := runSteps(ctx, v, c, fp.rules); err != nil {
 			return err
 		}
 		if !fp.dive || c.done {
 			continue
 		}
-		if err := p.elements(ctx, v, fp, deref(fv), name); err != nil {
+		if err := p.elements(ctx, v, fp, val, name); err != nil {
 			return err
 		}
 	}
@@ -496,22 +527,24 @@ func (p *structPlan) run(ctx context.Context, v *V, rv reflect.Value, prefix str
 
 // elements checks each element of a field that dived.
 func (p *structPlan) elements(ctx context.Context, v *V, fp *fieldPlan, list reflect.Value, name string) error {
-	if !list.IsValid() {
-		return nil
-	}
 	for i := range list.Len() {
 		item := list.Index(i)
 		at := name + "." + strconv.Itoa(i)
 
-		c := v.Field(at, item.Interface())
+		// A nil element is checked as the zero of what it points at, the same
+		// way a nil field is, but there is nothing under it to go into. What
+		// the element itself had to be is the element's own rules to say.
+		sv := deref(item)
+		val := sv
+		if !val.IsValid() {
+			val = fp.elemZero
+		}
+
+		c := v.Field(at, val.Interface())
 		if err := runSteps(ctx, v, c, fp.each); err != nil {
 			return err
 		}
-		if fp.elem == nil || c.done {
-			continue
-		}
-		sv := deref(item)
-		if !sv.IsValid() {
+		if fp.elem == nil || c.done || !sv.IsValid() {
 			continue
 		}
 		if err := fp.elem.run(ctx, v, sv, at+"."); err != nil {

@@ -1,0 +1,1 @@
+error: validate.go:4:6: Listing is marked to validate and is not a struct

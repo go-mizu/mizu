@@ -1,0 +1,1 @@
+error: validate.go:7:2: cannot check Listing.At, because required is about a value being filled in and an unsafe.Pointer has no way to say

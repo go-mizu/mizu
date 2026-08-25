@@ -1,0 +1,1 @@
+error: validate.go:5:2: cannot check Listing.Q, because dive is for a slice or an array and this field is a string
