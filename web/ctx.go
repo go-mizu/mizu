@@ -24,8 +24,14 @@ import (
 // every way to reach the request goes past the check that says the request is
 // still running.
 type Ctx struct {
-	res respWriter
-	r   *http.Request
+	// res is the request's Recorder, and rec is where it lives when the Ctx is
+	// the one that made it. A chain with middleware in it has already made one,
+	// in which case res points at that and rec is unused, which is how a
+	// handler and the middleware around it agree about what went out.
+	res *Recorder
+	rec Recorder
+
+	r *http.Request
 
 	route  *router.Route
 	params router.Params
@@ -58,15 +64,31 @@ func (c *Ctx) Request() *http.Request {
 
 // Writer is where the response goes.
 //
-// It is not the writer the server handed over. It is a thin wrapper that
-// records the status and whether anything has gone out, so that a handler which
-// writes through this rather than through the helpers still gets a sensible
-// answer from [Ctx.StatusCode] and still gets an error page rather than a
-// second status. Flushing, hijacking and the deadline calls go through
+// It is not the writer the server handed over. It is the request's [Recorder],
+// so a handler that writes through this rather than through the helpers still
+// gets a sensible answer from [Ctx.StatusCode], still gets an error page rather
+// than a second status, and is still counted by whatever middleware is logging
+// the request. Flushing, hijacking and the deadline calls go through
 // http.ResponseController and reach the server's writer unchanged.
 func (c *Ctx) Writer() http.ResponseWriter {
 	c.live("Writer")
-	return &c.res
+	return c.res
+}
+
+// record points the Ctx at the chain's Recorder, or at its own when the chain
+// has not made one.
+//
+// The second case is a route with no middleware in front of it, and it is the
+// one worth keeping cheap: the Recorder is a field of the pooled Ctx, so
+// wrapping the server's writer costs nothing.
+func (c *Ctx) record(w http.ResponseWriter) {
+	if rec, ok := w.(*Recorder); ok {
+		c.res = rec
+		return
+	}
+	warnBuried(w)
+	c.rec.ResponseWriter = w
+	c.res = &c.rec
 }
 
 // Context is the request's context, and it is safe to keep.
@@ -263,7 +285,7 @@ func (c *Ctx) IP() netip.Addr {
 // leak between two requests. The test that catches it is in ctx_test.go, and it
 // reads this struct with reflection.
 func (c *Ctx) reset() {
-	c.res, c.r = respWriter{}, nil
+	c.res, c.rec, c.r = nil, Recorder{}, nil
 	c.route, c.params = nil, router.Params{}
 	c.log, c.status = nil, 0
 	c.body, c.read, c.form = nil, false, false

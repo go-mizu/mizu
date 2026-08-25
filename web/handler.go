@@ -24,7 +24,11 @@ type Handler func(c *Ctx) error
 //
 // It is not a shape of this package's own, which is deliberate: middleware
 // written for anything else works here, and middleware written here works
-// anywhere. A middleware that wants the Ctx calls [FromContext].
+// anywhere. A middleware that wants the Ctx calls [FromContext], and one that
+// wants to know how the request was answered calls [Record].
+//
+// [Chain] puts a handler inside a list of these and [Stack] does the same with
+// an order that does not depend on the order they were added in.
 type Middleware func(http.Handler) http.Handler
 
 // ErrorHandler turns an error a handler returned into a response.
@@ -37,6 +41,11 @@ type ErrorHandler func(c *Ctx, err error)
 // net/http.Handler, so it goes in a route table next to handlers that have
 // never heard of this package.
 //
+// The response goes through the [Recorder] the chain made, when there is
+// middleware in front of this, and through one belonging to the Ctx when there
+// is not. Either way there is one per request and everything shares it, so the
+// status the handler sent is the status the access log reports.
+//
 // The Ctx is put back when h returns, whether it returned an error or panicked,
 // so a panic that something upstream recovers does not leak one. What it does
 // not do is wait for anything h started: a goroutine still holding the Ctx at
@@ -47,7 +56,7 @@ func H(h Handler) http.Handler {
 		c := acquire()
 		defer release(c)
 
-		c.res.ResponseWriter = w
+		c.record(w)
 		c.route, c.params, _ = router.Matched(r)
 
 		// The Ctx goes in the context so that anything the handler calls that
@@ -146,7 +155,7 @@ func (c *Ctx) fail(err error) {
 // server's log rather than anything the client sees.
 func DefaultErrors(c *Ctx, err error) {
 	c.Log().LogAttrs(c.Context(), slog.LevelError, "handler failed", slog.Any("error", err))
-	if c.res.wrote {
+	if c.res.Status() != 0 {
 		return
 	}
 	http.Error(c.Writer(), http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)

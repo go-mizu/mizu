@@ -184,7 +184,7 @@ func TestReadFromKeepsTheFastPath(t *testing.T) {
 	// A strings.Reader is an io.WriterTo, which io.Copy prefers over the
 	// destination's ReadFrom, so the source here is a plain reader.
 	src := struct{ io.Reader }{strings.NewReader("bytes")}
-	if _, err := io.Copy(&c.res, src); err != nil {
+	if _, err := io.Copy(c.res, src); err != nil {
 		t.Fatal(err)
 	}
 	if !w.used {
