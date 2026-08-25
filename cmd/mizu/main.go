@@ -1,15 +1,17 @@
 // Command mizu is the toolkit's command line tool.
 //
-// It does two things today.
+// It does three things today.
 //
+//	mizu gen              write what the markers in a project ask for
+//	mizu gen --check      report what is out of date and write nothing
 //	mizu version          print the version, one fact per line
-//	mizu version --json   print the same facts as JSON
 //	mizu hash:tune        measure argon2id here and print the cost to configure
 //
-// The rest of the command tree arrives with the generators. What is here now
-// is the shape the rest hangs off: every command is a struct with a Spec and a
-// Run, and both of those are ordinary methods taking a [console.IO], so a
-// command is tested by calling it rather than by starting a process.
+// The rest of the command tree arrives with the packages it drives. What is
+// here now is the shape the rest hangs off: every command is a struct with a
+// Spec and a Run, and both of those are ordinary methods taking a
+// [console.IO], so a command is tested by calling it rather than by starting a
+// process.
 //
 // Every command takes the flags in [console.Globals] on top of its own:
 // --verbose, --quiet, --json, --color, --no-color, --no-interaction and
@@ -42,8 +44,12 @@ func newApp() *console.App {
 		Before:  g.before,
 	}
 	a.Add(
+		&Gen{},
 		&HashTune{},
 		&Version{},
 	)
+	for _, g := range generators {
+		a.Add(&Gen{only: g.name})
+	}
 	return a
 }
