@@ -26,6 +26,7 @@ func init() {
 	register("bind/upload", benchBindUpload)
 	register("bind/gen/form", benchBindGenForm)
 	register("bind/gen/json", benchBindGenJSON)
+	register("respond/json", benchRespondJSON)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -334,6 +335,36 @@ func benchBindGenJSON(b *testing.B) {
 	for b.Loop() {
 		body.i = 0
 		r.Form, r.PostForm = nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchRespondJSON is the other end of the bind rows: the same twelve fields
+// going back out.
+//
+// web.JSON builds the body in a pooled buffer before any of it goes on the
+// wire, so what is in the loop is the marshal, one write, and the Content-Length
+// the buffer makes knowable. The buffer itself allocates once for the whole run,
+// which is the thing to watch: a run whose allocation count tracks the size of
+// the response is a pool that stopped working.
+//
+// The struct is the same listing the bind rows fill, so the pair reads as one
+// round trip. A handler that binds a request and answers with what it bound
+// costs bind/json plus this.
+func benchRespondJSON(b *testing.B) {
+	out := listing{
+		Q: "water", Tags: []string{"go", "web"}, Page: 2, PerPage: 25,
+		Sort: "name", Order: "asc", MinPrice: 1.5, MaxPrice: 99,
+		InStock: true, Since: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		Kind: "all", Cursor: "eyJpZCI6MTAwfQ",
+	}
+
+	h := web.H(func(c *web.Ctx) error { return web.JSON(c, out) })
+	r := httptest.NewRequest("GET", "/things", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
 		h.ServeHTTP(w, r)
 	}
 }

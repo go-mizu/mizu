@@ -18,6 +18,13 @@ import (
 // of them to what it says here.
 const jsonRefusesDuplicates = true
 
+// jsonOmitemptyMeansZero is how this build reads the omitempty tag when it
+// writes a response, and it is the other behaviour the two builds do not share.
+// Here omitempty drops a value that would be written as null, an empty string,
+// an empty object or an empty array, so a field holding the number zero is
+// written. reply_test.go holds each build to what it says here.
+const jsonOmitemptyMeansZero = false
+
 // jsonDecode reads one JSON value from r into v.
 //
 // Anything after the value other than whitespace is an error, and so is a
@@ -27,6 +34,22 @@ const jsonRefusesDuplicates = true
 // read buffer, and this one comes from a pool.
 func jsonDecode(r io.Reader, v any, lax bool) error {
 	return json.UnmarshalRead(r, v, json.RejectUnknownMembers(!lax))
+}
+
+// jsonEncode writes v into buf as JSON, with no newline after it.
+//
+// MarshalWrite streams into the writer rather than building the whole value
+// first, so a large response is held once rather than twice. A value that fails
+// halfway leaves what it managed in buf, which nothing reads: the caller returns
+// the error and the buffer goes back to the pool to be truncated.
+//
+// Deterministic sorts a map's members by key. It is off by default here and on
+// in json_v1.go, which is one reason to set it, and the better one is that a
+// response has to be the same bytes every time for an ETag over it to mean
+// anything. A struct is already written in field order and pays nothing for
+// this.
+func jsonEncode(buf *jsonBuf, v any) error {
+	return json.MarshalWrite(buf, v, json.Deterministic(true))
 }
 
 // jsonField is the one member the decoder was talking about, when it was
