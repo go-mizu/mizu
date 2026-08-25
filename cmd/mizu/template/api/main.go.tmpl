@@ -1,0 +1,54 @@
+// Command {{.Name}} is an HTTP service.
+package main
+
+import (
+	"log"
+	"net/http"
+	"os"
+
+	"github.com/go-mizu/mizu"
+)
+
+func main() {
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	log.Printf("listening on %s", addr)
+	if err := newApp().Listen(addr); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// newApp builds the routes.
+//
+// They live here rather than in main so that a test gets the same application
+// the binary serves, with no socket to open and no port to pick.
+func newApp() *mizu.App {
+	app := mizu.New()
+	// The {$} is what makes this the root and nothing else. A pattern ending
+	// in a slash matches everything under it, so a plain "/" here would answer
+	// every request that no other route claimed.
+	app.Get("/{$}", index)
+	app.Get("/hello/{name}", hello)
+	app.Get("/livez", livez)
+	return app
+}
+
+// index says what this service is, which is the one thing somebody who has
+// found the root of an unfamiliar service wants to know.
+func index(c *mizu.Ctx) error {
+	return c.JSON(http.StatusOK, map[string]string{"service": "{{.Name}}"})
+}
+
+func hello(c *mizu.Ctx) error {
+	return c.JSON(http.StatusOK, map[string]string{"hello": c.Param("name")})
+}
+
+// livez answers while the process is still serving, which is what a load
+// balancer and an orchestrator want to know. It says nothing about whether
+// what this service depends on is up: that is a readiness check, and it goes
+// in once there is something to be ready for.
+func livez(c *mizu.Ctx) error {
+	return c.Text(http.StatusOK, "ok")
+}

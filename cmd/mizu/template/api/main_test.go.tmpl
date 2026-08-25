@@ -1,0 +1,40 @@
+package main
+
+import (
+	"testing"
+
+	"github.com/go-mizu/mizu/mizutest"
+)
+
+// The fixture serves the real application through an in-memory recorder, so a
+// test is a function call rather than a server on a port. Each one builds its
+// own, because mizutest.NewApp makes the test parallel and two fixtures in one
+// test would ask for that twice.
+
+func TestIndex(t *testing.T) {
+	app := mizutest.NewApp(t, mizutest.Serve(newApp()))
+
+	app.Get("/").Do().
+		AssertOK().
+		AssertJSONPath("$.service", "{{.Name}}")
+}
+
+func TestHello(t *testing.T) {
+	app := mizutest.NewApp(t, mizutest.Serve(newApp()))
+
+	app.Get("/hello/ada").Do().
+		AssertOK().
+		AssertJSONPath("$.hello", "ada")
+}
+
+func TestLivez(t *testing.T) {
+	app := mizutest.NewApp(t, mizutest.Serve(newApp()))
+
+	app.Get("/livez").Do().AssertOK()
+}
+
+func TestAPathThatIsNotRegistered(t *testing.T) {
+	app := mizutest.NewApp(t, mizutest.Serve(newApp()))
+
+	app.Get("/nothing-here").Do().AssertNotFound()
+}

@@ -1,0 +1,6 @@
+# Line endings are LF everywhere, including on Windows.
+#
+# Go source is an LF format. gofmt writes LF and compares bytes, so a checkout
+# with core.autocrlf=true makes gofmt -l list every file in the project, and
+# every generated file gets rewritten on every run.
+* text=auto eol=lf
