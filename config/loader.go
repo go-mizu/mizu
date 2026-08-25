@@ -66,6 +66,26 @@ func (s Source) String() string {
 	return s.From.String() + " " + s.Name
 }
 
+// Where is the source as an error message about it leads.
+//
+// A file is its path and position on their own, because path:line:col at the
+// start of a line is what an editor and a terminal both know how to turn into a
+// click, and "file " in front of it is what stops them. Every other layer keeps
+// the word, because DATABASE_URL on its own does not say that it is an
+// environment variable and env DATABASE_URL does.
+//
+// [Source.String] is the other half of this and is what config:show prints,
+// where the layer is the column and the word belongs in it.
+func (s Source) Where() string {
+	switch s.From {
+	case FromFile, FromDotEnv:
+		if s.Name != "" {
+			return s.Name
+		}
+	}
+	return s.String()
+}
+
 // A Field is a setting a caller is asking for.
 //
 // Generated code fills one in from what is written on a struct field. Path is
@@ -476,7 +496,7 @@ func (l *Loader) Unknown() []Unknown {
 	}
 	for _, key := range l.flagKeys {
 		if !l.asked[key] && !l.open[key] {
-			out = append(out, Unknown{Path: key, From: l.flags[key].source, Near: diag.Suggest(key, slices.Values(known))})
+			out = append(out, Unknown{Path: key, From: l.flags[key].source, Near: l.suggest(key, known)})
 		}
 	}
 	return out
@@ -503,10 +523,30 @@ func (l *Loader) walk(t *toml.Table, prefix string, known []string, out *[]Unkno
 			*out = append(*out, Unknown{
 				Path: path,
 				From: Source{From: FromFile, Name: v.Pos.String()},
-				Near: diag.Suggest(path, slices.Values(known)),
+				Near: l.suggest(path, known),
 			})
 		}
 	}
+}
+
+// suggest is the settings worth offering for a path nobody asked for.
+//
+// A table the path is inside is not one of them. app.mascot is a setting that
+// does not exist and app is the table it was written in, so offering app reads
+// as advice to delete the name, and the table was never in question. A
+// misspelled table header keeps its suggestion, because htpp is not inside
+// http, and that is the case the table names are in the list for.
+func (l *Loader) suggest(path string, known []string) []string {
+	return diag.Suggest(path, func(yield func(string) bool) {
+		for _, c := range known {
+			if strings.HasPrefix(path, c+".") {
+				continue
+			}
+			if !yield(c) {
+				return
+			}
+		}
+	})
 }
 
 // known is every path a field asked for, and every table above one, which is

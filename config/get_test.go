@@ -152,7 +152,7 @@ func TestFieldErrorMessage(t *testing.T) {
 				Value: Value{Source: Source{From: FromFile, Name: "config/local.toml:3:8"}},
 				Err:   errors.New("nope"),
 			},
-			want: "file config/local.toml:3:8: DB.Port: nope",
+			want: "config/local.toml:3:8: DB.Port: nope",
 		},
 		{
 			name: "a variable says which one",

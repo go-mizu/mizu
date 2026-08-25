@@ -407,7 +407,7 @@ func ExampleGet() {
 		// The file is in a temporary directory, and on Windows it is separated
 		// by backslashes, so cut the directory off and write what is left the
 		// way a project writes it down.
-		msg := strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator))
+		msg := strings.TrimPrefix(e.Error(), dir+string(filepath.Separator))
 		fmt.Println(filepath.ToSlash(msg))
 	}
 	// Output:
@@ -467,7 +467,7 @@ func ExampleParser() {
 
 	fmt.Println(c.MaxBytes)
 	for _, e := range l.Errors() {
-		msg := strings.TrimPrefix(e.Error(), "file "+dir+string(filepath.Separator))
+		msg := strings.TrimPrefix(e.Error(), dir+string(filepath.Separator))
 		fmt.Println(filepath.ToSlash(msg))
 	}
 	// Output:

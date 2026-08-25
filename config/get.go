@@ -65,7 +65,7 @@ func (e *FieldError) where() string {
 	if e.Value.Source.From == FromDefault {
 		return ""
 	}
-	return e.Value.Source.String()
+	return e.Value.Source.Where()
 }
 
 func (e *FieldError) Unwrap() error { return e.Err }

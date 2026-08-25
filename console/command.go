@@ -242,7 +242,10 @@ func (a *App) unknown(name string) error {
 			}
 		}
 	})
-	if did := diag.Did(near, nil); did != "" {
+	// Quoted the same way the name that was typed is. A command name can hold a
+	// colon, and one half of a sentence in quotes with the other half out of
+	// them reads as though the two are different kinds of thing.
+	if did := diag.Did(near, quote); did != "" {
 		return usagef("unknown command %s, %s", quote(name), did)
 	}
 	return usagef("unknown command %s, run %q for the list", quote(name), a.help())

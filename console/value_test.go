@@ -89,11 +89,19 @@ func TestIntDoesNotWrapAround(t *testing.T) {
 	if err == nil {
 		t.Fatalf("300 went into an int8 as %d", n)
 	}
-	if want := "300 does not fit"; err.Error() != want {
+	if want := "300 does not fit, the largest is 127"; err.Error() != want {
 		t.Errorf("says %q, want %q", err, want)
 	}
 	if n != 0 {
 		t.Errorf("left %d behind, want the value untouched", n)
+	}
+
+	// The other end names the other bound, because being told the largest is
+	// 127 when the number typed was -300 is an answer to a question nobody
+	// asked.
+	err = Int(&n).Set("-300")
+	if want := "-300 does not fit, the smallest is -128"; err == nil || err.Error() != want {
+		t.Errorf("says %v, want %q", err, want)
 	}
 }
 
@@ -105,7 +113,7 @@ func TestUint(t *testing.T) {
 	if n != 65535 {
 		t.Errorf("set %d, want 65535", n)
 	}
-	if err := Uint(&n).Set("65536"); err == nil || err.Error() != "65536 does not fit" {
+	if err := Uint(&n).Set("65536"); err == nil || err.Error() != "65536 does not fit, the largest is 65535" {
 		t.Errorf("65536 into a uint16 says %v", err)
 	}
 }
@@ -276,7 +284,7 @@ func TestTime(t *testing.T) {
 	if err == nil {
 		t.Fatal("yesterday was accepted")
 	}
-	if want := `"yesterday" is not a time, try ` + time.RFC3339; err.Error() != want {
+	if want := `"yesterday" is not a time, try 2006-01-02T15:04:05Z or 2006-01-02`; err.Error() != want {
 		t.Errorf("says %q, want %q", err, want)
 	}
 }
