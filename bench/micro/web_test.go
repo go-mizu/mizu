@@ -1,11 +1,14 @@
 package micro
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +30,7 @@ func init() {
 	register("bind/gen/form", benchBindGenForm)
 	register("bind/gen/json", benchBindGenJSON)
 	register("respond/json", benchRespondJSON)
+	register("respond/file", benchRespondFile)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -456,6 +460,35 @@ func (b *replay) Read(p []byte) (int, error) {
 }
 
 func (b *replay) Close() error { return nil }
+
+// benchRespondFile is an asset on disk going out through web.File.
+//
+// 64 KB is a middling stylesheet or a small image, and the size is not really
+// what the row is for. web.File hands the open file to http.ServeContent, which
+// copies it through a fixed buffer rather than reading the whole thing in, so
+// the allocation count should be the same for a 64 megabyte download as it is
+// for this one. A change that started buffering would show up here as a count
+// that tracks the file.
+//
+// The header map is cleared each time round because a real response has a fresh
+// one, and ServeContent skips working out the content type when it finds one
+// already set.
+func benchRespondFile(b *testing.B) {
+	path := filepath.Join(b.TempDir(), "asset.bin")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("mizu"), 16<<10), 0o600); err != nil {
+		b.Fatalf("writing the asset: %v", err)
+	}
+
+	h := web.H(func(c *web.Ctx) error { return c.File(path) })
+	r := httptest.NewRequest("GET", "/asset.bin", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		clear(w.header)
+		h.ServeHTTP(w, r)
+	}
+}
 
 // discardWriter is a ResponseWriter that keeps nothing, so the benchmark
 // measures the Ctx rather than a recorder's buffer.

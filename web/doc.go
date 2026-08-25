@@ -261,11 +261,51 @@
 // method on the pointer and having it ignored is the older footgun, and this
 // does not reproduce it.
 //
+// # Sending a file
+//
+// [Ctx.File] sends one from disk and [Ctx.FileFS] sends one out of an fs.FS.
+// Both hand the response to [net/http.ServeContent], so a range request resumes
+// a download, a browser that already has the file gets a 304, and the content
+// type comes from the extension falling back to the first bytes. It also means
+// the status is whatever the conditional and range rules decided rather than
+// whatever [Ctx.Status] was given.
+//
+// FileFS is the one to reach for when the name came from the request:
+//
+//	root, err := os.OpenRoot("/var/www")
+//	...
+//	return c.FileFS(root.FS(), c.Param("path"))
+//
+// File refuses a path with a .. element in it, which catches the obvious way in
+// and not the one through a symlink. An [os.Root] resolves every element through
+// the operating system, so a link pointing out of the tree fails to open rather
+// than serving what it points at, and an fs.FS path cannot climb in the first
+// place. [embed.FS] gets the same treatment for nothing.
+//
+// [Ctx.Download] sends a reader as a file the browser saves rather than shows,
+// and [Ctx.Attachment] does the same for a file already on disk, with the ranges
+// and conditional requests File answers. The name on the way down is cleaned the
+// way an upload's filename is and then formatted rather than concatenated, so a
+// newline in a name a user chose cannot become a second header.
+//
+// A missing file is [github.com/go-mizu/mizu/errs.NotFound] and so is a
+// directory, since there is no listing here and the client asked for a file.
+// Anything else, a permission the deploy got wrong most of all, is Internal. The
+// error carries the path underneath it, so the log has it and the response does
+// not.
+//
+// [Ctx.HTML] sends a body that is already markup. It takes a
+// [html/template.HTML] rather than a string, which is the standard library's way
+// of saying that whoever produced this decided it was safe to send, so a string
+// that came from a person does not convert on its own. Rendering a page is
+// [github.com/go-mizu/mizu/view]'s job and escaping what goes into one is the
+// template package's.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Storing an
-// upload, the rest of the writing surface, content negotiation, the pagination
-// types and the RFC 9457 renderer arrive with their own milestones.
+// upload, content negotiation, the pagination types and the RFC 9457 renderer
+// arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They

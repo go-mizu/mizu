@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/go-mizu/mizu/router"
 )
@@ -133,8 +134,13 @@ func staleCalls() []struct {
 		{"SetCookie", func(c *Ctx) { c.SetCookie(nil) }},
 		{"Write", func(c *Ctx) { c.Write(nil) }},
 		{"Text", func(c *Ctx) { c.Text("") }},
+		{"HTML", func(c *Ctx) { c.HTML("") }},
 		{"Bytes", func(c *Ctx) { c.Bytes("", nil) }},
 		{"Stream", func(c *Ctx) { c.Stream("", strings.NewReader("")) }},
+		{"File", func(c *Ctx) { c.File("nothing") }},
+		{"FileFS", func(c *Ctx) { c.FileFS(fstest.MapFS{}, "nothing") }},
+		{"Download", func(c *Ctx) { c.Download("a.txt", strings.NewReader("")) }},
+		{"Attachment", func(c *Ctx) { c.Attachment("nothing", "a.txt") }},
 		{"NoContent", func(c *Ctx) { c.NoContent() }},
 		{"Redirect", func(c *Ctx) { c.Redirect("/") }},
 	}
