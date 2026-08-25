@@ -147,6 +147,48 @@ func ExampleIO_Tree() {
 	// └── go.mod
 }
 
+// Flags and arguments are declared next to the fields they parse into. The
+// command line here is what somebody typed after the command name.
+func ExampleParse() {
+	var (
+		days   int
+		dryRun bool
+		tenant string
+	)
+
+	flags := []console.Flag{
+		{Name: "days", Short: 'd', Default: "30", Desc: "Delete accounts older than this", Value: console.Int(&days)},
+		{Name: "dry-run", Desc: "Report without deleting", Value: console.Bool(&dryRun)},
+	}
+	args := []console.Arg{
+		{Name: "tenant", Required: true, Desc: "Tenant slug, or all", Value: console.String(&tenant)},
+	}
+
+	if err := console.Parse(flags, args, []string{"-d", "7", "--dry-run", "acme"}); err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(days, dryRun, tenant)
+
+	// Output:
+	// 7 true acme
+}
+
+// A command line that could not be understood is a [console.UsageError], which
+// is what a command exits 2 for. The message names the flag, and the nearest
+// one that exists, because a typo is the usual reason to be reading it.
+func ExampleParse_usage() {
+	var days int
+	flags := []console.Flag{{Name: "days", Value: console.Int(&days)}}
+
+	fmt.Println(console.Parse(flags, nil, []string{"--dayz=7"}))
+	fmt.Println(console.Parse(flags, nil, []string{"--days=soon"}))
+
+	// Output:
+	// unknown flag --dayz, did you mean --days
+	// --days: "soon" is not a number
+}
+
 // With no terminal, a prompt takes its default, and a prompt with no default is
 // an error. That is the difference between a build that stops with a sentence
 // about a missing value and one that holds a CI runner until it times out.

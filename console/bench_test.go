@@ -141,6 +141,24 @@ func BenchmarkSectionInfo(b *testing.B) {
 	}
 }
 
+// BenchmarkParse is a whole command line, which a program does once.
+//
+// The number to watch is not the nanoseconds, it is that the work is the length
+// of the command line rather than the number of flags declared times it. What
+// it counts includes building the flag slice, since that is what a command does
+// on the way in and there is no point measuring half of it.
+func BenchmarkParse(b *testing.B) {
+	argv := []string{"--days", "7", "--dry-run", "-vv", "--tag", "a,b", "acme"}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		var p prune
+		if err := parse(p.flags(), p.args(), argv, noenv); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkInfo is the cost of a status line, and of the same line when
 // --quiet turned it off. The second one is what a loop that reports progress
 // pays when nobody is reading, which should be close to nothing.
