@@ -87,12 +87,15 @@
 // wraps the response writer once and http.ResponseController still reaches the
 // server's writer through it.
 //
+// The middleware nearly every service needs is in
+// [github.com/go-mizu/mizu/web/mw], which is where RequestID, RealIP, Logger,
+// Recover, Timeout, MaxBody and Concurrency live.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Binding,
 // validation, content negotiation, the pagination types and the RFC 9457
-// renderer arrive with their own milestones, and so do the middleware that fill
-// in the request id, the client address behind a proxy, and the body limit.
+// renderer arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They
