@@ -30,7 +30,7 @@ go -C tools/milestonebot test ./...   # a module of its own
 
 | Directory           | Package     | What it is                                                                                                                                                                             |
 | ------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| .                   | mizu        | Package mizu provides a small, idiomatic foundation for building HTTP servers in Go.                                                                                                   |
+| .                   | mizu        | Package mizu is a small foundation for an HTTP server.                                                                                                                                 |
 | archtest            | archtest    | Package archtest asserts things about a module's import graph and its exported API.                                                                                                    |
 | clock               | clock       | Package clock is what time it is, taken from the context.                                                                                                                              |
 | cmd/mizu            | main        | Command mizu is the command line tool for the mizu toolkit.                                                                                                                            |
