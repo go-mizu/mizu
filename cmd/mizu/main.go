@@ -21,6 +21,7 @@ func registry() []console.Command {
 		&Doctor{},
 		&Gen{},
 		&HashTune{},
+		&Lint{},
 		&New{},
 		&Verify{quick: true},
 		&Verify{},

@@ -1,0 +1,8 @@
+error[MZ3003]: a channel carries a *web.Ctx, and whatever reads it is not the handler that owns it
+ --> src.go:7:15
+  |
+7 | 	work := make(chan *web.Ctx, 1)
+  | 	             ^^^^^^^^^^^^^ send what the reader needs instead
+  |
+  = fix: take the values out of the Ctx and send those, or send the context from Ctx.Detach
+  = explain: mizu explain MZ3003

@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/go-mizu/mizu/console"
+	"github.com/go-mizu/mizu/errs/diag"
 	"github.com/go-mizu/mizu/gen"
+	"github.com/go-mizu/mizu/lint"
 )
 
 // A stage is one thing verify runs.
@@ -42,6 +44,7 @@ var stages = []stage{
 	{"gen", "Generated files say what the code they come from says now", false, stageGen},
 	{"fmt", "Every Go file is formatted", false, stageFmt},
 	{"vet", "The packages type check and vet has nothing to say", true, stageVet},
+	{"lint", "The mizu checks have nothing to say", false, stageLint},
 	{"build", "Every package builds", false, stageBuild},
 	{"test", "The short tests pass", false, stageTest},
 	{"doctor", "The project checks pass", false, stageDoctor},
@@ -332,6 +335,40 @@ func stageFmt(_ context.Context, p project, fix bool) (string, error) {
 
 func stageVet(ctx context.Context, p project, _ bool) (string, error) {
 	return tool(ctx, p.Dir, "go", "vet", "./...")
+}
+
+// stageLint runs the mizu checks, which are the rules a compiler has no opinion
+// about.
+//
+// It runs in this process rather than through mizu lint on PATH, for the same
+// reason the fmt stage does not shell out to gofmt: what is on PATH is whichever
+// version somebody installed, and a verify whose answer depends on that is not
+// an answer.
+//
+// The report is rendered without colour because it goes into the stage output,
+// which is indented and may be on its way to a log.
+func stageLint(ctx context.Context, p project, _ bool) (string, error) {
+	pkgs, err := load(p.Dir, []string{"./..."})
+	if err != nil {
+		return err.Error(), errors.New("the packages could not be read")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	found, err := lint.Run(pkgs)
+	if err != nil {
+		return "", err
+	}
+	if len(found) == 0 {
+		return "", nil
+	}
+
+	var b strings.Builder
+	if err := diag.Text(&b, found, diag.WithColor(false)); err != nil {
+		return "", err
+	}
+	return b.String(), fmt.Errorf("%s, run mizu lint", plural(len(found), "problem"))
 }
 
 // stageBuild builds every package.

@@ -7,8 +7,8 @@
 //
 // # Data goes to stdout, everything else goes to stderr
 //
-// [IO.Print], [IO.Line], [IO.Table] and [IO.JSON] write to stdout. They are the
-// answer to what was asked.
+// [IO.Print], [IO.Line], [IO.Table], [IO.Diag] and [IO.JSON] write to stdout.
+// They are the answer to what was asked.
 //
 // [IO.Info], [IO.Success], [IO.Warn], [IO.Error] and [IO.Debug] write to
 // stderr. They are the program talking about itself.
@@ -185,9 +185,11 @@
 //
 // An IO in JSON mode writes machine readable output and no decoration.
 // [IO.Table] becomes an array of objects instead of columns, so a command that
-// prints a list supports --json without writing the list twice. Warnings and
-// errors still go to stderr, where they cannot corrupt what a parser is
-// reading.
+// prints a list supports --json without writing the list twice. [IO.Diag] does
+// the same for a command whose answer is a list of things wrong with somebody's
+// code: the quoted line with the carets under it becomes the mizu.diag/1
+// document. Warnings and errors still go to stderr, where they cannot corrupt
+// what a parser is reading.
 //
 // # The two packages next to this one
 //

@@ -1,0 +1,8 @@
+error[MZ3001]: a struct field holds a *web.Ctx, which stops being valid when the handler returns
+  --> src.go:10:6
+   |
+10 | 	req *web.Ctx
+   | 	    ^^^^^^^^ this field outlives the request
+   |
+   = fix: keep what the field is for instead: the request id, the user, or the context from Ctx.Context
+   = explain: mizu explain MZ3001

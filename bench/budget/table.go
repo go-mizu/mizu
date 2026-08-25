@@ -33,9 +33,9 @@ var rows = []Row{
 		Time: 400 * time.Nanosecond, Allocs: 0,
 	},
 	{
-		ID: "ctx/acquire", Group: httpPath, Doc: "08", Since: "M1",
-		Op:   "Pool acquire, reset, release",
-		Time: 60 * time.Nanosecond, Allocs: 0,
+		ID: "ctx/acquire", Group: httpPath, Doc: "08",
+		Op:   "web.H around a handler that does nothing: acquire, fill, release",
+		Time: 200 * time.Nanosecond, Allocs: 2,
 	},
 	{
 		ID: "bind/json", Group: httpPath, Doc: "08", Since: "M1",

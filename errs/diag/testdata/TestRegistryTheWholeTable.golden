@@ -16,3 +16,8 @@ MZ1005  a setting a program asked for is not set in any source
 MZ1006  a command line flag was given with no value after it
 MZ1007  a setting reads its value from a command and running commands is turned off
 MZ1042  a setting is written down that nothing asked for
+MZ3001  a struct field holds a *web.Ctx, which does not outlive its handler
+MZ3002  a function returns a *web.Ctx, which does not outlive its handler
+MZ3003  a channel carries a *web.Ctx, which does not outlive its handler
+MZ3004  a package level variable holds a *web.Ctx, which does not outlive its handler
+MZ3005  a go statement captures a *web.Ctx, which does not outlive its handler

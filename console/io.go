@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/go-mizu/mizu/errs/diag"
 )
 
 // Verbosity is how much a command says about what it is doing.
@@ -212,6 +214,32 @@ func (c *IO) JSON(v any) error {
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
 	return enc.Encode(v)
+}
+
+// Diag writes what a command found wrong with somebody's code to stdout: the
+// quoted line with the carets under it, or the mizu.diag/1 document from doc 37
+// section 4.2 under --json.
+//
+// It is [IO.Table] for the other shape a command's answer comes in, and what
+// that shape looks like is decided here rather than in each command. A nil
+// error is a run that found nothing, which still writes the document, because
+// telling an empty run from one that never started should not depend on whether
+// there was any output.
+//
+// It takes an error rather than a list so that a command with findings hands
+// over what its own functions returned. Anything at all can be handed over:
+// whatever the error carries becomes a diagnostic, the same way it does when a
+// command fails under --json.
+//
+// This is the answer, so it goes to stdout. The error the command returns
+// afterwards, which is what decides the exit code, goes to stderr. The two are
+// separate because a script wants one of them and a person wants both.
+func (c *IO) Diag(err error) error {
+	l := diag.Of(err)
+	if c.jsonMode {
+		return diag.JSON(c.out, l)
+	}
+	return diag.Text(c.out, l, diag.WithColor(c.colorOut))
 }
 
 // decorated reports whether output meant for a person should be written at all.

@@ -1,0 +1,8 @@
+error[MZ3002]: a function returns a *web.Ctx, which stops being valid when the handler that made it returns
+  --> src.go:11:35
+   |
+11 | func Current(ctx context.Context) *web.Ctx {
+   |                                   ^^^^^^^^ this pointer escapes the handler
+   |
+   = fix: return what the caller needs, or take a *web.Ctx as an argument so the handler still owns it
+   = explain: mizu explain MZ3002

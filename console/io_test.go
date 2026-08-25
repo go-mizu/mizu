@@ -2,8 +2,11 @@ package console
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/go-mizu/mizu/errs/diag"
 )
 
 // streams is the three buffers a test writes through, plus the IO on them.
@@ -214,5 +217,79 @@ func TestStdioUsesTheProcessStreams(t *testing.T) {
 
 	if io.In() == nil || io.Out() == nil || io.Err() == nil {
 		t.Error("Stdio left a stream nil")
+	}
+}
+
+// TestDiagWritesAReportSomebodyCanRead is the shape a command's findings take
+// when a person is looking at them.
+func TestDiagWritesAReportSomebodyCanRead(t *testing.T) {
+	s := newStreams(t, Options{})
+
+	list := diag.List{{
+		Code:     "MZ1042",
+		Severity: diag.Error,
+		Message:  "a setting is written down that nothing asked for",
+		File:     "app.toml",
+		Range:    diag.Span(3, 1, 9),
+	}}
+	if err := s.io.Diag(list.Err()); err != nil {
+		t.Fatal(err)
+	}
+
+	got := s.out.String()
+	for _, want := range []string{"error[MZ1042]", "app.toml:3:1", "mizu explain MZ1042"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the report does not hold %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "\x1b") {
+		t.Error("the report carries escapes and nothing here is a terminal")
+	}
+	if s.err.Len() != 0 {
+		t.Errorf("stderr has %q, and the findings are the answer", s.err.String())
+	}
+}
+
+// TestDiagUnderJSONIsTheDocument is the same call answering a program.
+func TestDiagUnderJSONIsTheDocument(t *testing.T) {
+	s := newStreams(t, Options{JSON: true})
+
+	list := diag.List{{Code: "MZ1042", Severity: diag.Error, Message: "nothing asked for it"}}
+	if err := s.io.Diag(list.Err()); err != nil {
+		t.Fatal(err)
+	}
+
+	var doc struct {
+		Diagnostics []struct {
+			Code string `json:"code"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(s.out.Bytes(), &doc); err != nil {
+		t.Fatalf("stdout is not a document: %v\n%s", err, s.out)
+	}
+	if len(doc.Diagnostics) != 1 || doc.Diagnostics[0].Code != "MZ1042" {
+		t.Errorf("the document holds %+v", doc.Diagnostics)
+	}
+}
+
+// TestDiagWithNothingToSayIsStillAnAnswer. A run that found nothing is not the
+// same as a run that never happened, and a program reading the output should
+// not have to tell them apart by whether there was any.
+func TestDiagWithNothingToSayIsStillAnAnswer(t *testing.T) {
+	s := newStreams(t, Options{JSON: true})
+
+	if err := s.io.Diag(nil); err != nil {
+		t.Fatal(err)
+	}
+	if s.out.Len() == 0 {
+		t.Error("nothing was written, so an empty run reads as no run")
+	}
+
+	plain := newStreams(t, Options{})
+	if err := plain.io.Diag(nil); err != nil {
+		t.Fatal(err)
+	}
+	if plain.out.Len() != 0 {
+		t.Errorf("a report with nothing in it printed %q", plain.out)
 	}
 }
