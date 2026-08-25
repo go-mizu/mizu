@@ -1,0 +1,61 @@
+{
+  "schema": "mizu.diag/1",
+  "diagnostics": [
+    {
+      "code": "MZ1042",
+      "severity": "error",
+      "message": "unknown config key \"database.pool_size\"",
+      "file": "config/app.toml",
+      "range": {
+        "start": {
+          "line": 14,
+          "col": 1
+        },
+        "end": {
+          "line": 14,
+          "col": 10
+        }
+      },
+      "detail": "no such field in Config.Database",
+      "suggestions": [
+        {
+          "message": "did you mean \"max_open_conns\"?",
+          "confidence": "high",
+          "edits": [
+            {
+              "file": "config/app.toml",
+              "range": {
+                "start": {
+                  "line": 14,
+                  "col": 1
+                },
+                "end": {
+                  "line": 14,
+                  "col": 10
+                }
+              },
+              "new_text": "max_open_conns"
+            }
+          ]
+        }
+      ],
+      "fix_command": "mizu fix config --rule=rename-key --from=database.pool_size --to=database.max_open_conns",
+      "explain": "mizu explain MZ1042",
+      "docs": "https://mizu.dev/e/MZ1042"
+    },
+    {
+      "severity": "warning",
+      "message": "no APP_KEY is set",
+      "fix_command": "mizu key:generate"
+    },
+    {
+      "severity": "note",
+      "message": "the toolchain is a version behind"
+    }
+  ],
+  "summary": {
+    "errors": 1,
+    "warnings": 1,
+    "duration_ms": 43
+  }
+}
