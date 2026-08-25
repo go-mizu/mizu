@@ -1,0 +1,5 @@
+error: commands.go:34:2: A is a NoArgs, which no console.Value reads
+
+error: commands.go:35:2: B is a NotBytes, which no console.Value reads
+
+error: commands.go:36:2: C is a NotAMethod, which no console.Value reads

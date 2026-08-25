@@ -1,0 +1,1 @@
+error: commands.go:4:6: Command has no Run method, and a command is a struct that says what it takes and does it

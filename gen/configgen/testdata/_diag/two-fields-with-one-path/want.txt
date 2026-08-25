@@ -1,0 +1,1 @@
+error: config.go:7:3: App.Name and App.Also are both app.name

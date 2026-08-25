@@ -371,6 +371,7 @@ func TestProjectFiles(t *testing.T) {
 		"node_modules/p/i.js":  {},
 		"vendor/v/x.go":        {},
 		"web/link.go":          {Mode: fs.ModeSymlink},
+		"_diag/case/broken.go": {},
 	}
 
 	want := []string{"README.md", "app/a.go"}

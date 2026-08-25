@@ -19,14 +19,17 @@ func (p *Plan) value(t types.Type, addr string, tag reflect.StructTag) (string, 
 
 	if tag.Get("count") == "true" {
 		if !types.Identical(t, types.Typ[types.Int]) {
-			return "", fmt.Errorf("counts up as -vv and is a %s, which only a plain int does", p.short(t))
+			// No article in front of the type. It is written by the reader
+			// rather than by this, and "a int8" is the sort of thing that
+			// makes somebody wonder what else the tool got wrong.
+			return "", fmt.Errorf("counts up as -vv and is %s, which only a plain int does", p.short(t))
 		}
 		return fmt.Sprintf("%s.Count(%s)", c, addr), nil
 	}
 
 	if options, ok := tag.Lookup("enum"); ok {
 		if !isString(t) {
-			return "", fmt.Errorf("has an enum tag and is a %s, which only text can be", p.short(t))
+			return "", fmt.Errorf("has an enum tag and is %s, which only text can be", p.short(t))
 		}
 		return fmt.Sprintf("%s.Enum(%s%s)", c, addr, quoteAll(options)), nil
 	}

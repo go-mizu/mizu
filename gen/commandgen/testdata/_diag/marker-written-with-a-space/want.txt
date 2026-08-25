@@ -1,0 +1,1 @@
+error: commands.go:20:1: "// mizu:command name=go" has a space after the slashes, which makes it a comment rather than a marker; write "//mizu:command name=go"

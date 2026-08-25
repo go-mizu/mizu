@@ -1,0 +1,1 @@
+error: commands.go:22:2: Where is required and has a default, and a flag with a default is never missing

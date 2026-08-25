@@ -65,8 +65,8 @@ func BenchmarkRender(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := render(p); err != nil {
-			b.Fatal(err)
+		if len(render(p)) == 0 {
+			b.Fatal("nothing written")
 		}
 	}
 }

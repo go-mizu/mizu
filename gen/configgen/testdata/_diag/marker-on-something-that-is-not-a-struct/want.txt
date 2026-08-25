@@ -1,0 +1,1 @@
+error: config.go:4:6: Config is marked as configuration and is not a struct

@@ -1,0 +1,1 @@
+error: commands.go:22:2: Weights is a map[string]int, and a flag holding pairs is a map[string]string

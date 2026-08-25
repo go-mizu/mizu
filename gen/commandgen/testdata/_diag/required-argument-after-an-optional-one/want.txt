@@ -1,0 +1,1 @@
+error: commands.go:21:6: Command.When is required and comes after Where, which is not, so it can never be reached

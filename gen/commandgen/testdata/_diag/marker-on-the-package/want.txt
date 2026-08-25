@@ -1,0 +1,1 @@
+error: commands.go:2:1: the command marker is on something with no name

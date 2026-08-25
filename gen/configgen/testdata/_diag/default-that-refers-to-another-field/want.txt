@@ -1,0 +1,1 @@
+error: config.go:7:3: App.Prefix: the default "{App.Name}:" refers to another field, which arrives with mizu.Base

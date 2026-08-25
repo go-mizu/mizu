@@ -1,0 +1,1 @@
+error: config.go:4:6: Config has no settings in it

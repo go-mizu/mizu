@@ -1,16 +1,19 @@
 package configgen
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/go-mizu/mizu/gen"
 )
 
+// The tests here are about the shapes a configuration struct comes in and what
+// the generator writes for each of them. What it says when it refuses one is in
+// testdata/_diag, where the message is the thing being reviewed.
+
 // analyzeSrc runs the generator over one file of source, without that file
-// having to be on disk, so a test of a broken configuration reads as one
-// thing rather than as a directory somewhere else.
+// having to be on disk, so a test of one struct reads as one thing rather than
+// as a directory somewhere else.
 func analyzeSrc(t *testing.T, src string) ([]gen.File, error) {
 	t.Helper()
 	pkgs, err := gen.Load(gen.Config{
@@ -24,145 +27,6 @@ func analyzeSrc(t *testing.T, src string) ([]gen.File, error) {
 }
 
 const header = "package broken\n\n"
-
-func TestBadStructs(t *testing.T) {
-	cases := []struct {
-		name string
-		src  string
-		want []string
-	}{
-		{
-			name: "a type that nothing reads",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Ch chan int
-	}
-}`,
-			want: []string{"App.Ch", "chan int", "no parser reads"},
-		},
-		{
-			name: "two fields with one path",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Name string
-		Also string ` + "`toml:\"name\"`" + `
-	}
-}`,
-			want: []string{"App.Name", "App.Also", "app.name"},
-		},
-		{
-			name: "a default that picks by environment",
-			src: header + `//mizu:config
-type Config struct {
-	Log struct {
-		Format string ` + "`default:\"console|json\"`" + `
-	}
-}`,
-			want: []string{"Log.Format", "console|json", "mizu.Base"},
-		},
-		{
-			name: "a default that refers to another field",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Name   string
-		Prefix string ` + "`default:\"{App.Name}:\"`" + `
-	}
-}`,
-			want: []string{"App.Prefix", "{App.Name}:", "mizu.Base"},
-		},
-		{
-			name: "a marker on something that is not a struct",
-			src: header + `//mizu:config
-type Config int`,
-			want: []string{"Config", "not a struct"},
-		},
-		{
-			name: "a map keyed by something other than a name",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Ports map[int]string
-	}
-}`,
-			want: []string{"App.Ports", "map[int]string", "no parser reads"},
-		},
-		{
-			name: "two structs marked as configuration",
-			src: header + `//mizu:config
-type Config struct {
-	Name string
-}
-
-//mizu:config
-type Other struct {
-	Name string
-}`,
-			want: []string{"2 structs marked as configuration"},
-		},
-		{
-			name: "a struct with nothing in it",
-			src: header + `//mizu:config
-type Config struct{}`,
-			want: []string{"Config", "no settings in it"},
-		},
-		{
-			name: "a number no file can write",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Ratio complex128
-	}
-}`,
-			want: []string{"App.Ratio", "complex128", "no parser reads"},
-		},
-		{
-			name: "a list of something nothing reads",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Ratios []complex128
-	}
-}`,
-			want: []string{"App.Ratios", "[]complex128", "no parser reads"},
-		},
-		{
-			name: "a table of something nothing reads",
-			src: header + `//mizu:config
-type Config struct {
-	App struct {
-		Ratios map[string]complex128
-	}
-}`,
-			want: []string{"App.Ratios", "map[string]complex128", "no parser reads"},
-		},
-		{
-			name: "a marker written with a space",
-			src: header + `// mizu:config
-type Config struct {
-	Name string
-}`,
-			want: []string{"mizu:config", "has a space after the slashes"},
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			files, err := analyzeSrc(t, c.src)
-			if err == nil {
-				t.Fatalf("generated %d files without complaint", len(files))
-			}
-			msg := err.Error()
-			for _, want := range c.want {
-				if !strings.Contains(msg, want) {
-					t.Errorf("the error does not mention %q:\n%s", want, msg)
-				}
-			}
-		})
-	}
-}
 
 // TestNoMarker is a package with a configuration shaped struct that never
 // asked for anything, which is not an error and not a file either. The second
@@ -339,31 +203,5 @@ type Config struct {
 	}
 	if strings.Contains(src, "base.env") {
 		t.Error("the embedded struct added a segment to the path")
-	}
-}
-
-// TestTooDeep checks that the walk stops rather than going down forever, and
-// says so when it does.
-func TestTooDeep(t *testing.T) {
-	var src strings.Builder
-	src.WriteString(header + "//mizu:config\ntype Config struct {\n")
-	depth := maxDepth + 1
-	for i := range depth {
-		fmt.Fprintf(&src, "%sLevel%d struct {\n", strings.Repeat("\t", i+1), i)
-	}
-	fmt.Fprintf(&src, "%sName string\n", strings.Repeat("\t", depth+1))
-	for i := depth; i > 0; i-- {
-		fmt.Fprintf(&src, "%s}\n", strings.Repeat("\t", i))
-	}
-	src.WriteString("}\n")
-
-	_, err := analyzeSrc(t, src.String())
-	if err == nil {
-		t.Fatal("a struct nested past the limit was walked without complaint")
-	}
-	for _, want := range []string{"nests more than 12 deep", "Level0.Level1"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the error does not mention %q:\n%v", want, err)
-		}
 	}
 }
