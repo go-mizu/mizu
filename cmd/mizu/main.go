@@ -1,34 +1,3 @@
-// Command mizu is the toolkit's command line tool.
-//
-// It does eight things today.
-//
-//	mizu new              write a new project that builds, tests and runs
-//	mizu gen              write what the markers in a project ask for
-//	mizu gen --check      report what is out of date and write nothing
-//	mizu check            type check and vet, the fastest answer there is
-//	mizu verify           run everything that has to pass before a change is done
-//	mizu verify --fix     write what can be written, then carry on
-//	mizu doctor           check the project and say what is wrong with it
-//	mizu about            print what the project is made of
-//	mizu version          print the version, one fact per line
-//	mizu hash:tune        measure argon2id here and print the cost to configure
-//
-// The rest of the command tree arrives with the packages it drives. What is
-// here now is the shape the rest hangs off: every command is a struct with a
-// Spec and a Run, and both of those are ordinary methods taking a
-// [console.IO], so a command is tested by calling it rather than by starting a
-// process.
-//
-// Every command takes the flags in [console.Globals] on top of its own:
-// --verbose, --quiet, --json, --diag-file, --color, --no-color,
-// --no-interaction and --timeout. They can be written before the command name
-// or after it. The two this program adds, --profile and --trace, are in
-// [globals].
-//
-// --json is true of every command, including the ones that have nothing to say
-// but whether they worked: what a failure prints under it is a mizu.diag/1
-// document on stderr, and stdout is left to the answer the command was asked
-// for.
 package main
 
 import (
@@ -39,6 +8,28 @@ import (
 
 func main() {
 	os.Exit(newApp().Main(os.Args[1:]))
+}
+
+// registry is every command mizu has, in the order they are registered.
+//
+// It is a list of its own rather than something newApp builds inline so that a
+// test can walk the tree, which is how the reference in doc.go is held to what
+// the program does.
+func registry() []console.Command {
+	cmds := []console.Command{
+		&About{},
+		&Doctor{},
+		&Gen{},
+		&HashTune{},
+		&New{},
+		&Verify{quick: true},
+		&Verify{},
+		&Version{},
+	}
+	for _, g := range generators {
+		cmds = append(cmds, &Gen{only: g.name})
+	}
+	return cmds
 }
 
 // newApp builds the command line.
@@ -55,18 +46,6 @@ func newApp() *console.App {
 		Globals: g.flags(),
 		Before:  g.before,
 	}
-	a.Add(
-		&About{},
-		&Doctor{},
-		&Gen{},
-		&HashTune{},
-		&New{},
-		&Verify{quick: true},
-		&Verify{},
-		&Version{},
-	)
-	for _, g := range generators {
-		a.Add(&Gen{only: g.name})
-	}
+	a.Add(registry()...)
 	return a
 }
