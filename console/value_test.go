@@ -1,6 +1,7 @@
 package console
 
 import (
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -326,6 +327,66 @@ func TestSlice(t *testing.T) {
 	}
 	if err := v.Set("4,five"); err == nil {
 		t.Error("five was accepted")
+	}
+}
+
+// TestSliceOfTheExportedParsers is why they are exported: a list of anything
+// but strings would otherwise mean writing the parsing again, error messages
+// and all.
+func TestSliceOfTheExportedParsers(t *testing.T) {
+	var ports []uint16
+	if err := Slice(&ports, ParseUint, ",").Set("80,443"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if len(ports) != 2 || ports[0] != 80 || ports[1] != 443 {
+		t.Errorf("collected %v, want 80 443", ports)
+	}
+
+	var waits []time.Duration
+	if err := Slice(&waits, ParseDuration, ",").Set("1s,2m"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if len(waits) != 2 || waits[1] != 2*time.Minute {
+		t.Errorf("collected %v, want 1s 2m", waits)
+	}
+}
+
+// TestTheParsersAndTheConstructorsAgree keeps the two from drifting, since the
+// constructors are what most commands use and the parsers are what a list uses.
+func TestTheParsersAndTheConstructorsAgree(t *testing.T) {
+	var n int
+	agree(t, "0x2a", Int(&n), ParseInt[int])
+
+	var u uint
+	agree(t, "7", Uint(&u), ParseUint[uint])
+
+	var f float64
+	agree(t, "1.5", Float(&f), ParseFloat[float64])
+
+	var d time.Duration
+	agree(t, "90s", Duration(&d), ParseDuration[time.Duration])
+
+	var s string
+	agree(t, "anything", String(&s), ParseString[string])
+
+	var when time.Time
+	agree(t, "2026-01-01", Time(&when), ParseTime)
+}
+
+// agree checks that a constructor and its parser take one piece of text to the
+// same value, which is what stops the two drifting apart.
+func agree[T any](t *testing.T, text string, value Value, parse func(string) (T, error)) {
+	t.Helper()
+
+	parsed, err := parse(text)
+	if err != nil {
+		t.Fatalf("parsing %q: %v", text, err)
+	}
+	if err := value.Set(text); err != nil {
+		t.Fatalf("setting %q: %v", text, err)
+	}
+	if got, want := value.String(), fmt.Sprint(parsed); got != want {
+		t.Errorf("%q: the constructor says %s and the parser says %s", text, got, want)
 	}
 }
 

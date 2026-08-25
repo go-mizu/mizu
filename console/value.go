@@ -93,59 +93,78 @@ func typed[T any](kind string, p *T, parse func(string) (T, error)) Value {
 	return value[T]{p: p, parse: parse, kind: kind}
 }
 
+// The Parse functions below are what the constructors on this page parse with,
+// exported so that the same parsing can be had somewhere else. They all have
+// the shape [Slice] and [Var] take:
+//
+//	console.Slice(&c.Ports, console.ParseUint, ",")
+//	console.Var(&c.Retries, console.ParseInt)
+//
+// Without them a list of anything but strings means writing the parsing again,
+// including the error messages, which is how a command ends up telling somebody
+// about ParseInt.
+
 // String returns a Value that takes the text as it stands.
-func String[T ~string](p *T) Value {
-	return typed("string", p, func(s string) (T, error) { return T(s), nil })
-}
+func String[T ~string](p *T) Value { return typed("string", p, ParseString) }
+
+// ParseString takes the text as it stands.
+func ParseString[T ~string](s string) (T, error) { return T(s), nil }
 
 // Int returns a Value that parses a signed number.
+func Int[T ~int | ~int8 | ~int16 | ~int32 | ~int64](p *T) Value {
+	return typed("int", p, ParseInt)
+}
+
+// ParseInt parses a signed number.
 //
 // The base comes from the text, so 0x2a and 0b101010 and 42 all work, and an
 // underscore may be used as a separator. A value too large for the type it is
 // going into is an error rather than a wrap around.
-func Int[T ~int | ~int8 | ~int16 | ~int32 | ~int64](p *T) Value {
-	return typed("int", p, func(s string) (T, error) {
-		n, err := strconv.ParseInt(s, 0, 64)
-		if err != nil {
-			return 0, numError(s, err)
-		}
-		if v := T(n); int64(v) == n {
-			return v, nil
-		}
-		return 0, fmt.Errorf("%s does not fit", s)
-	})
+func ParseInt[T ~int | ~int8 | ~int16 | ~int32 | ~int64](s string) (T, error) {
+	n, err := strconv.ParseInt(s, 0, 64)
+	if err != nil {
+		return 0, numError(s, err)
+	}
+	if v := T(n); int64(v) == n {
+		return v, nil
+	}
+	return 0, fmt.Errorf("%s does not fit", s)
 }
 
-// Uint returns a Value that parses an unsigned number. A negative one is an
-// error naming the sign rather than a very large positive number.
+// Uint returns a Value that parses an unsigned number.
 func Uint[T ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](p *T) Value {
-	return typed("uint", p, func(s string) (T, error) {
-		n, err := strconv.ParseUint(s, 0, 64)
-		if err != nil {
-			if strings.HasPrefix(s, "-") {
-				return 0, fmt.Errorf("%s is negative", s)
-			}
-			return 0, numError(s, err)
+	return typed("uint", p, ParseUint)
+}
+
+// ParseUint parses an unsigned number. A negative one is an error naming the
+// sign rather than a very large positive number.
+func ParseUint[T ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](s string) (T, error) {
+	n, err := strconv.ParseUint(s, 0, 64)
+	if err != nil {
+		if strings.HasPrefix(s, "-") {
+			return 0, fmt.Errorf("%s is negative", s)
 		}
-		if v := T(n); uint64(v) == n {
-			return v, nil
-		}
-		return 0, fmt.Errorf("%s does not fit", s)
-	})
+		return 0, numError(s, err)
+	}
+	if v := T(n); uint64(v) == n {
+		return v, nil
+	}
+	return 0, fmt.Errorf("%s does not fit", s)
 }
 
 // Float returns a Value that parses a number with a fractional part.
-func Float[T ~float32 | ~float64](p *T) Value {
-	return typed("float", p, func(s string) (T, error) {
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return 0, numError(s, err)
-		}
-		if v := T(f); !isInf(float64(v)) || isInf(f) {
-			return v, nil
-		}
-		return 0, fmt.Errorf("%s does not fit", s)
-	})
+func Float[T ~float32 | ~float64](p *T) Value { return typed("float", p, ParseFloat) }
+
+// ParseFloat parses a number with a fractional part.
+func ParseFloat[T ~float32 | ~float64](s string) (T, error) {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, numError(s, err)
+	}
+	if v := T(f); !isInf(float64(v)) || isInf(f) {
+		return v, nil
+	}
+	return 0, fmt.Errorf("%s does not fit", s)
 }
 
 // isInf reports whether f is an infinity, without pulling in math for it.
@@ -218,33 +237,42 @@ func (countValue) IsBoolFlag() bool { return true }
 
 // Duration returns a Value that parses 30s, 5m, 1h30m and the rest of what
 // time.ParseDuration takes.
-func Duration[T ~int64](p *T) Value {
-	return typed("duration", p, func(s string) (T, error) {
-		d, err := time.ParseDuration(s)
-		if err != nil {
-			return 0, fmt.Errorf("%q is not a length of time, try 30s or 5m", s)
-		}
-		return T(d), nil
-	})
+func Duration[T ~int64](p *T) Value { return typed("duration", p, ParseDuration) }
+
+// ParseDuration parses 30s, 5m, 1h30m and the rest of what time.ParseDuration
+// takes.
+func ParseDuration[T ~int64](s string) (T, error) {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a length of time, try 30s or 5m", s)
+	}
+	return T(d), nil
 }
 
 // Time returns a Value that parses a time in any of the given layouts, and in
 // RFC 3339 or as a plain date when none are given.
+func Time(p *time.Time, layouts ...string) Value {
+	if len(layouts) == 0 {
+		return typed("time", p, ParseTime)
+	}
+	return typed("time", p, func(s string) (time.Time, error) { return parseTime(s, layouts) })
+}
+
+// ParseTime parses a time in RFC 3339 or as a plain date.
 //
 // The plain date is there because a person typing --since on a command line
 // types 2026-01-01, and being told that a date is not a time is not an answer.
-func Time(p *time.Time, layouts ...string) Value {
-	if len(layouts) == 0 {
-		layouts = []string{time.RFC3339, time.DateOnly}
-	}
-	return typed("time", p, func(s string) (time.Time, error) {
-		for _, layout := range layouts {
-			if t, err := time.Parse(layout, s); err == nil {
-				return t, nil
-			}
+func ParseTime(s string) (time.Time, error) {
+	return parseTime(s, []string{time.RFC3339, time.DateOnly})
+}
+
+func parseTime(s string, layouts []string) (time.Time, error) {
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
 		}
-		return time.Time{}, fmt.Errorf("%q is not a time, try %s", s, layouts[0])
-	})
+	}
+	return time.Time{}, fmt.Errorf("%q is not a time, try %s", s, layouts[0])
 }
 
 // Text returns a Value for any type that knows how to read itself from text,
