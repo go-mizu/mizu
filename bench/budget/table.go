@@ -68,6 +68,11 @@ var rows = []Row{
 		Time: 600 * time.Nanosecond, Allocs: 10,
 	},
 	{
+		ID: "bind/upload", Group: httpPath, Doc: "08",
+		Op:   "The same struct plus a 64 KB file from a multipart form",
+		Time: 45 * time.Microsecond, Allocs: 320,
+	},
+	{
 		ID: "bind/gen/form", Group: httpPath, Doc: "08", Since: "M1",
 		Op:   "The same form through a generated binder",
 		Time: 800 * time.Nanosecond, Allocs: 5,

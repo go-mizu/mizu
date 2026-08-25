@@ -82,6 +82,7 @@ const (
 	fromPath
 	fromHeader
 	fromCookie
+	fromFile // a file part of a multipart form
 )
 
 // A plan is how one struct type is filled in, worked out once and kept.
@@ -165,6 +166,31 @@ func (p *plan) walk(t reflect.Type, prefix string, index []int, seen map[reflect
 			list, ft = true, ft.Elem()
 		}
 
+		// An upload is a handle to a file that is somewhere else, so it binds
+		// through a pointer and a field holding one by value is a mistake rather
+		// than a struct worth walking into. Saying so is better than filling in
+		// its Filename from the query string, which is what walking into it
+		// would do.
+		if ft == uploadValue {
+			p.fail(t, sf, "an upload binds to a *web.Upload rather than to a web.Upload")
+			continue
+		}
+
+		// An upload is a file part rather than a value, and it is the one field
+		// whose source comes from its type rather than from its tag. A tag that
+		// says otherwise is somebody expecting a header to carry a file.
+		if ft == uploadType {
+			if src != fromValues {
+				p.fail(t, sf, "a file arrives in a form and nowhere else")
+				continue
+			}
+			p.values = true
+			p.fields = append(p.fields, binding{
+				index: at, name: prefix + name, src: fromFile, list: list,
+			})
+			continue
+		}
+
 		set, text := setterFor(ft)
 		if set != nil {
 			// Only the query and the form have a prefix on them. A path
@@ -190,7 +216,7 @@ func (p *plan) walk(t reflect.Type, prefix string, index []int, seen map[reflect
 		}
 		if list || st.Kind() != reflect.Struct {
 			if tagged {
-				p.fail(t, sf)
+				p.fail(t, sf, "nothing turns a string into one")
 			}
 			continue
 		}
@@ -212,19 +238,19 @@ func (p *plan) walk(t reflect.Type, prefix string, index []int, seen map[reflect
 	}
 }
 
-// fail records a field somebody tagged and this cannot read.
+// fail records a field somebody tagged and this cannot read, and why.
 //
 // A tag is somebody saying where the value comes from, so a tag on a type that
 // no query parameter can be turned into is a mistake worth hearing about. An
 // untagged field of the same type is not: it is a field of the struct that
 // binding has nothing to do with, and there is one in nearly every struct.
-func (p *plan) fail(t reflect.Type, sf reflect.StructField) {
+func (p *plan) fail(t reflect.Type, sf reflect.StructField, why string) {
 	if p.err != nil {
 		return
 	}
 	p.err = errs.Newf(errs.Internal, "bind.field",
-		"web: cannot bind %s.%s, because nothing turns a string into a %s",
-		t.Name(), sf.Name, sf.Type)
+		"web: cannot bind %s.%s of type %s, because %s",
+		t.Name(), sf.Name, sf.Type, why)
 }
 
 // nameOf is the name the request uses for a field, and where it is read from.
@@ -340,6 +366,12 @@ func (p *plan) run(c *Ctx, dst any, v reflect.Value) error {
 
 	for i := range p.fields {
 		b := &p.fields[i]
+
+		if b.src == fromFile {
+			b.files(c, v)
+			continue
+		}
+
 		got, ok := b.read(c)
 		if !ok {
 			continue
@@ -389,6 +421,34 @@ func (b *binding) read(c *Ctx) ([]string, bool) {
 		return c.input(b.name)
 	}
 	return nil, false
+}
+
+// files puts the file parts sent under this field's name into the field.
+//
+// A name nothing was sent under leaves the field alone, the same as every other
+// source: a nil *Upload rather than an empty one, and a nil slice rather than an
+// empty slice. A single field takes the first file when a form somehow carried
+// several, since the field says one and the extras are the client's confusion
+// rather than the handler's problem.
+func (b *binding) files(c *Ctx, v reflect.Value) {
+	if c.r.MultipartForm == nil {
+		return
+	}
+	got := c.r.MultipartForm.File[b.name]
+	if len(got) == 0 {
+		return
+	}
+
+	if !b.list {
+		fieldByIndex(v, b.index).Set(reflect.ValueOf(newUpload(got[0])))
+		return
+	}
+
+	out := reflect.MakeSlice(reflect.SliceOf(uploadType), 0, len(got))
+	for _, fh := range got {
+		out = reflect.Append(out, reflect.ValueOf(newUpload(fh)))
+	}
+	fieldByIndex(v, b.index).Set(out)
 }
 
 // assign puts what arrived into the field.

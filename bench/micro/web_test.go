@@ -3,6 +3,7 @@ package micro
 import (
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,7 @@ func init() {
 	register("mw/etag", benchETag)
 	register("bind/form", benchBindForm)
 	register("bind/json", benchBindJSON)
+	register("bind/upload", benchBindUpload)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -294,6 +296,76 @@ func benchBindJSON(b *testing.B) {
 		r.Form, r.PostForm = nil, nil
 		h.ServeHTTP(w, r)
 	}
+}
+
+// upload is the listing struct plus the file a form would post alongside it.
+type upload struct {
+	listing
+
+	File *web.Upload `form:"file"`
+}
+
+// benchBindUpload is a multipart form with a file in it.
+//
+// This is the expensive shape and the numbers say so. A multipart body is
+// parsed part by part rather than in one pass, each part's headers are a small
+// map, and a file under the in-memory limit is copied into a buffer before
+// anybody asks for it. On top of that binding sniffs the file, which is one more
+// read of its first 512 bytes.
+//
+// The file is 64 KB, which is under net/http's in-memory limit, so nothing here
+// touches the disk. A larger file would measure the filesystem instead.
+//
+// What is in the file does not matter. Binding reads its first 512 bytes to
+// find out what it is and copies the rest without looking at it, so a picture
+// would measure the same thing and take longer to say so.
+func benchBindUpload(b *testing.B) {
+	h := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[upload](c)
+		return err
+	})
+
+	body, kind := multipartOf(b)
+	part := &replay{s: body}
+	r := httptest.NewRequest("POST", "/things", nil)
+	r.Header.Set("Content-Type", kind)
+	r.Body = part
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		part.i = 0
+		r.Form, r.PostForm, r.MultipartForm = nil, nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// multipartOf is one request's worth of listing as a multipart form, with a
+// 64 KB file in it, and the content type that goes with it.
+func multipartOf(b *testing.B) (string, string) {
+	b.Helper()
+
+	var body strings.Builder
+	w := multipart.NewWriter(&body)
+
+	for _, field := range strings.Split(listingForm, "&") {
+		name, value, _ := strings.Cut(field, "=")
+		if err := w.WriteField(name, value); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	f, err := w.CreateFormFile("file", "photo.jpg")
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := io.WriteString(f, strings.Repeat("mizu is water. ", 64<<10/15)); err != nil {
+		b.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		b.Fatal(err)
+	}
+	return body.String(), w.FormDataContentType()
 }
 
 // replay is a request body that hands out the same bytes every time, so the

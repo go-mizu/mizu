@@ -165,10 +165,33 @@
 // struct, or one whose signature was already checked, since a body
 // [Ctx.BodyBytes] has read is the same body afterwards.
 //
+// # Uploads
+//
+// A field of type *[Upload] binds a file out of a multipart form, and a
+// []*[Upload] binds every file sent under the name.
+//
+//	type avatar struct {
+//		Name  string      `form:"name"`
+//		Image *web.Upload `form:"image"`
+//	}
+//
+// An Upload is a handle rather than the bytes. A file under the in-memory limit
+// is held in memory and a larger one is in a temporary file that net/http
+// removes when the request is over, so anything that has to outlive the request
+// is copied somewhere first. [Upload.Open] reads it, [Upload.Bytes] is the
+// whole of a small one, and [Upload.Image] is the size of a picture without
+// decoding the picture.
+//
+// Filename is what the client called the file with any directory in front of it
+// removed, and it is a label rather than a name to write to disk with. MIME is
+// what the file's first bytes say it is, not what the part header claimed, so a
+// program that refuses anything but an image is checking something the client
+// does not control.
+//
 // # What is not here yet
 //
-// Reading a request is here and so is enough writing to answer one. File
-// uploads, validation, content negotiation, the pagination types and the RFC
+// Reading a request is here and so is enough writing to answer one. Storing an
+// upload, validation, content negotiation, the pagination types and the RFC
 // 9457 renderer arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
