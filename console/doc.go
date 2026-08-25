@@ -68,6 +68,17 @@
 // package is not, because a worker pool reporting its own progress is the
 // normal way to end up with one.
 //
+// # Grouping what is on the screen
+//
+// [IO.Section] prints a title and returns an IO whose status output is indented
+// under it. Sections nest, and there is nothing to close, so an early return
+// cannot leave one open.
+//
+// The indent applies to stderr only. [IO.Tree], like [IO.Table], is data and
+// goes to stdout at the left margin wherever it was printed, because the shape
+// of a command's output should not depend on where in the command it was
+// written.
+//
 // # JSON
 //
 // An IO in JSON mode writes machine readable output and no decoration.
@@ -78,9 +89,9 @@
 //
 // # What is not here yet
 //
-// Sections and trees are specified and not written. So are the command structs
-// and the flag generator that will call all of this, and the test fixture that
-// scripts an answer to a prompt.
+// The command structs and the flag generator that will call all of this are
+// specified and not written, and so is the test fixture that scripts an answer
+// to a prompt.
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can

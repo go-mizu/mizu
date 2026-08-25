@@ -108,6 +108,45 @@ func ExampleIO_Progress() {
 	// 100% (5/5)
 }
 
+// A section indents what the command says about itself. It does not indent the
+// answer, so a command that groups its status messages is still the left-hand
+// side of a pipe.
+func ExampleIO_Section() {
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{Color: console.ColorNever})
+
+	io.Info("checking the project")
+	config := io.Section("Config")
+	config.Success("loaded config/app.go")
+	config.Warn("APP_KEY is not set")
+	io.Info("done")
+
+	// Output:
+	// checking the project
+	// Config
+	//   loaded config/app.go
+	//   warning: APP_KEY is not set
+	// done
+}
+
+// A tree is data, so it goes to stdout and turns into JSON under --json.
+func ExampleIO_Tree() {
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{})
+
+	io.Tree(console.TreeNode{
+		Label: "app",
+		Children: []console.TreeNode{
+			{Label: "cmd", Children: []console.TreeNode{{Label: "main.go"}}},
+			{Label: "go.mod"},
+		},
+	})
+
+	// Output:
+	// app
+	// ├── cmd
+	// │   └── main.go
+	// └── go.mod
+}
+
 // With no terminal, a prompt takes its default, and a prompt with no default is
 // an error. That is the difference between a build that stops with a sentence
 // about a missing value and one that holds a CI runner until it times out.
