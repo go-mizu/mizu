@@ -257,6 +257,14 @@ jobs:
             exit 1
           fi
 
+      # bench depends on the toolkit through a replace, so a dependency added
+      # next door lands in this module's go.sum too. Without this the failure
+      # is a missing go.sum entry three steps later, which reads as a broken
+      # runner rather than as a file somebody has to update.
+      - name: go.mod and go.sum are up to date
+        working-directory: bench
+        run: go mod tidy -diff
+
       - name: Vet
         working-directory: bench
         run: go vet ./...

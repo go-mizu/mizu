@@ -56,6 +56,14 @@ var allowedModules = []string{
 	// is the replacement the deprecation notice points at, and it carries the
 	// casing tables that the alternative would mean copying in by hand.
 	"golang.org/x/text",
+
+	// Asking whether a writer is a terminal, for mizu/console and mizu/log,
+	// and reading a password without echoing it, which mizu/console needs
+	// next. The standard library has neither. The version this replaced asked
+	// whether the writer was a character device, which says yes to /dev/null,
+	// and the version it does not become is one that writes termios ioctls per
+	// platform by hand.
+	"golang.org/x/term",
 }
 
 // allowedPatterns is the same rule stated against the import graph.
