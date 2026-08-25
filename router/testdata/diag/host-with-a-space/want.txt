@@ -1,0 +1,1 @@
+error: bad pattern "GET\tPOST /x": "POST " reads as the host and has a space in it, so the method and the path have run together

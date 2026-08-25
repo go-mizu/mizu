@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/{post-id}": "post-id" is not a name a wildcard can have, which is what a Go identifier looks like

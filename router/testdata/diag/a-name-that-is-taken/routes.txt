@@ -1,0 +1,4 @@
+GET /posts/{id}
+name posts.show
+GET /users/{id}
+name posts.show

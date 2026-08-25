@@ -1,0 +1,1 @@
+error: bad pattern "posts": there is no / in it, and the path a pattern matches starts with one

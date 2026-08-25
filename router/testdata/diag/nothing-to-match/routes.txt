@@ -1,0 +1,3 @@
+# The empty pattern, written as a Go string so that it survives being a line
+# in a text file.
+""

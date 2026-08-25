@@ -1,0 +1,2 @@
+GET /posts/{id}/edit
+GET /{kind}/latest/edit

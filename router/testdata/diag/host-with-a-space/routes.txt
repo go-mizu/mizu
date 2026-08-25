@@ -1,0 +1,3 @@
+# A tab where the space between the method and the path should be, so the
+# method ends at the tab and POST reads as the host.
+"GET\tPOST /x"

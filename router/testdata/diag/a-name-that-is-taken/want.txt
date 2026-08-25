@@ -1,0 +1,1 @@
+error: "posts.show" is already the name of "GET /posts/{id}", registered at app/routes.go:1

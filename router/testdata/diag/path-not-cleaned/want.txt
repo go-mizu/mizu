@@ -1,0 +1,1 @@
+error: bad pattern "GET /a//b": "/a//b" is not a path a request can carry, since a request path is cleaned before it is matched: write "/a/b"

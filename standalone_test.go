@@ -57,6 +57,7 @@ var standalone = map[string][]archtest.Pattern{
 	"errs":    nil,
 	"hash":    nil,
 	"log":     nil,
+	"router":  nil,
 	"str":     nil,
 	"try":     nil,
 	"xm":      nil,

@@ -1,0 +1,1 @@
+error: "GET /posts/{post}" matches the same requests as "GET /posts/{id}", registered at app/routes.go:1

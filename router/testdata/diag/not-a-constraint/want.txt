@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/{id:integer}": "integer" is not a constraint, and these are: alpha, date, int, slug, uint, ulid, uuid, word

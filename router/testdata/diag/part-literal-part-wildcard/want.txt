@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/post-{id}": "post-{id}" is part literal and part wildcard, and a segment is one or the other

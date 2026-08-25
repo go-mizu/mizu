@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/{}": "{}" has no name, and a wildcard is read back out by its name

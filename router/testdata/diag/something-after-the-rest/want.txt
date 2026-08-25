@@ -1,0 +1,1 @@
+error: bad pattern "GET /files/{path...}/raw": {path...} takes the rest of the path, so nothing can come after it
