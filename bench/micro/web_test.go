@@ -20,6 +20,7 @@ func init() {
 	register("mw/lifecycle", benchLifecycle)
 	register("mw/compress", benchCompress)
 	register("mw/etag", benchETag)
+	register("bind/form", benchBindForm)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -193,6 +194,82 @@ func benchCtxAcquire(b *testing.B) {
 		h.ServeHTTP(w, r)
 	}
 }
+
+// listing is the struct the two binding benchmarks fill: twelve fields, in the
+// shape a search page sends, with a slice and a date in it because both cost
+// more than a string does.
+type listing struct {
+	Q        string
+	Tags     []string
+	Page     int
+	PerPage  int
+	Sort     string
+	Order    string
+	MinPrice float64
+	MaxPrice float64
+	InStock  bool
+	Since    time.Time
+	Kind     string
+	Cursor   string
+}
+
+// listingForm is one request's worth of listing, as a browser would post it.
+const listingForm = "q=water&tags=go&tags=web&page=2&per_page=25&sort=name&" +
+	"order=asc&min_price=1.5&max_price=99&in_stock=on&since=2026-01-02&" +
+	"kind=all&cursor=eyJpZCI6MTAwfQ"
+
+// benchBindForm is what reading a request into a struct costs.
+//
+// The parse is inside the measurement, because that is what a handler pays and
+// because most of it is the parse. ParseForm on its own is about forty of the
+// allocations: a url.Values is a map with a slice in every entry and a string in
+// every slice. Binding then walks a plan it built the first time it saw the type
+// and puts each string where it goes, which is the rest.
+//
+// That split is what the generator is for. A generated binder reads the values
+// without building the map, and the budget has a row waiting for it.
+//
+// The form is posted rather than put in the query string so the body decoding
+// path is the one being measured. Both forms are cleared each time around, since
+// ParseForm keeps what it read on the request and a benchmark that let it would
+// be measuring the second half only.
+func benchBindForm(b *testing.B) {
+	h := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[listing](c)
+		return err
+	})
+
+	body := &replay{s: listingForm}
+	r := httptest.NewRequest("POST", "/things", nil)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Body = body
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		body.i = 0
+		r.Form, r.PostForm = nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// replay is a request body that hands out the same bytes every time, so the
+// loop can start a request over without allocating a reader for it.
+type replay struct {
+	s string
+	i int
+}
+
+func (b *replay) Read(p []byte) (int, error) {
+	if b.i >= len(b.s) {
+		return 0, io.EOF
+	}
+	n := copy(p, b.s[b.i:])
+	b.i += n
+	return n, nil
+}
+
+func (b *replay) Close() error { return nil }
 
 // discardWriter is a ResponseWriter that keeps nothing, so the benchmark
 // measures the Ctx rather than a recorder's buffer.

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/go-mizu/mizu/errs"
 	"github.com/go-mizu/mizu/router"
 	"github.com/go-mizu/mizu/web"
 )
@@ -198,4 +199,53 @@ func ExampleRecord() {
 
 	// Output:
 	// GET /posts/7 404 12
+}
+
+// Bind fills a struct from the request, taking each field from where its tag
+// says and from the query string when nothing says otherwise.
+func ExampleBind() {
+	type search struct {
+		Q       string `query:"q"`
+		Tags    []string
+		Page    int
+		PerPage int
+	}
+
+	list := web.H(func(c *web.Ctx) error {
+		in, err := web.Bind[search](c)
+		if err != nil {
+			return err
+		}
+		return c.Text(fmt.Sprintf("%q %v page %d of %d", in.Q, in.Tags, in.Page, in.PerPage))
+	})
+
+	w := httptest.NewRecorder()
+	list.ServeHTTP(w, httptest.NewRequest("GET", "/?q=water&tags=go&tags=web&page=2&per_page=25", nil))
+
+	fmt.Println(w.Body)
+	// Output:
+	// "water" [go web] page 2 of 25
+}
+
+// A value that will not decode comes back as one errs.Field per field, which is
+// what a form redisplay and a JSON error document are both built from.
+func ExampleBind_errors() {
+	type search struct {
+		Page    int `query:"page"`
+		PerPage int `query:"per_page"`
+	}
+
+	list := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[search](c)
+		for _, f := range errs.Fields(err) {
+			fmt.Println(f.Name, f.Code, f.Msg)
+		}
+		return nil
+	})
+
+	list.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/?page=one&per_page=999999999999999999999", nil))
+
+	// Output:
+	// page invalid_number Must be a whole number.
+	// per_page out_of_range Is too large for this field.
 }

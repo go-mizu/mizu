@@ -281,21 +281,25 @@ var (
 	flates sync.Pool
 )
 
+// The two both make one and then reset it, rather than making one around w,
+// because Reset on the way in is what keeps the last response out of this one
+// and there should be one line doing it rather than two.
 func gzipFor(w io.Writer) *gzip.Writer {
-	if v, ok := gzips.Get().(*gzip.Writer); ok {
-		v.Reset(w)
-		return v
+	v, _ := gzips.Get().(*gzip.Writer)
+	if v == nil {
+		v = gzip.NewWriter(nil)
 	}
-	return gzip.NewWriter(w)
+	v.Reset(w)
+	return v
 }
 
 func flateFor(w io.Writer) *flate.Writer {
-	if v, ok := flates.Get().(*flate.Writer); ok {
-		v.Reset(w)
-		return v
+	v, _ := flates.Get().(*flate.Writer)
+	if v == nil {
+		// The level is the standard library's default. flate.NewWriter only
+		// fails on a level it does not know, and this one it knows.
+		v, _ = flate.NewWriter(nil, flate.DefaultCompression)
 	}
-	// The level is the standard library's default. flate.NewWriter only fails
-	// on a level it does not know, and this one it knows.
-	fl, _ := flate.NewWriter(w, flate.DefaultCompression)
-	return fl
+	v.Reset(w)
+	return v
 }
