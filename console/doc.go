@@ -34,6 +34,24 @@
 // drops the rest, because a warning nobody sees is the reason the flag gets
 // blamed later. Debug lines appear from [Verbose] up.
 //
+// # Asking questions
+//
+// [IO.Ask], [IO.AskSecret], [IO.Confirm], [IO.Choice] and [IO.MultiChoice] read
+// from stdin and write to stderr, so a command can ask something and still be
+// the left-hand side of a pipe.
+//
+// They ask when stdin and stderr are both terminals, and --no-interaction turns
+// that off. When they cannot ask, a prompt with a default takes it and a prompt
+// without one is an error naming the question. That last rule is the one worth
+// keeping: a command that reaches a question nobody can answer stops with a
+// sentence about the missing value rather than holding a CI runner until it
+// times out.
+//
+// Every prompt returns an error, which the same function in most CLI libraries
+// does not. A question that could not be asked has no answer, and returning the
+// zero value for one is how a command ends up deleting three users because
+// nobody was there to say no.
+//
 // # JSON
 //
 // An IO in JSON mode writes machine readable output and no decoration.
@@ -44,9 +62,15 @@
 //
 // # What is not here yet
 //
-// Prompts, progress bars, spinners, sections and trees are specified and not
-// written. So are the command structs and the flag generator that will call all
-// of this, and the test fixture that scripts an answer to a prompt. What is
-// here is the part they all sit on: the streams, and what is known about the
-// other end of them.
+// Progress bars, spinners, sections and trees are specified and not written. So
+// are the command structs and the flag generator that will call all of this,
+// and the test fixture that scripts an answer to a prompt.
+//
+// The prompts that are here read a line. There is no arrow key selection and no
+// history, and a list is numbered instead. A number is something a person can
+// read out to somebody else, it survives a terminal that reports key presses
+// differently, and it is the difference between a prompt that works over a
+// serial console or in a Docker exec and one that does not. A full screen
+// selector is worth adding when something needs it, over the top of these
+// rather than instead of them.
 package console

@@ -1,6 +1,7 @@
 package console
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +43,10 @@ type Options struct {
 	// [ColorAuto], asks the terminal and the environment.
 	Color Color
 
+	// Interaction decides whether prompts ask or take their default. The zero
+	// value, [InteractionAuto], asks when there is somebody there to answer.
+	Interaction Interaction
+
 	// Width is the number of columns to assume, overriding what the terminal
 	// reports. Zero means ask the terminal, which is what a real program
 	// wants and what a test does not.
@@ -64,22 +69,29 @@ type IO struct {
 	colorOut bool
 	colorErr bool
 	width    int
+
+	interactive bool
+	// reader is built by the first prompt and kept, because it buffers. See
+	// [IO.readLine].
+	reader *bufio.Reader
 }
 
 // New returns an IO on the given streams.
 //
 // Colour is decided per stream, by looking at whether it is a terminal, so
-// passing a buffer for one of them does not change the other.
+// passing a buffer for one of them does not change the other. Whether prompts
+// ask is decided once here, for the same reason and from the same question.
 func New(in io.Reader, out, err io.Writer, opts Options) *IO {
 	return &IO{
-		in:        in,
-		out:       out,
-		err:       err,
-		verbosity: opts.Verbosity,
-		jsonMode:  opts.JSON,
-		colorOut:  colorEnabled(out, opts.Color, os.Getenv),
-		colorErr:  colorEnabled(err, opts.Color, os.Getenv),
-		width:     terminalWidth(out, opts.Width),
+		in:          in,
+		out:         out,
+		err:         err,
+		verbosity:   opts.Verbosity,
+		jsonMode:    opts.JSON,
+		colorOut:    colorEnabled(out, opts.Color, os.Getenv),
+		colorErr:    colorEnabled(err, opts.Color, os.Getenv),
+		width:       terminalWidth(out, opts.Width),
+		interactive: canPrompt(in, err, opts.Interaction),
 	}
 }
 

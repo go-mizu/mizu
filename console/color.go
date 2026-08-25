@@ -74,14 +74,23 @@ func colorEnabled(w io.Writer, mode Color, getenv func(string) string) bool {
 	return isTerminal(w)
 }
 
-// isTerminal reports whether w is one.
+// fd returns the file descriptor behind a stream, if it has one.
 //
-// It asks for the file descriptor through an interface rather than a concrete
-// type, so a wrapper that forwards Fd is still recognised and a buffer is
-// still not.
-func isTerminal(w io.Writer) bool {
-	f, ok := w.(interface{ Fd() uintptr })
-	return ok && term.IsTerminal(int(f.Fd()))
+// It asks through an interface rather than for an *os.File, so a wrapper that
+// forwards Fd is still recognised and a buffer is still not. The argument is
+// any because stdin is asked the same questions as stdout, and it is a reader.
+func fd(stream any) (int, bool) {
+	f, ok := stream.(interface{ Fd() uintptr })
+	if !ok {
+		return 0, false
+	}
+	return int(f.Fd()), true
+}
+
+// isTerminal reports whether a stream is one.
+func isTerminal(stream any) bool {
+	n, ok := fd(stream)
+	return ok && term.IsTerminal(n)
 }
 
 // terminalWidth returns the columns of w, or override when it is positive, or
@@ -90,11 +99,11 @@ func terminalWidth(w io.Writer, override int) int {
 	if override > 0 {
 		return override
 	}
-	f, ok := w.(interface{ Fd() uintptr })
+	n, ok := fd(w)
 	if !ok {
 		return 0
 	}
-	cols, _, err := term.GetSize(int(f.Fd()))
+	cols, _, err := term.GetSize(n)
 	if err != nil || cols <= 0 {
 		return 0
 	}

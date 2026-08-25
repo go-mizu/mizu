@@ -1,6 +1,7 @@
 package console_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -61,4 +62,47 @@ func ExampleIO_Line() {
 
 	// Output:
 	// ada@example.com
+}
+
+// A prompt guarding something destructive passes false, so that the answer
+// nobody gives is the one that leaves the users alone.
+//
+// The answer here comes from a reader rather than from a person, so nothing
+// echoes it. On a terminal the y the user typed would sit between the prompt
+// and the line after it.
+func ExampleIO_Confirm() {
+	io := console.New(strings.NewReader("y\n"), os.Stdout, os.Stdout, console.Options{
+		Color:       console.ColorNever,
+		Interaction: console.InteractionAlways,
+	})
+
+	ok, err := io.Confirm("Delete 3 users?", false)
+	if err != nil {
+		return
+	}
+	if ok {
+		io.Info("deleting")
+	}
+
+	// Output:
+	// Delete 3 users? [y/N]: deleting
+}
+
+// With no terminal, a prompt takes its default, and a prompt with no default is
+// an error. That is the difference between a build that stops with a sentence
+// about a missing value and one that holds a CI runner until it times out.
+func ExampleIO_Ask_noInteraction() {
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{
+		Interaction: console.InteractionNever,
+	})
+
+	name, err := io.Ask("Project name", "blog")
+	fmt.Println(name, err)
+
+	_, err = io.Ask("Database URL", "")
+	fmt.Println(err)
+
+	// Output:
+	// blog <nil>
+	// cannot ask "Database URL": there is no terminal and no default, so the value has to come from a flag
 }
