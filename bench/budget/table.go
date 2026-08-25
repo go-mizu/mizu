@@ -33,6 +33,16 @@ var rows = []Row{
 		Time: 40 * time.Nanosecond, Allocs: 0,
 	},
 	{
+		ID: "mw/requestid", Group: httpPath, Doc: "07",
+		Op:   "Make a ULID, put it in the context and on the response",
+		Time: 400 * time.Nanosecond, Allocs: 7,
+	},
+	{
+		ID: "mw/lifecycle", Group: httpPath, Doc: "07",
+		Op:   "Recover, RealIP, RequestID, Logger, MaxBody and Timeout, entry to handler",
+		Time: 3 * time.Microsecond, Allocs: 22,
+	},
+	{
 		ID: "ctx/acquire", Group: httpPath, Doc: "08",
 		Op:   "web.H around a handler that does nothing: acquire, fill, release",
 		Time: 200 * time.Nanosecond, Allocs: 2,

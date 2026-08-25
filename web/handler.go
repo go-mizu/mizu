@@ -154,7 +154,7 @@ func (c *Ctx) fail(err error) {
 // since the status is gone by then and a second one would be a warning in the
 // server's log rather than anything the client sees.
 func DefaultErrors(c *Ctx, err error) {
-	c.Log().LogAttrs(c.Context(), slog.LevelError, "handler failed", slog.Any("error", err))
+	c.Log().LogAttrs(c.Context(), slog.LevelError, "handler failed", slog.Any("err", err))
 	if c.res.Status() != 0 {
 		return
 	}

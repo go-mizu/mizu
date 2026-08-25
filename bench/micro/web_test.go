@@ -1,16 +1,22 @@
 package micro
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-mizu/mizu/web"
+	"github.com/go-mizu/mizu/web/mw"
 )
 
 func init() {
 	register("ctx/acquire", benchCtxAcquire)
 	register("mw/chain", benchChain)
+	register("mw/requestid", benchRequestID)
+	register("mw/lifecycle", benchLifecycle)
 }
 
 // benchChain is what a middleware chain costs before any of it does anything.
@@ -34,6 +40,58 @@ func benchChain(b *testing.B) {
 	s.Priority("h", "g", "f", "e", "d", "c", "b", "a")
 
 	h := s.Then(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r := httptest.NewRequest("GET", "/things/7", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchRequestID is the one middleware that does work on every request whether
+// anything reads the result or not.
+//
+// What is in the loop is a ULID, which is a clock read and ten bytes out of
+// crypto/rand, then the context node and the request copy that carry the id
+// inward, then the response header. It has a row of its own because it is the
+// floor under any chain that logs, and because the id is the one thing here that
+// cannot be made lazy: the response header has to go out before the handler
+// starts writing.
+func benchRequestID(b *testing.B) {
+	h := mw.RequestID()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r := httptest.NewRequest("GET", "/things/7", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchLifecycle is the chain a service actually runs, in front of a handler
+// that does nothing.
+//
+// Six middleware, a real access log record written to io.Discard through a JSON
+// handler, and web.H at the bottom. Everything in it is work a request pays for
+// before the application has been asked anything, so this is the number to
+// subtract when a route looks slower than the handler in it.
+//
+// The log record is the largest part and it is deliberately not stubbed out. A
+// service that does not write one is a service nobody can operate, so the
+// realistic floor is the one with it in.
+func benchLifecycle(b *testing.B) {
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+
+	h := web.Chain(web.H(func(*web.Ctx) error { return nil }),
+		mw.Recover(log),
+		mw.RealIP(mw.Private()...),
+		mw.RequestID(),
+		mw.Logger(log),
+		mw.MaxBody(1<<20),
+		mw.Timeout(10*time.Second),
+	)
+
 	r := httptest.NewRequest("GET", "/things/7", nil)
 	w := &discardWriter{header: make(http.Header)}
 
