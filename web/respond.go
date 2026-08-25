@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html/template"
 	"io"
 	"net/http"
 )
@@ -82,6 +83,26 @@ func (c *Ctx) Text(s string) error {
 	c.live("Text")
 	c.head("text/plain; charset=utf-8")
 	_, err := io.WriteString(c.res, s)
+	return err
+}
+
+// HTML sends a string as text/html.
+//
+//	return c.HTML(page)
+//
+// It takes a [html/template.HTML] rather than a string, which is the standard
+// library's way of saying that whoever produced this decided it was safe to send
+// as markup. A string that came from a person does not convert on its own, so
+// c.HTML(comment) does not compile and the conversion that would make it compile
+// is a line somebody has to write and a reviewer can see.
+//
+// What escapes the values inside a page is the template package, and rendering
+// one is [github.com/go-mizu/mizu/view]'s job. This is the whole body at once,
+// for a fragment that is already built.
+func (c *Ctx) HTML(h template.HTML) error {
+	c.live("HTML")
+	c.head("text/html; charset=utf-8")
+	_, err := io.WriteString(c.res, string(h))
 	return err
 }
 

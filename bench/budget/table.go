@@ -113,6 +113,11 @@ var rows = []Row{
 		Time: 2500 * time.Nanosecond, Allocs: 5,
 	},
 	{
+		ID: "respond/file", Group: httpPath, Doc: "08",
+		Op:   "web.File of a 64 KB asset from disk, ranges and conditionals answered",
+		Time: 60 * time.Microsecond, Allocs: 14,
+	},
+	{
 		ID: "respond/problem", Group: httpPath, Doc: "06", Since: "M1",
 		Op:   "RFC 9457 error body with 3 field errors",
 		Time: 3 * time.Microsecond, Allocs: 9,
