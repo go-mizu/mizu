@@ -3,6 +3,7 @@ package diag_test
 import (
 	"fmt"
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/go-mizu/mizu/errs/diag"
@@ -125,6 +126,57 @@ func BenchmarkOf(b *testing.B) {
 	for b.Loop() {
 		if len(diag.Of(err)) != 10 {
 			b.Fatal("lost one")
+		}
+	}
+}
+
+// benchSettings is a candidate set the size of a real configuration: every
+// setting a middling application declares, which is what Suggest walks before
+// it can say anything.
+var benchSettings = func() []string {
+	sections := []string{"app", "database", "cache", "queue", "mail", "log", "session"}
+	names := []string{
+		"driver", "url", "max_open_conns", "max_idle_conns", "conn_max_lifetime",
+		"connect_timeout", "read_timeout", "ssl_mode", "log_queries", "name",
+	}
+	out := make([]string, 0, len(sections)*len(names))
+	for _, s := range sections {
+		for _, n := range names {
+			out = append(out, s+"."+n)
+		}
+	}
+	return out
+}()
+
+// Suggest runs once, on the failure path, against a candidate set somebody
+// typed a name into. Seventy candidates at fifteen characters each is the shape
+// of the work, and the number that matters is that it is nowhere near the cost
+// of the error message it goes in.
+func BenchmarkSuggest(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if len(diag.Suggest("database.max_conns", slices.Values(benchSettings))) == 0 {
+			b.Fatal("found nothing to suggest")
+		}
+	}
+}
+
+// The other half of the same path: a name close to nothing, where every
+// candidate is measured and none of them qualifies.
+func BenchmarkSuggestNothingClose(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if len(diag.Suggest("wildly.different", slices.Values(benchSettings))) != 0 {
+			b.Fatal("it suggested something")
+		}
+	}
+}
+
+func BenchmarkDistance(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if diag.Distance("database.max_conns", "database.max_open_conns") != 5 {
+			b.Fatal("wrong distance")
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -329,8 +330,9 @@ func TestUnknownFieldsOfAnArrayOfTables(t *testing.T) {
 	if len(unknown) != 1 {
 		t.Fatalf("found %d unknown settings, want 1: %v", len(unknown), unknown)
 	}
-	if unknown[0].Path != "queue.connections.tires" || unknown[0].Near != "queue.connections.tries" {
-		t.Errorf("found %q suggesting %q, want the misspelled tires suggesting tries", unknown[0].Path, unknown[0].Near)
+	want := []string{"queue.connections.tries"}
+	if unknown[0].Path != "queue.connections.tires" || !slices.Equal(unknown[0].Near, want) {
+		t.Errorf("found %q suggesting %v, want the misspelled tires suggesting tries", unknown[0].Path, unknown[0].Near)
 	}
 }
 
@@ -429,8 +431,8 @@ func TestUnknownSettingsWithNothingClose(t *testing.T) {
 	if len(unknown) != 1 {
 		t.Fatalf("found %d unknown settings, want 1", len(unknown))
 	}
-	if unknown[0].Near != "" {
-		t.Errorf("it suggested %q, and nothing there is close enough to suggest", unknown[0].Near)
+	if len(unknown[0].Near) != 0 {
+		t.Errorf("it suggested %v, and nothing there is close enough to suggest", unknown[0].Near)
 	}
 	if want := "unknown setting \"wildly_different\""; !strings.Contains(unknown[0].Error(), want) {
 		t.Errorf("the report is %q, want it to say %q with no suggestion", unknown[0].Error(), want)
@@ -605,8 +607,16 @@ func TestUnknownMessage(t *testing.T) {
 		want    string
 	}{
 		{
-			Unknown{Path: "database.max_conns", From: Source{From: FromFile, Name: "config/production.toml:14:1"}, Near: "database.max_open_conns"},
+			Unknown{Path: "database.max_conns", From: Source{From: FromFile, Name: "config/production.toml:14:1"}, Near: []string{"database.max_open_conns"}},
 			`file config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns"?`,
+		},
+		{
+			Unknown{
+				Path: "database.max_conns",
+				From: Source{From: FromFile, Name: "config/production.toml:14:1"},
+				Near: []string{"database.max_open_conns", "database.max_idle_conns"},
+			},
+			`file config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns" or "database.max_idle_conns"?`,
 		},
 		{
 			Unknown{Path: "nope", From: Source{From: FromFlag, Name: "--config.nope=1"}},
@@ -616,44 +626,6 @@ func TestUnknownMessage(t *testing.T) {
 	for _, tt := range tests {
 		if got := tt.unknown.Error(); got != tt.want {
 			t.Errorf("got %q, want %q", got, tt.want)
-		}
-	}
-}
-
-func TestNearest(t *testing.T) {
-	known := []string{"app.name", "app.debug", "database.max_open_conns", "log"}
-	tests := []struct{ want, near string }{
-		{"app.nmae", "app.name"},
-		{"app.Name", "app.name"},
-		{"database.max_conns", "database.max_open_conns"},
-		{"lgo", "log"},
-		{"queue.workers", ""},
-		{"x", ""},
-		{"", ""},
-	}
-	for _, tt := range tests {
-		if got := nearest(tt.want, known); got != tt.near {
-			t.Errorf("nearest(%q) is %q, want %q", tt.want, got, tt.near)
-		}
-	}
-}
-
-func TestDistance(t *testing.T) {
-	tests := []struct {
-		a, b string
-		want int
-	}{
-		{"", "", 0},
-		{"a", "a", 0},
-		{"", "abc", 3},
-		{"abc", "", 3},
-		{"kitten", "sitting", 3},
-		{"name", "nmae", 1}, // two letters the wrong way round is one mistake
-		{"log", "lgo", 1},
-	}
-	for _, tt := range tests {
-		if got := distance(tt.a, tt.b); got != tt.want {
-			t.Errorf("distance(%q, %q) is %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
 }

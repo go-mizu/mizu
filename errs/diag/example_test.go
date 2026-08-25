@@ -3,6 +3,8 @@ package diag_test
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strconv"
 
 	"github.com/go-mizu/mizu/errs/diag"
 )
@@ -99,4 +101,27 @@ func ExampleList_Err() {
 	// Output:
 	// true
 	// unknown config key
+}
+
+// Suggest is where "did you mean" comes from, so that a misspelled setting, a
+// misspelled flag and a misspelled command are all answered by the same rules
+// rather than by three functions that drifted apart.
+func ExampleSuggest() {
+	settings := []string{"driver", "url", "max_open_conns", "max_idle_conns"}
+	fmt.Println(diag.Suggest("max_open_conn", slices.Values(settings)))
+	fmt.Println(diag.Suggest("hostname", slices.Values(settings)))
+	// Output:
+	// [max_open_conns]
+	// []
+}
+
+// Did is the sentence they go in. The wrapping is the caller's, because a
+// setting is written in quotes and a flag is written with its dashes.
+func ExampleDid() {
+	settings := []string{"connect_timeout", "read_timeout"}
+	fmt.Println(diag.Did(diag.Suggest("timeout", slices.Values(settings)), strconv.Quote))
+	fmt.Println(diag.Did(nil, strconv.Quote) == "")
+	// Output:
+	// did you mean "connect_timeout" or "read_timeout"?
+	// true
 }

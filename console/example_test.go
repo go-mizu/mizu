@@ -186,7 +186,7 @@ func ExampleParse_usage() {
 	fmt.Println(console.Parse(flags, nil, []string{"--days=soon"}))
 
 	// Output:
-	// unknown flag --dayz, did you mean --days
+	// unknown flag --dayz, did you mean --days?
 	// --days: "soon" is not a number
 }
 

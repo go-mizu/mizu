@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/go-mizu/mizu/errs/diag"
 )
 
 // A Flag is one option a command takes.
@@ -336,59 +338,27 @@ func quote(s string) string { return `"` + s + `"` }
 
 // unknown reports a flag nobody declared, with the nearest one that was.
 func unknown(flags []Flag, as, name string) error {
-	if name != "" {
-		if did := nearest(flags, name); did != "" {
-			return usagef("unknown flag %s, did you mean --%s", as, did)
-		}
+	if did := diag.Did(nearest(flags, name), dashed); did != "" {
+		return usagef("unknown flag %s, %s", as, did)
 	}
 	return usagef("unknown flag %s", as)
 }
 
-// nearest returns the visible flag within two edits of name, if there is one.
-//
-// Two is the distance that catches a transposition, a doubled letter and a
-// missing one, and stops before it starts suggesting a different flag with a
-// dangerously similar meaning.
-func nearest(flags []Flag, name string) string {
-	best, at := "", 3
-	for _, f := range flags {
-		if f.Hidden {
-			continue
-		}
-		if d := distance(f.Name, name); d < at {
-			best, at = f.Name, d
-		}
-	}
-	return best
-}
+// dashed is a flag name as it is written on a command line.
+func dashed(name string) string { return "--" + name }
 
-// distance is the Levenshtein distance between two names, over one row of the
-// matrix rather than all of it.
-func distance(a, b string) int {
-	if a == b {
-		return 0
-	}
-	if len(a) < len(b) {
-		a, b = b, a
-	}
-	// The names are ASCII in every case that matters, and the answer for the
-	// rest is still a number that gets larger as the words differ more.
-	row := make([]int, len(b)+1)
-	for j := range row {
-		row[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		prev := row[0]
-		row[0] = i
-		for j := 1; j <= len(b); j++ {
-			keep := prev
-			if a[i-1] != b[j-1] {
-				keep = min(prev, row[j], row[j-1]) + 1
+// nearest returns the visible flags worth offering for name.
+func nearest(flags []Flag, name string) []string {
+	return diag.Suggest(name, func(yield func(string) bool) {
+		for _, f := range flags {
+			if f.Hidden {
+				continue
 			}
-			prev, row[j] = row[j], keep
+			if !yield(f.Name) {
+				return
+			}
 		}
-	}
-	return row[len(b)]
+	})
 }
 
 // isBool reports whether a value takes no argument on the command line.

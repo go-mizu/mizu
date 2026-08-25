@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/go-mizu/mizu/errs/diag"
 )
 
 // A Command is one thing a program can be asked to do.
@@ -230,17 +232,18 @@ func (a *App) lookup(name string) *entry {
 // unknown reports a command nobody registered, with the nearest one that
 // somebody did.
 func (a *App) unknown(name string) error {
-	best, at := "", 3
-	for _, e := range a.cmds {
-		if e.spec.Hidden {
-			continue
+	near := diag.Suggest(name, func(yield func(string) bool) {
+		for _, e := range a.cmds {
+			if e.spec.Hidden {
+				continue
+			}
+			if !yield(e.spec.Name) {
+				return
+			}
 		}
-		if d := distance(e.spec.Name, name); d < at {
-			best, at = e.spec.Name, d
-		}
-	}
-	if best != "" {
-		return usagef("unknown command %s, did you mean %s", quote(name), best)
+	})
+	if did := diag.Did(near, nil); did != "" {
+		return usagef("unknown command %s, %s", quote(name), did)
 	}
 	return usagef("unknown command %s, run %q for the list", quote(name), a.help())
 }
