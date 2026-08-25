@@ -290,6 +290,39 @@ func ExampleApp_Start_usage() {
 	// exit 2
 }
 
+// Under --json a failure is a mizu.diag/1 document on stderr, whatever kind of
+// error it was. This one never reached the command, and it is still a document,
+// which is what lets a program read every mizu command the same way.
+//
+// It goes to stderr because stdout is the answer the command was asked for.
+// A command that had already written half of one before it failed would
+// otherwise leave a stream that is not JSON at all.
+func ExampleApp_Start_json() {
+	app := &console.App{Name: "hello", Desc: "hello greets people."}
+	app.Add(&greet{})
+
+	code := app.Start(context.Background(), strings.NewReader(""), os.Stdout, os.Stdout,
+		[]string{"greet", "--json"})
+	fmt.Println("exit", code)
+
+	// Output:
+	// {
+	//   "schema": "mizu.diag/1",
+	//   "diagnostics": [
+	//     {
+	//       "severity": "error",
+	//       "message": "name is required: who to greet"
+	//     }
+	//   ],
+	//   "summary": {
+	//     "errors": 1,
+	//     "warnings": 0,
+	//     "duration_ms": 0
+	//   }
+	// }
+	// exit 2
+}
+
 // With no terminal, a prompt takes its default, and a prompt with no default is
 // an error. That is the difference between a build that stops with a sentence
 // about a missing value and one that holds a CI runner until it times out.

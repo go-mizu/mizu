@@ -16,9 +16,15 @@
 // process.
 //
 // Every command takes the flags in [console.Globals] on top of its own:
-// --verbose, --quiet, --json, --color, --no-color, --no-interaction and
-// --timeout. They can be written before the command name or after it. The two
-// this program adds, --profile and --trace, are in [globals].
+// --verbose, --quiet, --json, --diag-file, --color, --no-color,
+// --no-interaction and --timeout. They can be written before the command name
+// or after it. The two this program adds, --profile and --trace, are in
+// [globals].
+//
+// --json is true of every command, including the ones that have nothing to say
+// but whether they worked: what a failure prints under it is a mizu.diag/1
+// document on stderr, and stdout is left to the answer the command was asked
+// for.
 package main
 
 import (

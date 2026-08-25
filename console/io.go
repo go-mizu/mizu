@@ -39,6 +39,11 @@ type Options struct {
 	// JSON turns on machine readable output. See [IO.Table] and [IO.JSON].
 	JSON bool
 
+	// DiagFile is a path to write the mizu.diag/1 document to, on top of
+	// whatever the command prints. It is for a generator invoked through go
+	// generate, which has no command line to put --json on. See [Report].
+	DiagFile string
+
 	// Color decides whether output carries ANSI escapes. The zero value,
 	// [ColorAuto], asks the terminal and the environment.
 	Color Color
@@ -65,6 +70,7 @@ type IO struct {
 
 	verbosity Verbosity
 	jsonMode  bool
+	diagFile  string
 
 	colorOut bool
 	colorErr bool
@@ -98,6 +104,7 @@ func New(in io.Reader, out, err io.Writer, opts Options) *IO {
 		err:         err,
 		verbosity:   opts.Verbosity,
 		jsonMode:    opts.JSON,
+		diagFile:    opts.DiagFile,
 		colorOut:    colorEnabled(out, opts.Color, os.Getenv),
 		colorErr:    colorEnabled(err, opts.Color, os.Getenv),
 		width:       terminalWidth(out, opts.Width),

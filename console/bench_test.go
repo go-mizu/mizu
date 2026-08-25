@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -222,6 +223,35 @@ func BenchmarkInfo(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				io.Info("processed %d of %d", 4211, 10000)
+			}
+		})
+	}
+}
+
+// BenchmarkReport is what a failure costs to print, as a line and as a
+// mizu.diag/1 document.
+//
+// Once per run, on the way out, so neither number decides anything on its own.
+// It is here because the JSON path walks the error chain and builds a document
+// where the human path formats one string, and it is worth knowing that the
+// difference is a few microseconds rather than a few milliseconds. A command
+// that fails is a command somebody is waiting on.
+func BenchmarkReport(b *testing.B) {
+	err := fmt.Errorf("boot: %w", fmt.Errorf("reading config/app.toml: %w", errors.New("no such file")))
+
+	for _, tt := range []struct {
+		name string
+		opts Options
+	}{
+		{"text", Options{Color: ColorNever}},
+		{"json", Options{JSON: true}},
+	} {
+		b.Run(tt.name, func(b *testing.B) {
+			c := New(strings.NewReader(""), io.Discard, io.Discard, tt.opts)
+
+			b.ReportAllocs()
+			for b.Loop() {
+				Report(c, err)
 			}
 		})
 	}

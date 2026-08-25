@@ -85,6 +85,7 @@ type Globals struct {
 	Verbose       int
 	Quiet         bool
 	JSON          bool
+	DiagFile      string
 	Color         Color
 	NoColor       bool
 	NoInteraction bool
@@ -97,6 +98,7 @@ func (g *Globals) Flags() []Flag {
 		{Name: "verbose", Short: 'v', Desc: "Say more about what is happening, twice for more again", Value: Count(&g.Verbose)},
 		{Name: "quiet", Short: 'q', Desc: "Warnings and errors only", Value: Bool(&g.Quiet)},
 		{Name: "json", Desc: "Machine readable output", Value: Bool(&g.JSON)},
+		{Name: "diag-file", Env: "MIZU_DIAG_FILE", Desc: "Also write diagnostics as JSON to this file", Value: String(&g.DiagFile)},
 		{Name: "color", Default: "auto", Desc: "When to colour output: auto, always or never", Value: Var(&g.Color, ParseColor)},
 		{Name: "no-color", Desc: "Never colour output", Value: Bool(&g.NoColor)},
 		{Name: "no-interaction", Short: 'n', Desc: "Never ask a question, take the defaults", Value: Bool(&g.NoInteraction)},
@@ -109,6 +111,7 @@ func (g *Globals) Options() Options {
 	opts := Options{
 		Verbosity: Verbosity(g.Verbose),
 		JSON:      g.JSON,
+		DiagFile:  g.DiagFile,
 		Color:     g.Color,
 	}
 	// --quiet beats -v, because somebody who passed both means the one that
@@ -278,6 +281,14 @@ func wantsValue(globals []Flag, arg string) bool {
 	return i >= 0 && !isBool(globals[i].Value)
 }
 
+// errTimedOut is what --timeout is reported as.
+//
+// An error rather than a string because [Report] hands it to the same path as
+// every other failure, and that path wants something [diag.Of] can turn into a
+// document. context.DeadlineExceeded says "context deadline exceeded", which is
+// Go's phrasing of somebody else's problem.
+var errTimedOut = errors.New("timed out")
+
 // Report prints what a command returned, if anything went wrong, and returns
 // the code to exit with.
 //
@@ -285,7 +296,17 @@ func wantsValue(globals []Flag, arg string) bool {
 // whose main runs one command without an App around it and for a test fixture
 // that wants the code a process would have exited with. A command that returns
 // nil prints nothing and gets [CodeOK].
+//
+// Under --json what it prints is the mizu.diag/1 document, on stderr, whatever
+// kind of error came back. With --diag-file, or MIZU_DIAG_FILE, the same
+// document also goes to a file, on every run rather than only a failing one.
 func Report(c *IO, err error) int {
+	// Last, so that a warning about the file itself lands after the report
+	// rather than in the middle of it.
+	if c.diagFile != "" {
+		defer c.writeDiag(err)
+	}
+
 	switch {
 	case err == nil:
 		return CodeOK
@@ -296,16 +317,19 @@ func Report(c *IO, err error) int {
 		return CodeInterrupted
 
 	case errors.Is(err, context.DeadlineExceeded):
-		c.Error("timed out")
+		c.fail(errTimedOut)
 		return CodeFailure
 	}
 
-	c.Error("%v", err)
+	c.fail(err)
 
 	// The chain is where the answer usually is: a config error three wraps down
 	// says which file, and the top of the chain says which step. It costs a
 	// flag rather than four lines on every failure.
-	if c.Verbosity() >= Verbose {
+	//
+	// Not under --json, where the document already carries the whole error and
+	// a line beside it would not be part of any document.
+	if c.Verbosity() >= Verbose && !c.jsonMode {
 		for cause := errors.Unwrap(err); cause != nil; cause = errors.Unwrap(cause) {
 			c.Debug("caused by: %v", cause)
 		}
