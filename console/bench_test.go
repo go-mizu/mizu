@@ -103,6 +103,44 @@ func BenchmarkAdvance(b *testing.B) {
 	}
 }
 
+// benchTree builds a tree with n leaves under it, spread three levels deep.
+// That is the shape of a route tree or a directory listing, which is what this
+// gets used for.
+func benchTree(n int) TreeNode {
+	root := TreeNode{Label: "app"}
+	for i := range n / 4 {
+		branch := TreeNode{Label: "resource" + strconv.Itoa(i)}
+		for _, leaf := range []string{"index", "show", "store", "destroy"} {
+			branch.Children = append(branch.Children, TreeNode{Label: leaf})
+		}
+		root.Children = append(root.Children, branch)
+	}
+	return root
+}
+
+func BenchmarkTree(b *testing.B) {
+	tree := benchTree(400)
+	io := New(strings.NewReader(""), io.Discard, io.Discard, Options{})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		io.Tree(tree)
+	}
+}
+
+// BenchmarkSectionInfo is what the indent costs a status line. A section is
+// entered a handful of times per command and written to more than that, so the
+// per line number is the one to watch.
+func BenchmarkSectionInfo(b *testing.B) {
+	io := New(strings.NewReader(""), io.Discard, io.Discard, Options{Color: ColorNever})
+	section := io.Section("Importing")
+
+	b.ReportAllocs()
+	for b.Loop() {
+		section.Info("processed %d of %d", 4211, 10000)
+	}
+}
+
 // BenchmarkInfo is the cost of a status line, and of the same line when
 // --quiet turned it off. The second one is what a loop that reports progress
 // pays when nobody is reading, which should be close to nothing.
