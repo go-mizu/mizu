@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-mizu/mizu/errs/diag"
 	"github.com/go-mizu/mizu/toml"
 )
 
@@ -475,7 +476,7 @@ func (l *Loader) Unknown() []Unknown {
 	}
 	for _, key := range l.flagKeys {
 		if !l.asked[key] && !l.open[key] {
-			out = append(out, Unknown{Path: key, From: l.flags[key].source, Near: nearest(key, known)})
+			out = append(out, Unknown{Path: key, From: l.flags[key].source, Near: diag.Suggest(key, slices.Values(known))})
 		}
 	}
 	return out
@@ -502,7 +503,7 @@ func (l *Loader) walk(t *toml.Table, prefix string, known []string, out *[]Unkno
 			*out = append(*out, Unknown{
 				Path: path,
 				From: Source{From: FromFile, Name: v.Pos.String()},
-				Near: nearest(path, known),
+				Near: diag.Suggest(path, slices.Values(known)),
 			})
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-mizu/mizu/errs/diag"
 	"github.com/go-mizu/mizu/toml"
 )
 
@@ -64,9 +65,9 @@ func wrap(err error) error {
 // It is almost always a typo, and the whole point of reporting it is that a
 // misspelled setting otherwise does nothing at all and says nothing about it.
 type Unknown struct {
-	Path string // the dotted path, as written
-	From Source // the file and line, or the flag
-	Near string // the closest setting that does exist, or empty
+	Path string   // the dotted path, as written
+	From Source   // the file and line, or the flag
+	Near []string // the settings that do exist and are close, closest first
 }
 
 func (u Unknown) Error() string {
@@ -74,71 +75,9 @@ func (u Unknown) Error() string {
 	b.WriteString(u.From.String())
 	b.WriteString(": unknown setting ")
 	b.WriteString(strconv.Quote(u.Path))
-	if u.Near != "" {
-		b.WriteString(", did you mean ")
-		b.WriteString(strconv.Quote(u.Near))
-		b.WriteString("?")
+	if did := diag.Did(u.Near, strconv.Quote); did != "" {
+		b.WriteString(", ")
+		b.WriteString(did)
 	}
 	return b.String()
-}
-
-// nearest returns the candidate closest to want, or empty when none of them is
-// close enough to be worth suggesting. The limit grows with the length of the
-// name, because one wrong letter in a long name is a typo and one wrong letter
-// in a three letter name is a different word.
-func nearest(want string, candidates []string) string {
-	limit := 1 + len(want)/4
-	best, bestDist := "", limit+1
-	for _, c := range candidates {
-		// It takes at least one mistake per character of difference in
-		// length, so a candidate that is much longer or shorter cannot win
-		// and does not have to be measured.
-		if len(c)-len(want) > limit || len(want)-len(c) > limit {
-			continue
-		}
-		if d := distance(want, c); d < bestDist {
-			best, bestDist = c, d
-		}
-	}
-	if bestDist > limit {
-		return ""
-	}
-	return best
-}
-
-// distance is how many mistakes turn one string into the other, counting an
-// insertion, a deletion, a replacement, or two letters the wrong way round as
-// one each. Configuration keys are names people type, so bytes and runes come
-// to the same thing in every case that matters here.
-func distance(a, b string) int {
-	if a == b {
-		return 0
-	}
-	// Three rows of the matrix are enough: a cell looks at the row above it,
-	// the cell to its left, and for a swap the row two above.
-	prev2 := make([]int, len(b)+1)
-	prev := make([]int, len(b)+1)
-	cur := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		cur[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			d := min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
-			// Two letters the wrong way round is the commonest typo there is,
-			// and counting it as one mistake rather than two is what makes lgo
-			// suggest log.
-			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
-				d = min(d, prev2[j-2]+1)
-			}
-			cur[j] = d
-		}
-		prev2, prev, cur = prev, cur, prev2
-	}
-	return prev[len(b)]
 }

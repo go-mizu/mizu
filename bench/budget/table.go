@@ -315,6 +315,11 @@ var rows = []Row{
 		Time: 10 * time.Microsecond, Allocs: 16,
 	},
 	{
+		ID: "diag/suggest", Group: everythingElse, Doc: "36",
+		Op:   "Did you mean, over the seventy settings of a middling application",
+		Time: 150 * time.Microsecond, Allocs: 32,
+	},
+	{
 		ID: "trace/span/off", Group: everythingElse, Doc: "26", Since: "M8",
 		Op:   "Span start and end, sampled out",
 		Time: 60 * time.Nanosecond, Allocs: 0,

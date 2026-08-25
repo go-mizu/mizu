@@ -126,9 +126,10 @@ func TestParseBooleans(t *testing.T) {
 }
 
 // TestParseNoOnlyTurnsOffBooleans keeps --no- from becoming a prefix that means
-// something different on every flag.
+// something different on every flag. --name takes a string, so --no-name is not
+// a flag at all, and the suggestion is the flag whose name is in there.
 func TestParseNoOnlyTurnsOffBooleans(t *testing.T) {
-	if got, want := refuse(t, "--no-name", "x"), "unknown flag --no-name"; got != want {
+	if got, want := refuse(t, "--no-name", "x"), "unknown flag --no-name, did you mean --name?"; got != want {
 		t.Errorf("says %q, want %q", got, want)
 	}
 	if got, want := refuse(t, "--no-dry-run=true"), "--no-dry-run takes no value"; got != want {
@@ -228,8 +229,8 @@ func TestParseUnknownFlag(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{[]string{"--dayz", "7"}, "unknown flag --dayz, did you mean --days"},
-		{[]string{"--nmae=Ada"}, "unknown flag --nmae, did you mean --name"},
+		{[]string{"--dayz", "7"}, "unknown flag --dayz, did you mean --days?"},
+		{[]string{"--nmae=Ada"}, "unknown flag --nmae, did you mean --name?"},
 		{[]string{"--elephant"}, "unknown flag --elephant"},
 		{[]string{"-z"}, "unknown flag -z"},
 		{[]string{"--=7"}, "--=7 is not a flag name"},
@@ -593,24 +594,5 @@ func TestParseUsesTheRealEnvironment(t *testing.T) {
 	}
 	if days != 90 {
 		t.Errorf("days=%d, want 90 from the environment", days)
-	}
-}
-
-func TestDistance(t *testing.T) {
-	for _, tt := range []struct {
-		a, b string
-		want int
-	}{
-		{"days", "days", 0},
-		{"days", "dayz", 1},
-		{"days", "adys", 2},
-		{"days", "day", 1},
-		{"days", "", 4},
-		{"", "", 0},
-		{"days", "elephant", 7}, // the a is the only letter worth keeping
-	} {
-		if got := distance(tt.a, tt.b); got != tt.want {
-			t.Errorf("distance(%q, %q) is %d, want %d", tt.a, tt.b, got, tt.want)
-		}
 	}
 }

@@ -2,6 +2,7 @@ package micro
 
 import (
 	"io"
+	"slices"
 	"testing"
 
 	"github.com/go-mizu/mizu/errs/diag"
@@ -10,6 +11,7 @@ import (
 func init() {
 	register("diag/text", benchDiagText)
 	register("diag/json", benchDiagJSON)
+	register("diag/suggest", benchDiagSuggest)
 }
 
 // The list every renderer benchmark works from, built once because a benchmark
@@ -52,6 +54,37 @@ func benchDiagJSON(b *testing.B) {
 	for b.Loop() {
 		if err := diag.JSON(io.Discard, reported); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+// settings is the candidate set a suggestion is measured against: seven
+// sections of ten settings, which is about what a middling application
+// declares.
+var settings = func() []string {
+	sections := []string{"app", "database", "cache", "queue", "mail", "log", "session"}
+	names := []string{
+		"driver", "url", "max_open_conns", "max_idle_conns", "conn_max_lifetime",
+		"connect_timeout", "read_timeout", "ssl_mode", "log_queries", "name",
+	}
+	out := make([]string, 0, len(sections)*len(names))
+	for _, s := range sections {
+		for _, n := range names {
+			out = append(out, s+"."+n)
+		}
+	}
+	return out
+}()
+
+// benchDiagSuggest is the work behind "did you mean". Every candidate is
+// measured against what was typed, so the cost is the size of the configuration
+// rather than the size of the mistake, and this is the row that says how large
+// a configuration can get before that stops being free.
+func benchDiagSuggest(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if len(diag.Suggest("database.max_conns", slices.Values(settings))) == 0 {
+			b.Fatal("found nothing to suggest")
 		}
 	}
 }

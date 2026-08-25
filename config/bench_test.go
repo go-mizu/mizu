@@ -202,18 +202,6 @@ func BenchmarkParseDotEnv(b *testing.B) {
 	}
 }
 
-func BenchmarkNearest(b *testing.B) {
-	known := make([]string, 0, len(fields))
-	for _, f := range fields {
-		known = append(known, f.Path)
-	}
-	for b.Loop() {
-		if got := nearest("database.max_conns", known); got == "" {
-			b.Fatal("found nothing to suggest")
-		}
-	}
-}
-
 // benchConf is the struct a generated decoder fills in, using every parser
 // that has any work to do.
 type benchConf struct {

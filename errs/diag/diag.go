@@ -48,6 +48,16 @@
 // program can apply without parsing anything, and [Confidence] says whether it
 // should.
 //
+// # Did you mean
+//
+// [Suggest] decides what to offer for a name nobody recognises and [Did] writes
+// the sentence it goes in. They are here rather than in the packages that
+// report unknown names because an unknown setting, an unknown flag and an
+// unknown command are the same problem, and three implementations of it drift
+// apart in the threshold, in the wording and in whether anything is offered at
+// all. Where nothing qualifies, nothing comes back: a wrong suggestion sends
+// the reader down a false path with confidence.
+//
 // # Errors
 //
 // A [Diagnostic] is an error and a [List] turns into one with [List.Err], so a
