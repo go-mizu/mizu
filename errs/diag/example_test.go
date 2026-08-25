@@ -74,6 +74,20 @@ func load() error {
 	}.Err())
 }
 
+// The registry is what a code means, separately from any one occurrence of it.
+func ExampleLookup() {
+	e, ok := diag.Lookup("MZ1042")
+	if !ok {
+		return
+	}
+	s, _ := diag.SubsystemOf(e.Code)
+	fmt.Println(e.Summary)
+	fmt.Println(s.Name, "(doc", s.Doc+")")
+	// Output:
+	// a setting is written down that nothing asked for
+	// configuration (doc 05)
+}
+
 // An empty list is not a failure, which is what lets a loader end with one
 // line rather than with a length check.
 func ExampleList_Err() {
