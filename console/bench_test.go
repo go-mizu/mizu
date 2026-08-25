@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -177,6 +178,30 @@ func BenchmarkHelp(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		a.Help(io)
+	}
+}
+
+// BenchmarkStart is what a process pays between main starting and the command
+// running: building the global flags, taking them out of the command line,
+// parsing them, working out the colour, and finding the command.
+//
+// It is paid once, so the number is only interesting next to what a shell
+// spends spawning the process, which is a few milliseconds. The one to watch is
+// the allocation count, because that is what grows if this ever starts building
+// something per command rather than per run.
+func BenchmarkStart(b *testing.B) {
+	a := &App{Name: "mizu"}
+	for i := range 200 {
+		a.Add(&simple{name: fmt.Sprintf("group%d:command%d", i%12, i)})
+	}
+	a.Add(&silent{})
+	argv := []string{"--quiet", "silent", "--no-color"}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if code := a.Start(context.Background(), strings.NewReader(""), io.Discard, io.Discard, argv); code != CodeOK {
+			b.Fatalf("exit %d", code)
+		}
 	}
 }
 

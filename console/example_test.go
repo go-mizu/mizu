@@ -258,6 +258,38 @@ func ExampleApp_help() {
 	//   -h, --help  Show what this command takes
 }
 
+// Start is what a process does, without being one. The global flags are taken
+// out of the command line wherever they were written, so the command sees only
+// its own, and what comes back is the code to exit with.
+func ExampleApp_Start() {
+	app := &console.App{Name: "hello", Desc: "hello greets people."}
+	app.Add(&greet{})
+
+	code := app.Start(context.Background(), strings.NewReader(""), os.Stdout, os.Stdout,
+		[]string{"greet", "--no-color", "Ada", "--loud"})
+	fmt.Println("exit", code)
+
+	// Output:
+	// HELLO, ADA
+	// exit 0
+}
+
+// A command line that could not be understood exits 2 and the command never
+// runs, which is the difference a script cares about. An error from the command
+// itself would be 1, or whatever it wrapped itself with.
+func ExampleApp_Start_usage() {
+	app := &console.App{Name: "hello", Desc: "hello greets people."}
+	app.Add(&greet{})
+
+	code := app.Start(context.Background(), strings.NewReader(""), os.Stdout, os.Stdout,
+		[]string{"greet", "--no-color"})
+	fmt.Println("exit", code)
+
+	// Output:
+	// error: name is required: who to greet
+	// exit 2
+}
+
 // With no terminal, a prompt takes its default, and a prompt with no default is
 // an error. That is the difference between a build that stops with a sentence
 // about a missing value and one that holds a CI runner until it times out.

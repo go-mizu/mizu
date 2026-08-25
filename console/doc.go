@@ -75,6 +75,39 @@
 // Help for a command is printed without parsing its arguments, because "what
 // does this take" is the question somebody asks when they do not have them yet.
 //
+// # Running a command as a process
+//
+// [App.Main] is the whole of a main function. It returns the code to exit with:
+//
+//	func main() {
+//		os.Exit(app.Main(os.Args[1:]))
+//	}
+//
+// [Globals] are the flags every command takes: --verbose, --quiet, --json,
+// --color, --no-color, --no-interaction and --timeout. They are taken out of
+// the command line wherever they were written, so --json means the same thing
+// before the command name and after it, and a command only ever sees its own
+// flags. A program adds the ones that belong to it, such as --env, with
+// [App.Globals].
+//
+// The exit codes are the ones from sysexits.h, so a shell script and a process
+// supervisor already know how to read them: [CodeUsage] for a command line that
+// could not be understood, [CodeConfig] for a configuration that does not make
+// sense, [CodeUnavailable] for something the command depends on not being
+// there, and [CodeFailure] for everything else. A command picks one by wrapping
+// its error with [Exit], and an error type that classifies itself gets there by
+// implementing [ExitCoder].
+//
+// SIGINT and SIGTERM cancel the command's context, so a command that honours it
+// closes what it opened. A second signal exits at once, because somebody
+// pressing Ctrl-C twice has stopped asking. [App.Start] is the same thing
+// without the process, for a test: it takes the streams and a context and
+// returns the code rather than reaching for os.
+//
+// The error a command returns is printed as one line. Its chain of causes is
+// printed under it from --verbose up, because the answer is usually three wraps
+// down and that is worth a flag rather than four lines on every failure.
+//
 // # Asking questions
 //
 // [IO.Ask], [IO.AskSecret], [IO.Confirm], [IO.Choice] and [IO.MultiChoice] read
@@ -131,9 +164,7 @@
 // # What is not here yet
 //
 // The generator that turns struct tags into a Spec is specified and not
-// written, and so is the part that runs a command as a process: the global
-// flags, the exit codes, and cancelling on a signal. So is the test fixture
-// that scripts an answer to a prompt.
+// written, and neither is the test fixture that scripts an answer to a prompt.
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can

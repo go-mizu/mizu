@@ -78,7 +78,21 @@ type App struct {
 	Desc    string
 	Version string
 
+	// Globals are flags every command takes, on top of the ones in [Globals]
+	// that every mizu command has. They are for what belongs to the program
+	// rather than to a command: which environment, which config file.
+	//
+	// [App.Start] parses them and takes them out of the command line, so a
+	// command never sees one and a command must not declare a flag with the
+	// same name.
+	Globals []Flag
+
 	cmds []entry
+
+	// globals is what Start parsed, kept so that help can list them. Help
+	// printed by [App.Run] on its own does not, because a program that runs a
+	// command without Start has not agreed to any of these.
+	globals []Flag
 }
 
 // entry is a command and the spec it gave when it was registered.

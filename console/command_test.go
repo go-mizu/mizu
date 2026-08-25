@@ -527,9 +527,9 @@ func TestAValueThatSaysNothingTakesAValue(t *testing.T) {
 
 func TestRequiredFlagSaysSo(t *testing.T) {
 	var name string
-	rows := flagRows(Spec{Flags: []Flag{
+	rows := flagRows([]Flag{
 		{Name: "name", Desc: "Who to greet", Required: true, Value: String(&name)},
-	}})
+	})
 
 	want := row{"    --name string", "Who to greet (required)"}
 	if rows[0] != want {
@@ -539,9 +539,9 @@ func TestRequiredFlagSaysSo(t *testing.T) {
 
 func TestAFlagWithNoDescriptionStillLinesUp(t *testing.T) {
 	var name string
-	rows := flagRows(Spec{Flags: []Flag{
+	rows := flagRows([]Flag{
 		{Name: "name", Env: "MIZU_NAME", Value: String(&name)},
-	}})
+	})
 
 	want := row{"    --name string", "[$MIZU_NAME]"}
 	if rows[0] != want {

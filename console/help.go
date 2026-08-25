@@ -24,6 +24,12 @@ func (a *App) Help(c *IO) {
 	if rows := a.commandRows(); len(rows) > 0 {
 		b.WriteString("\nCommands:\n")
 		writeRows(&b, rows)
+	}
+	if len(a.globals) > 0 {
+		b.WriteString("\nGlobal flags:\n")
+		writeRows(&b, flagRows(a.globals))
+	}
+	if len(a.cmds) > 0 {
 		fmt.Fprintf(&b, "\nRun %q for more about one.\n", a.help()+" <command>")
 	}
 	fmt.Fprint(c.out, b.String())
@@ -56,8 +62,12 @@ func (a *App) usage(c *IO, spec Spec) {
 		writeRows(&b, rows)
 	}
 	b.WriteString("\nFlags:\n")
-	writeRows(&b, flagRows(spec))
+	writeRows(&b, append(flagRows(spec.Flags), helpRows(spec.Flags)...))
 
+	if len(a.globals) > 0 {
+		b.WriteString("\nGlobal flags:\n")
+		writeRows(&b, flagRows(a.globals))
+	}
 	fmt.Fprint(c.out, b.String())
 }
 
@@ -134,9 +144,9 @@ func argRows(args []Arg) []row {
 	return rows
 }
 
-func flagRows(spec Spec) []row {
-	rows := make([]row, 0, len(spec.Flags)+1)
-	for _, f := range spec.Flags {
+func flagRows(flags []Flag) []row {
+	rows := make([]row, 0, len(flags)+1)
+	for _, f := range flags {
 		if f.Hidden {
 			continue
 		}
@@ -161,17 +171,22 @@ func flagRows(spec Spec) []row {
 		rows = append(rows, row{left, right})
 	}
 
-	// --help is not a declared flag, it is handled before the parse, and it is
-	// still the flag most worth knowing about. A command that declared its own
-	// keeps it and this stays quiet.
-	if find(spec.Flags, func(f Flag) bool { return f.Name == "help" }) < 0 {
-		left := "    --help"
-		if find(spec.Flags, func(f Flag) bool { return f.Short == 'h' }) < 0 {
-			left = "-h, --help"
-		}
-		rows = append(rows, row{left, "Show what this command takes"})
-	}
 	return rows
+}
+
+// helpRows is the line for --help, which is not a declared flag, is handled
+// before the parse, and is still the flag most worth knowing about.
+//
+// A command that declared its own keeps it, and then there is no line to write.
+func helpRows(flags []Flag) []row {
+	if find(flags, func(f Flag) bool { return f.Name == "help" }) >= 0 {
+		return nil
+	}
+	left := "    --help"
+	if find(flags, func(f Flag) bool { return f.Short == 'h' }) < 0 {
+		left = "-h, --help"
+	}
+	return []row{{left, "Show what this command takes"}}
 }
 
 // kind is what a flag takes, for the help line. A flag that takes nothing says
