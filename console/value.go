@@ -38,11 +38,23 @@ type counter interface {
 	Count()
 }
 
+// A kinded Value can say what it takes, in one word, for help text: int,
+// duration, list, or the options themselves for an enum. A Value that does not
+// implement this is described as taking a value, which is all that can honestly
+// be said about a type this package has never seen.
+type kinded interface {
+	Value
+	Kind() string
+}
+
 // value is the plumbing behind most of the constructors below.
 type value[T any] struct {
 	p     *T
 	parse func(string) (T, error)
+	kind  string
 }
+
+func (v value[T]) Kind() string { return v.kind }
 
 func (v value[T]) Set(s string) error {
 	x, err := v.parse(s)
@@ -72,12 +84,18 @@ func (v value[T]) String() string {
 //
 //	console.Var(&c.Level, log.ParseLevel)
 func Var[T any](p *T, parse func(string) (T, error)) Value {
-	return value[T]{p: p, parse: parse}
+	return value[T]{p: p, parse: parse, kind: "value"}
+}
+
+// typed is Var for the constructors here, which know what to call what they
+// take.
+func typed[T any](kind string, p *T, parse func(string) (T, error)) Value {
+	return value[T]{p: p, parse: parse, kind: kind}
 }
 
 // String returns a Value that takes the text as it stands.
 func String[T ~string](p *T) Value {
-	return Var(p, func(s string) (T, error) { return T(s), nil })
+	return typed("string", p, func(s string) (T, error) { return T(s), nil })
 }
 
 // Int returns a Value that parses a signed number.
@@ -86,7 +104,7 @@ func String[T ~string](p *T) Value {
 // underscore may be used as a separator. A value too large for the type it is
 // going into is an error rather than a wrap around.
 func Int[T ~int | ~int8 | ~int16 | ~int32 | ~int64](p *T) Value {
-	return Var(p, func(s string) (T, error) {
+	return typed("int", p, func(s string) (T, error) {
 		n, err := strconv.ParseInt(s, 0, 64)
 		if err != nil {
 			return 0, numError(s, err)
@@ -101,7 +119,7 @@ func Int[T ~int | ~int8 | ~int16 | ~int32 | ~int64](p *T) Value {
 // Uint returns a Value that parses an unsigned number. A negative one is an
 // error naming the sign rather than a very large positive number.
 func Uint[T ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](p *T) Value {
-	return Var(p, func(s string) (T, error) {
+	return typed("uint", p, func(s string) (T, error) {
 		n, err := strconv.ParseUint(s, 0, 64)
 		if err != nil {
 			if strings.HasPrefix(s, "-") {
@@ -118,7 +136,7 @@ func Uint[T ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](p *T) Value
 
 // Float returns a Value that parses a number with a fractional part.
 func Float[T ~float32 | ~float64](p *T) Value {
-	return Var(p, func(s string) (T, error) {
+	return typed("float", p, func(s string) (T, error) {
 		f, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return 0, numError(s, err)
@@ -201,7 +219,7 @@ func (countValue) IsBoolFlag() bool { return true }
 // Duration returns a Value that parses 30s, 5m, 1h30m and the rest of what
 // time.ParseDuration takes.
 func Duration[T ~int64](p *T) Value {
-	return Var(p, func(s string) (T, error) {
+	return typed("duration", p, func(s string) (T, error) {
 		d, err := time.ParseDuration(s)
 		if err != nil {
 			return 0, fmt.Errorf("%q is not a length of time, try 30s or 5m", s)
@@ -219,7 +237,7 @@ func Time(p *time.Time, layouts ...string) Value {
 	if len(layouts) == 0 {
 		layouts = []string{time.RFC3339, time.DateOnly}
 	}
-	return Var(p, func(s string) (time.Time, error) {
+	return typed("time", p, func(s string) (time.Time, error) {
 		for _, layout := range layouts {
 			if t, err := time.Parse(layout, s); err == nil {
 				return t, nil
@@ -240,6 +258,8 @@ func Text[T encoding.TextUnmarshaler](p T) Value { return textValue[T]{p} }
 type textValue[T encoding.TextUnmarshaler] struct{ p T }
 
 func (v textValue[T]) Set(s string) error { return v.p.UnmarshalText([]byte(s)) }
+
+func (textValue[T]) Kind() string { return "value" }
 
 func (v textValue[T]) String() string {
 	if m, ok := any(v.p).(encoding.TextMarshaler); ok {
@@ -286,6 +306,8 @@ func (v sliceValue[T]) Set(s string) error {
 	return nil
 }
 
+func (sliceValue[T]) Kind() string { return "list" }
+
 func (v sliceValue[T]) String() string {
 	if v.p == nil {
 		return ""
@@ -320,6 +342,8 @@ func (v mapValue) Set(s string) error {
 	return nil
 }
 
+func (mapValue) Kind() string { return "key=value" }
+
 func (v mapValue) String() string {
 	if v.p == nil || *v.p == nil {
 		return ""
@@ -334,13 +358,15 @@ func (v mapValue) String() string {
 // Enum returns a Value that takes one of a list, and says which list when it
 // does not.
 func Enum[T ~string](p *T, options ...T) Value {
-	return Var(p, func(s string) (T, error) {
+	names := make([]string, len(options))
+	for i, option := range options {
+		names[i] = string(option)
+	}
+	// The options are the best description of what the flag takes, so they are
+	// its kind as well, and help text does not have to repeat them in prose.
+	return typed(strings.Join(names, "|"), p, func(s string) (T, error) {
 		if v := T(s); slices.Contains(options, v) {
 			return v, nil
-		}
-		names := make([]string, len(options))
-		for i, option := range options {
-			names[i] = string(option)
 		}
 		return "", fmt.Errorf("%q is not one of %s", s, strings.Join(names, ", "))
 	})

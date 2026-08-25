@@ -55,6 +55,26 @@
 // letter is a bug in the program, and nobody typing at a terminal can do
 // anything about it.
 //
+// # Commands
+//
+// A [Command] is a struct with two methods: [Spec] says what it is called and
+// what it takes, Run does it. The flags in the spec point at the struct's own
+// fields, so Run reads them as ordinary Go values rather than looking anything
+// up by name.
+//
+// An [App] holds a set of them and [App.Run] finds the one that was asked for.
+// A colon in a name groups related commands, so db:seed and db:wipe appear
+// together in help without either of them saying so.
+//
+// Asking for help is not a failure. --help, -h, help, help <command> and a bare
+// command line write to stdout and return nil, so the answer can be piped into
+// a pager or grepped for the command somebody half remembers. A command line
+// that could not be understood is a [UsageError] instead, and an unknown
+// command names the nearest one that exists.
+//
+// Help for a command is printed without parsing its arguments, because "what
+// does this take" is the question somebody asks when they do not have them yet.
+//
 // # Asking questions
 //
 // [IO.Ask], [IO.AskSecret], [IO.Confirm], [IO.Choice] and [IO.MultiChoice] read
@@ -110,9 +130,10 @@
 //
 // # What is not here yet
 //
-// The command structs and the flag generator that will call all of this are
-// specified and not written, and so is the test fixture that scripts an answer
-// to a prompt.
+// The generator that turns struct tags into a Spec is specified and not
+// written, and so is the part that runs a command as a process: the global
+// flags, the exit codes, and cancelling on a signal. So is the test fixture
+// that scripts an answer to a prompt.
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can
