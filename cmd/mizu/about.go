@@ -267,48 +267,25 @@ func replacedBy(m *module) string {
 	}
 }
 
-// skipped are the directories the walk does not go into.
-//
-// A dot directory is somebody's tooling, node_modules is an ecosystem of its
-// own, vendor is a copy of other people's code, and testdata is a fixture. What
-// is generated in any of them is not this project's output, and walking them is
-// most of the time a walk of the project would take.
-var skipped = []string{"node_modules", "testdata", "vendor"}
-
-// generatedIn finds every file in the tree that says a tool wrote it, grouped
-// by the tool.
+// generatedIn finds every file in the project that says a tool wrote it,
+// grouped by the tool.
 //
 // The header is the go command's convention rather than mizu's, so this reads
 // the output of every generator the project runs. That is the point: the
 // question it answers is which files not to edit by hand.
 //
-// Nothing here fails. A file or a directory that cannot be read is not evidence
-// of anything, and a command that reports what a project is made of has no
-// business ending over one.
+// A file that cannot be read is not evidence of anything, so it is passed over
+// rather than ended on.
 func generatedIn(fsys fs.FS) []generated {
 	files := map[string][]string{}
-	fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if name != "." && (strings.HasPrefix(d.Name(), ".") || slices.Contains(skipped, d.Name())) {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-
+	for name := range projectFiles(fsys) {
 		head, err := head(fsys, name)
 		if err != nil || !gen.Generated(head) {
-			return nil
+			continue
 		}
 		by := generatorOf(head)
 		files[by] = append(files[by], name)
-		return nil
-	})
+	}
 
 	out := make([]generated, 0, len(files))
 	for _, by := range slices.Sorted(maps.Keys(files)) {
