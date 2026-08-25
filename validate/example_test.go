@@ -88,6 +88,22 @@ func ExampleErrors_msgs() {
 	// Output: PUBLISH AT IS REQUIRED.
 }
 
+// A format check answers one question, so a field that is allowed to be blank
+// pairs it with a check for that and a field that is not pairs it with
+// required.
+func ExampleIsEmail() {
+	var bad validate.Errors
+
+	for _, in := range []string{"", "user@localhost", "user@example.com"} {
+		if in != "" && !validate.IsEmail(in) {
+			bad.Add("email", validate.Failed("email"))
+		}
+	}
+
+	fmt.Println(bad.Len(), bad.First("email"))
+	// Output: 1 Email must be an email address.
+}
+
 // shouty stands in for a translation, which is a Messages like any other.
 type shouty struct{}
 
