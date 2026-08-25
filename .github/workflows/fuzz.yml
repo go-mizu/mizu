@@ -1,0 +1,87 @@
+name: Fuzz
+
+# The fuzz targets run for seconds on a pull request, because that is what the
+# seed corpus costs and the rest of the suite has to finish while somebody is
+# still reading the diff. This is where they run for an hour, which is where
+# the inputs nobody thought of come from.
+#
+# Every fuzz target in the module is here, and crypt and hash are why the
+# workflow exists. A router that gets a route wrong sends somebody to the wrong
+# page and they notice. A password hash that gets a parameter wrong verifies
+# every password it is given, and every test passes.
+on:
+  schedule:
+    # Half past three in the morning UTC, so that a nightly failure is waiting
+    # in the morning rather than landing in the middle of the day.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: How long each target runs
+        default: 1h
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # One target per job, so an hour is an hour for each of them rather than an
+  # hour divided nine ways. They run at the same time and the whole thing takes
+  # an hour of wall clock.
+  #
+  # Adding a target here is not optional. TestEveryFuzzTargetIsFuzzedInCI in
+  # the root package reads this file and fails on a FuzzXxx it does not name,
+  # so a target that only ever sees its seed corpus is a build failure rather
+  # than something nobody finds out.
+  fuzz:
+    name: ${{ matrix.pkg }} ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { pkg: crypt, target: FuzzParseKey }
+          - { pkg: crypt, target: FuzzSecret }
+          - { pkg: crypt, target: FuzzPick }
+          - { pkg: crypt, target: FuzzDecrypt }
+          - { pkg: crypt, target: FuzzVerify }
+          - { pkg: crypt, target: FuzzSignRoundTrip }
+          - { pkg: crypt, target: FuzzRoundTrip }
+          - { pkg: hash, target: FuzzBcrypt }
+          - { pkg: hash, target: FuzzVerify }
+          - { pkg: str, target: FuzzIs }
+          - { pkg: toml, target: FuzzParse }
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+
+      # -run='^$' keeps the ordinary tests out of the way, so the hour is spent
+      # on the target and not on running the suite first.
+      - name: Fuzz ${{ matrix.target }} for ${{ inputs.fuzztime || '1h' }}
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go test ./${{ matrix.pkg }} \
+            -run='^$' \
+            -fuzz='^${{ matrix.target }}$' \
+            -fuzztime='${{ inputs.fuzztime || '1h' }}' \
+            -fuzzminimizetime=1m
+
+      # A crash the fuzzer found and nobody kept is a crash somebody has to
+      # find again. The file it writes is the reproducer, and it is the thing
+      # to commit into testdata when the fix goes in.
+      - name: Keep what it found
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: crashers-${{ matrix.pkg }}-${{ matrix.target }}
+          path: ${{ matrix.pkg }}/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 30
