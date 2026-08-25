@@ -90,8 +90,9 @@ func TestGenCheckOnATreeThatIsUpToDate(t *testing.T) {
 
 	r := runGen(t, "--check", "./...").AssertSuccess()
 	r.AssertOutputContains("app/commands_gen.go")
+	r.AssertOutputContains("AGENTS.md")
 	r.AssertOutputContains("up to date")
-	r.AssertErrorContains("1 generated file up to date")
+	r.AssertErrorContains("2 generated files up to date")
 }
 
 // The file the generator writes is named by where it belongs in the module, so
@@ -266,9 +267,11 @@ func TestGenNamesOnePackage(t *testing.T) {
 	runGen(t, "--check", "./app").AssertSuccess().AssertOutputContains("app/commands_gen.go")
 }
 
+// One generator over a package with nothing in it for that generator is the
+// only way to ask for nothing, since mizu gen always has AGENTS.md to write.
 func TestGenOnAPackageWithNoMarkers(t *testing.T) {
 	scratch(t, commands)
-	r := runGen(t, "--check", "./broken").AssertSuccess()
+	r := consoletest.Run(t, &Gen{only: "command"}, consoletest.Args("--check", "./broken")).AssertSuccess()
 	r.AssertErrorContains("Nothing asked to be generated")
 	r.AssertNoOutput()
 }
@@ -278,7 +281,7 @@ func TestGenOnAPackageWithNoMarkers(t *testing.T) {
 func TestGenJSONWithNothingToGenerate(t *testing.T) {
 	scratch(t, commands)
 
-	r := consoletest.Run(t, &Gen{},
+	r := consoletest.Run(t, &Gen{only: "command"},
 		consoletest.Args("--check", "./broken"),
 		consoletest.With(console.Options{JSON: true}),
 	).AssertSuccess()
@@ -409,11 +412,14 @@ func TestGenJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.Stdout()), &rows); err != nil {
 		t.Fatalf("the output is not JSON: %v\n%s", err, r.Stdout())
 	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want 1:\n%s", len(rows), r.Stdout())
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2:\n%s", len(rows), r.Stdout())
 	}
-	if rows[0].File != "app/commands_gen.go" || rows[0].Status != "up to date" {
+	if rows[0].File != "AGENTS.md" || rows[0].Status != "up to date" {
 		t.Errorf("row is %+v", rows[0])
+	}
+	if rows[1].File != "app/commands_gen.go" || rows[1].Status != "up to date" {
+		t.Errorf("row is %+v", rows[1])
 	}
 	r.AssertNoErrorOutput()
 }
@@ -434,7 +440,7 @@ func TestGenJSONWhenSomethingIsStale(t *testing.T) {
 	if err := json.Unmarshal([]byte(r.Stdout()), &rows); err != nil {
 		t.Fatalf("the output is not JSON: %v\n%s", err, r.Stdout())
 	}
-	if len(rows) != 1 || !strings.HasPrefix(rows[0]["status"], "stale") {
+	if len(rows) != 2 || !strings.HasPrefix(rows[1]["status"], "stale") {
 		t.Errorf("rows are %v", rows)
 	}
 }
@@ -446,8 +452,9 @@ func TestGenSpecs(t *testing.T) {
 		desc string
 	}{
 		{&Gen{}, "gen", "Run every generator over the packages"},
-		{&Gen{only: "command"}, "gen:command", generators[0].desc},
-		{&Gen{only: "config"}, "gen:config", generators[1].desc},
+		{&Gen{only: "agents"}, "gen:agents", generators[0].desc},
+		{&Gen{only: "command"}, "gen:command", generators[1].desc},
+		{&Gen{only: "config"}, "gen:config", generators[2].desc},
 	}
 	for _, tt := range tests {
 		spec := tt.cmd.Spec()

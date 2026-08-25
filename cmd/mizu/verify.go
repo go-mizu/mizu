@@ -270,7 +270,7 @@ func generate(ctx context.Context, p project, write bool) ([]gen.Result, error) 
 
 	var files []gen.File
 	for _, g := range generators {
-		out, err := g.run(pkgs...)
+		out, err := g.run(p.Dir, pkgs...)
 		if err != nil {
 			return nil, err
 		}

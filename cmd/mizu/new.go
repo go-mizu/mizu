@@ -128,7 +128,7 @@ func (c *New) Run(ctx context.Context, io *console.IO) error {
 	if err != nil {
 		return err
 	}
-	if err := writeTree(dir, files); err != nil {
+	fail := func(err error) error {
 		if fresh {
 			// The directory was not there a moment ago, so taking it away
 			// leaves things as they were. One that was already there belongs
@@ -137,6 +137,26 @@ func (c *New) Run(ctx context.Context, io *console.IO) error {
 		}
 		return err
 	}
+	if err := writeTree(dir, files); err != nil {
+		return fail(err)
+	}
+
+	// A project says what it is from the moment it exists. AGENTS.md is read
+	// off the tree rather than rendered from a template, which is why it is
+	// written once the rest of the files are there, and it is the same file
+	// mizu gen writes from then on.
+	notes, err := agents(dir)
+	if err != nil {
+		return fail(err)
+	}
+	for _, f := range notes {
+		files = append(files, file{Path: f.Path, Data: f.Data})
+	}
+	if err := writeTree(dir, files[len(files)-len(notes):]); err != nil {
+		return fail(err)
+	}
+	slices.SortFunc(files, func(a, b file) int { return strings.Compare(a.Path, b.Path) })
+
 	return c.report(io, p, dir, module, files)
 }
 

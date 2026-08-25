@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -267,6 +268,9 @@ func shut(t *testing.T, name string, mode fs.FileMode) {
 	t.Helper()
 	if os.Geteuid() == 0 {
 		t.Skip("root reads and writes whatever it likes, so there is nothing to test here")
+	}
+	if runtime.GOOS == "windows" && mode&0o400 == 0 {
+		t.Skip("chmod on Windows carries the write bit and nothing else, so a file cannot be made unreadable this way")
 	}
 	if err := os.Chmod(name, mode); err != nil {
 		t.Fatal(err)
