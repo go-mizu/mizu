@@ -169,8 +169,10 @@
 //
 // # What is not here yet
 //
-// The generator that turns struct tags into a Spec is specified and not
-// written, and neither is the test fixture that scripts an answer to a prompt.
+// The generator that turns struct tags into a Spec lives in
+// github.com/go-mizu/mizu/gen/commandgen, so a command can be a struct with a
+// Run method and nothing else. The test fixture that scripts an answer to a
+// prompt is specified and not written.
 //
 // The prompts that are here read a line. There is no arrow key selection and no
 // history, and a list is numbered instead. A number is something a person can
