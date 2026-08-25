@@ -226,24 +226,38 @@ func toolkit(ctx context.Context, dir string) (v, replaced string, err error) {
 	}
 	var m struct {
 		Version string
-		Replace *struct {
-			Path    string
-			Dir     string
-			Version string
-		}
+		Replace *module
 	}
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		return "", "", fmt.Errorf("reading go list -m %s: %w", mizuPath, err)
 	}
-	if m.Replace == nil {
-		return m.Version, "", nil
+	return m.Version, replacedBy(m.Replace), nil
+}
+
+// A module is what a replace directive points at, as go list reports it.
+type module struct {
+	Path    string
+	Dir     string
+	Version string
+}
+
+// replacedBy is where a replace sends the build, or the empty string when there
+// is no replace.
+//
+// A replace by directory has no version and a replace by module path has no
+// directory, so this says whichever one it is rather than making the caller
+// work it out.
+func replacedBy(m *module) string {
+	switch {
+	case m == nil:
+		return ""
+	case m.Dir != "":
+		return m.Dir
+	case m.Version != "":
+		return m.Path + "@" + m.Version
+	default:
+		return m.Path
 	}
-	// A replace by directory has no version, and a replace by module path has
-	// no directory. Whichever it is, it is what the build reads.
-	if m.Replace.Dir != "" {
-		return m.Version, m.Replace.Dir, nil
-	}
-	return m.Version, strings.TrimSuffix(m.Replace.Path+"@"+m.Replace.Version, "@"), nil
 }
 
 // skipped are the directories the walk does not go into.
