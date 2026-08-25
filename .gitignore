@@ -1,6 +1,9 @@
 # Go build outputs
-# go build ./cmd/... leaves the binary here, named after its directory.
+# go build ./cmd/... leaves the binary here, named after its directory, and a
+# build run inside a nested module leaves one there.
 /mizu
+/bench/benchrun
+/tools/milestonebot/milestonebot
 *.exe
 *.exe~
 *.dll
