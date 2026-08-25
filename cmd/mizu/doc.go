@@ -15,6 +15,7 @@ Install it with go install:
 	mizu about         print what this project is made of
 	mizu check         type check and vet, the fastest answer there is
 	mizu verify        run everything that has to pass before a change is done
+	mizu lint          report the mistakes the compiler cannot
 	mizu gen           write what the markers in the project ask for
 	mizu gen:agents    write AGENTS.md, what an agent reads before it edits
 	mizu gen:command   write the Spec methods for the //mizu:command structs
@@ -50,11 +51,12 @@ it from then on.
 	mizu check     after an edit
 	mizu verify    before saying a change is finished
 
-verify runs six stages in dependency order and stops at the first failure: gen,
-fmt, vet, build, test and doctor. A green run means a green CI, which is the
-whole point of having one command rather than a list somebody has to remember.
-check is the same command with the quick stages only, taken from the same list,
-so passing check and failing verify is possible and the reverse is not.
+verify runs seven stages in dependency order and stops at the first failure:
+gen, fmt, vet, lint, build, test and doctor. A green run means a green CI, which
+is the whole point of having one command rather than a list somebody has to
+remember. check is the same command with the quick stages only, taken from the
+same list, so passing check and failing verify is possible and the reverse is
+not.
 
 	mizu verify --fix
 
@@ -83,6 +85,26 @@ that works on the machine where somebody last ran the generator.
 
 Generated files carry a header saying so, and mizu refuses to overwrite a file
 without one rather than taking a hand-written file for its own.
+
+# Checking the rules a compiler has no opinion about
+
+	mizu lint                  every check over ./...
+	mizu lint --check=ctx      one check
+	mizu lint ./app/...        only these packages
+
+A mizu package sometimes makes a rule the type system cannot: a *web.Ctx comes
+from a pool and stops being valid when the handler returns, so keeping one in a
+field or handing one to a goroutine is wrong in a way that compiles. Each check
+reads the types in a package and says where a rule like that was broken, with
+the line quoted and a code to look up.
+
+A check reports what it is sure of. Nothing follows a value through an
+interface or an any, so a check missing something is expected and a check
+inventing something is a bug. The other half of the rule is the guarded build,
+which catches at run time what reading the source cannot.
+
+verify runs this as a stage, so a rule broken in an editor is a rule somebody
+hears about before CI does.
 
 # Finding out about a project
 

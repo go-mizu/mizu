@@ -1,0 +1,8 @@
+error[MZ3005]: a go statement uses a *web.Ctx from the handler that started it, and the handler does not wait
+ --> src.go:8:9
+  |
+8 | 		audit(c.Param("id"), c.IP().String())
+  | 		      ^ the handler may return before this runs
+  |
+  = fix: take what the goroutine needs out of the Ctx first, and pass Ctx.Detach for the context
+  = explain: mizu explain MZ3005

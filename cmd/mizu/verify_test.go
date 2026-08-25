@@ -56,7 +56,7 @@ func TestVerifyOnAProjectWithNothingWrong(t *testing.T) {
 	for _, s := range stages {
 		r.AssertOutputContains(s.name)
 	}
-	r.AssertErrorContains("6 stages passed")
+	r.AssertErrorContains("7 stages passed")
 }
 
 // Everything after a failure is a report about code already known to be wrong,
@@ -70,7 +70,7 @@ func TestVerifyStopsAtTheFirstFailure(t *testing.T) {
 	if v.OK {
 		t.Fatal("a file that is not formatted passed verify")
 	}
-	want := []string{"gen=ok", "fmt=failed", "vet=skipped", "build=skipped", "test=skipped", "doctor=skipped"}
+	want := []string{"gen=ok", "fmt=failed", "vet=skipped", "lint=skipped", "build=skipped", "test=skipped", "doctor=skipped"}
 	if got := statuses(v); !slices.Equal(got, want) {
 		t.Errorf("stages = %v\nwant %v", got, want)
 	}
@@ -90,7 +90,7 @@ func TestVerifyFixWritesAndCarriesOn(t *testing.T) {
 	if !v.OK {
 		t.Fatalf("verify --fix failed: %+v", v.Stages)
 	}
-	want := []string{"gen=fixed", "fmt=fixed", "vet=ok", "build=ok", "test=ok", "doctor=ok"}
+	want := []string{"gen=fixed", "fmt=fixed", "vet=ok", "lint=ok", "build=ok", "test=ok", "doctor=ok"}
 	if got := statuses(v); !slices.Equal(got, want) {
 		t.Errorf("stages = %v\nwant %v", got, want)
 	}

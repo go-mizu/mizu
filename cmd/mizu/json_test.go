@@ -54,6 +54,10 @@ var jsonRuns = map[string]func(t *testing.T) []string{
 	"hash:tune": func(t *testing.T) []string {
 		return []string{quick}
 	},
+	"lint": func(t *testing.T) []string {
+		pinEndings(t, scratch(t, commands))
+		return nil
+	},
 	"new": func(t *testing.T) []string {
 		return []string{filepath.Join(t.TempDir(), "blog"), "--preset=api"}
 	},

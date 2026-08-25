@@ -1,0 +1,8 @@
+error[MZ3004]: a package level variable holds a *web.Ctx, and the next request will find the last one there
+ --> src.go:7:5
+  |
+7 | var active *web.Ctx
+  |     ^^^^^^ this outlives every request
+  |
+  = fix: pass the Ctx to what needs it, or use web.FromContext where a context is all there is
+  = explain: mizu explain MZ3004

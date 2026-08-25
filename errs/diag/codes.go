@@ -79,4 +79,24 @@ var entries = []Entry{
 		Code:    "MZ1042",
 		Summary: "a setting is written down that nothing asked for",
 	},
+	{
+		Code:    "MZ3001",
+		Summary: "a struct field holds a *web.Ctx, which does not outlive its handler",
+	},
+	{
+		Code:    "MZ3002",
+		Summary: "a function returns a *web.Ctx, which does not outlive its handler",
+	},
+	{
+		Code:    "MZ3003",
+		Summary: "a channel carries a *web.Ctx, which does not outlive its handler",
+	},
+	{
+		Code:    "MZ3004",
+		Summary: "a package level variable holds a *web.Ctx, which does not outlive its handler",
+	},
+	{
+		Code:    "MZ3005",
+		Summary: "a go statement captures a *web.Ctx, which does not outlive its handler",
+	},
 }
