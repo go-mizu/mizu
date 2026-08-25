@@ -9,20 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-mizu/mizu/config"
 	"github.com/go-mizu/mizu/errs"
 )
 
 // intoFile is the configuration a test can read back afterwards: a file in a
 // directory of its own.
-func intoFile(t *testing.T, cfg config.Log) (config.Log, string) {
+func intoFile(t *testing.T, cfg Options) (Options, string) {
 	t.Helper()
 	cfg.Output = filepath.Join(t.TempDir(), "app.log")
 	return cfg, cfg.Output
 }
 
 func TestNew(t *testing.T) {
-	cfg, path := intoFile(t, config.Log{Level: slog.LevelInfo, Format: "json"})
+	cfg, path := intoFile(t, Options{Level: slog.LevelInfo, Format: "json"})
 
 	logger, closer, err := New(cfg)
 	if err != nil {
@@ -52,7 +51,7 @@ func TestNewFormat(t *testing.T) {
 		"":        &jsonHandler{},
 	}
 	for format, want := range cases {
-		cfg, _ := intoFile(t, config.Log{Format: format})
+		cfg, _ := intoFile(t, Options{Format: format})
 		logger, closer, err := New(cfg)
 		if err != nil {
 			t.Fatal(err)
@@ -86,7 +85,7 @@ func TestNewOutput(t *testing.T) {
 		"stdout": os.Stdout,
 	}
 	for output, want := range cases {
-		logger, closer, err := New(config.Log{Output: output, Format: "json"})
+		logger, closer, err := New(Options{Output: output, Format: "json"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +113,7 @@ func TestNewOutput(t *testing.T) {
 // TestNewRotate checks the rotation settings arrive, since they are read once
 // at startup and nothing says so afterwards.
 func TestNewRotate(t *testing.T) {
-	cfg, _ := intoFile(t, config.Log{Format: "json"})
+	cfg, _ := intoFile(t, Options{Format: "json"})
 	cfg.Rotate.MaxSizeMB = 5
 	cfg.Rotate.MaxAge = time.Hour
 	cfg.Rotate.MaxFiles = 3
@@ -136,7 +135,7 @@ func TestNewRotate(t *testing.T) {
 }
 
 func TestNewSampling(t *testing.T) {
-	cfg, _ := intoFile(t, config.Log{Format: "json"})
+	cfg, _ := intoFile(t, Options{Format: "json"})
 	cfg.Sampling.Enabled = true
 	cfg.Sampling.Initial = 2
 	cfg.Sampling.Every = 5
@@ -168,7 +167,7 @@ func TestNewSampling(t *testing.T) {
 }
 
 func TestNewAddSource(t *testing.T) {
-	cfg, path := intoFile(t, config.Log{Format: "json", AddSource: true})
+	cfg, path := intoFile(t, Options{Format: "json", AddSource: true})
 
 	logger, closer, err := New(cfg)
 	if err != nil {
@@ -191,7 +190,7 @@ func TestNewAddSource(t *testing.T) {
 // TestNewLevel is the setting people change most often, and the one they change
 // while something is on fire.
 func TestNewLevel(t *testing.T) {
-	cfg, path := intoFile(t, config.Log{Level: slog.LevelWarn, Format: "console"})
+	cfg, path := intoFile(t, Options{Level: slog.LevelWarn, Format: "console"})
 
 	logger, closer, err := New(cfg)
 	if err != nil {
@@ -210,7 +209,7 @@ func TestNewLevel(t *testing.T) {
 }
 
 func TestNewFailures(t *testing.T) {
-	_, _, err := New(config.Log{Format: "logfmt"})
+	_, _, err := New(Options{Format: "logfmt"})
 	if err == nil {
 		t.Fatal("a format nothing writes was accepted")
 	}
@@ -221,7 +220,7 @@ func TestNewFailures(t *testing.T) {
 		t.Errorf("the error is %q, and does not say which format", err)
 	}
 
-	if _, _, err := New(config.Log{Output: t.TempDir()}); err == nil {
+	if _, _, err := New(Options{Output: t.TempDir()}); err == nil {
 		t.Error("an output that is a directory was opened")
 	}
 }

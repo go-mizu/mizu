@@ -38,6 +38,51 @@ func ExampleGraph_Forbid() {
 	// mizu.test/graph/wire -> mizu.test/graph/store
 }
 
+// The API of a fixture module with a package that cannot be picked up on its
+// own. Its constructor takes a type from the package next door, so a caller
+// imports two packages to use one.
+const api = "testdata/api"
+
+// A standalone rule is the same call over signatures rather than imports.
+// Passing "std" and nothing else says that everything a caller has to name to
+// use this package is either the package itself or the standard library.
+func ExampleAPI_AllowOnly() {
+	a, err := archtest.LoadAPI(api, "./...")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(len(a.AllowOnly("mizu.test/api/store", "std")), "requirements")
+	for _, r := range a.AllowOnly("mizu.test/api/web", "std") {
+		fmt.Println(r.Error())
+	}
+	// Output:
+	// 0 requirements
+	// web.Handler cannot be called without mizu.test/api/store
+	// web.Index cannot be called without mizu.test/api/store
+	// web.Server.Add cannot be called without mizu.test/api/store
+	// web.Server.Filter cannot be called without mizu.test/api/store
+}
+
+// Funcs is the whole exported surface, for a rule that wants to say something
+// else about it. Needs holds the packages the parameters name, and a result
+// costs a caller nothing, which is why Handler needs store and not net/http.
+func ExampleAPI_Funcs() {
+	a, err := archtest.LoadAPI(api, "./web")
+	if err != nil {
+		panic(err)
+	}
+	for _, f := range a.Funcs("mizu.test/api/web") {
+		fmt.Println(f, f.Needs)
+	}
+	// Output:
+	// web.Handler [mizu.test/api/store]
+	// web.Index [mizu.test/api/store]
+	// web.New []
+	// web.Server.Add [mizu.test/api/store]
+	// web.Server.Filter [mizu.test/api/store]
+	// web.Wrap [net/http]
+}
+
 // A violation prints with the chain that produced it, which is the part
 // somebody can act on.
 func ExampleViolation_Error() {

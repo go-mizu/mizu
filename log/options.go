@@ -1,26 +1,28 @@
-package config
+package log
 
 import (
 	"log/slog"
 	"time"
 )
 
-// Log is where an application's records go and what they look like when they
-// get there.
+// Options is where an application's records go and what they look like when
+// they get there. It is what [New] takes.
 //
-// It lives in this package rather than in the log package because both ends
-// have to name it. Generated loading code fills it in from files, the
-// environment and the command line, and log.New turns the result into a
-// [log/slog.Logger]. An application embeds it:
+// Everything in it is a string, a number or a duration, so a configuration can
+// fill it in from files, the environment and the command line. An application
+// embeds it:
 //
 //	type Config struct {
-//		Log config.Log
+//		Log log.Options
 //		DB  struct{ DSN string }
 //	}
 //
 // and the settings arrive as log.level, log.output and the rest, in whatever
-// layer the application reads.
-type Log struct {
+// layer the application reads. The tags below are what the generated loading
+// code uses when nobody set a value, and they are also the zero value of this
+// struct wherever the two can agree, so a program that configures nothing gets
+// info level records on standard error.
+type Options struct {
 	// Level is the lowest level that gets written. Everything below it costs
 	// the check and nothing else.
 	Level slog.Level `default:"info"`

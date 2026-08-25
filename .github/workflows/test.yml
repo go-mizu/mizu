@@ -226,6 +226,50 @@ jobs:
         working-directory: tools/milestonebot
         run: go test ./...
 
+  # examples/standalone is the standalone claim compiled. It is a module of its
+  # own on purpose, because the point of it is the go.mod: one requirement, the
+  # one somebody adopting a single package would add. A module that shared the
+  # root's go.mod would build no matter what the packages had grown.
+  #
+  # The rules about what the examples may import are Go tests at the root, in
+  # standalone_test.go, so they run in the matrix above. This job is the part
+  # those tests cannot do, which is compiling the programs.
+  examples:
+    name: Standalone examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache-dependency-path: examples/standalone/go.sum
+
+      - name: Check formatting
+        working-directory: examples/standalone
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # The same reasoning as bench below: this module reaches the toolkit
+      # through a replace, so a dependency added next door lands in this go.sum
+      # too, and the failure without this step reads as a broken runner.
+      - name: go.mod and go.sum are up to date
+        working-directory: examples/standalone
+        run: go mod tidy -diff
+
+      - name: Vet
+        working-directory: examples/standalone
+        run: go vet ./...
+
+      - name: Build
+        working-directory: examples/standalone
+        run: go build ./...
+
   # bench is a nested module too, for the same reason: it loads Go packages with
   # golang.org/x/tools, and nothing a user installs should carry that.
   #

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/go-mizu/mizu/config"
 	"github.com/go-mizu/mizu/ctxdata"
 	"github.com/go-mizu/mizu/errs"
 	"github.com/go-mizu/mizu/log"
@@ -187,7 +186,7 @@ func ExampleNew() {
 	}
 	defer os.RemoveAll(dir)
 
-	cfg := config.Log{Level: slog.LevelInfo, Format: "json", Output: filepath.Join(dir, "app.log")}
+	cfg := log.Options{Level: slog.LevelInfo, Format: "json", Output: filepath.Join(dir, "app.log")}
 	cfg.Rotate.MaxSizeMB = 10
 	cfg.Rotate.MaxFiles = 5
 

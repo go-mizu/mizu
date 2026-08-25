@@ -5,11 +5,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/go-mizu/mizu/config"
 	"github.com/go-mizu/mizu/errs"
 )
 
-// New builds the logger a [config.Log] asks for: the writer from Output, the
+// New builds the logger [Options] asks for: the writer from Output, the
 // handler from Format, and sampling and rotation from the rest.
 //
 //	logger, closer, err := log.New(cfg.Log)
@@ -35,7 +34,7 @@ import (
 // This is the whole of what a configuration can describe. A program that wants
 // something else, a second destination or a filter of its own, builds the
 // handlers itself and calls [slog.New], which is all this does.
-func New(cfg config.Log) (*slog.Logger, io.Closer, error) {
+func New(cfg Options) (*slog.Logger, io.Closer, error) {
 	// Before opening anything, so a typo in a format does not leave a file open
 	// with nothing to close it.
 	switch cfg.Format {
@@ -86,7 +85,7 @@ func formatOf(w io.Writer, format string) string {
 }
 
 // open is the writer an Output names, and the closer for it.
-func open(cfg config.Log) (io.Writer, io.Closer, error) {
+func open(cfg Options) (io.Writer, io.Closer, error) {
 	switch cfg.Output {
 	case "", "stderr":
 		return os.Stderr, keepOpen{}, nil
