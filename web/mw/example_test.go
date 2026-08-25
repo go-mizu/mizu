@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -180,4 +181,92 @@ func ExampleConcurrency() {
 	srv.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/first", nil))
 	// Output:
 	// 503 1
+}
+
+func ExampleCORS() {
+	h := mw.CORS(mw.CORSConfig{
+		AllowedOrigins:   []string{"https://app.example.com"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE"},
+		AllowedHeaders:   []string{"Authorization"},
+		ExposedHeaders:   []string{mw.RequestIDHeader},
+		AllowCredentials: true,
+		MaxAge:           24 * time.Hour,
+	})(web.H(func(c *web.Ctx) error {
+		return c.Text("the posts")
+	}))
+
+	// The preflight a browser sends before a cross origin DELETE that carries an
+	// Authorization header. It is answered here and the handler never sees it.
+	pre := httptest.NewRequest("OPTIONS", "/posts/7", nil)
+	pre.Header.Set("Origin", "https://app.example.com")
+	pre.Header.Set("Access-Control-Request-Method", "DELETE")
+	pre.Header.Set("Access-Control-Request-Headers", "Authorization")
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, pre)
+	fmt.Println(w.Code, w.Header().Get("Access-Control-Allow-Methods"), w.Header().Get("Access-Control-Max-Age"))
+
+	// The request itself, which the handler serves.
+	get := httptest.NewRequest("GET", "/posts", nil)
+	get.Header.Set("Origin", "https://app.example.com")
+
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, get)
+	fmt.Println(w.Code, w.Body, w.Header().Get("Access-Control-Allow-Origin"))
+	// Output:
+	// 204 GET, POST, DELETE 86400
+	// 200 the posts https://app.example.com
+}
+
+func ExampleSecure() {
+	h := mw.Secure(mw.SecureConfig{
+		HSTS:               365 * 24 * time.Hour,
+		HSTSSubdomains:     true,
+		FrameOptions:       "DENY",
+		ContentTypeOptions: true,
+		ReferrerPolicy:     "strict-origin-when-cross-origin",
+		CSP:                "default-src 'self'",
+	})(web.H(func(c *web.Ctx) error {
+		return c.Text("a page")
+	}))
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+
+	for _, name := range []string{
+		"Strict-Transport-Security",
+		"X-Frame-Options",
+		"X-Content-Type-Options",
+		"Referrer-Policy",
+		"Content-Security-Policy",
+	} {
+		fmt.Println(name+":", w.Header().Get(name))
+	}
+	// Output:
+	// Strict-Transport-Security: max-age=31536000; includeSubDomains
+	// X-Frame-Options: DENY
+	// X-Content-Type-Options: nosniff
+	// Referrer-Policy: strict-origin-when-cross-origin
+	// Content-Security-Policy: default-src 'self'
+}
+
+func ExampleMethodOverride() {
+	routes := router.New()
+	routes.Handle("DELETE /posts/{id:int}", web.H(func(c *web.Ctx) error {
+		return c.Text("deleted post " + c.Param("id"))
+	}))
+
+	// What the browser sends for a form whose method is post and whose hidden
+	// _method field says delete.
+	body := url.Values{"_method": {"delete"}}.Encode()
+	r := httptest.NewRequest("POST", "https://example.com/posts/7", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Origin", "https://example.com")
+
+	w := httptest.NewRecorder()
+	mw.MethodOverride()(routes).ServeHTTP(w, r)
+
+	fmt.Println(w.Code, w.Body)
+	// Output:
+	// 200 deleted post 7
 }
