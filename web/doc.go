@@ -221,11 +221,51 @@
 // program that refuses anything but an image is checking something the client
 // does not control.
 //
+// # Answering with JSON
+//
+// [JSON] sends a value, [JSONStatus] sends one under a status worth naming, and
+// [Created] and [Accepted] are the two answers that carry a Location.
+//
+//	func store(c *web.Ctx) error {
+//		in, err := web.Bind[newPost](c)
+//		if err != nil {
+//			return err
+//		}
+//		p, err := posts.Create(c.Context(), in)
+//		if err != nil {
+//			return err
+//		}
+//		return web.Created(c, "/posts/"+p.ID, p)
+//	}
+//
+// They are functions rather than methods because a method cannot have a type
+// parameter, and the type parameter is what makes a handler returning the wrong
+// resource a compile error.
+//
+// The body is built in full before any of it goes out, so a value that will not
+// marshal is an error the handler returns with nothing sent and the status still
+// to play for. That is the opposite of the trade [Ctx.Stream] makes, and it is
+// why these are the right answer for a response that fits in memory and Stream
+// is the right answer for one that does not. Buffering is also what lets every
+// response carry a Content-Length rather than only the ones small enough for
+// net/http to count on its own.
+//
+// The two builds of the JSON package are held to the same bytes: no trailing
+// newline, angle brackets and ampersands sent as themselves, and a map written
+// in key order so that an ETag over a response means something. The one thing
+// they still disagree about is omitempty, so write omitzero, which means the
+// same in both.
+//
+// A MarshalJSON declared on *T is used even when the handler passed a T, which
+// is a difference from what json.Marshal of the same value would do. Writing the
+// method on the pointer and having it ignored is the older footgun, and this
+// does not reproduce it.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Storing an
-// upload, content negotiation, the pagination types and the RFC 9457 renderer
-// arrive with their own milestones.
+// upload, the rest of the writing surface, content negotiation, the pagination
+// types and the RFC 9457 renderer arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They

@@ -21,6 +21,12 @@ var errTrailing = errors.New("more than one JSON value in the body")
 // of them to what it says here.
 const jsonRefusesDuplicates = false
 
+// jsonOmitemptyMeansZero is how this build reads the omitempty tag when it
+// writes a response, and it is the other behaviour the two builds do not share.
+// Here omitempty drops the zero value, so a field holding the number zero is
+// left out. reply_test.go holds each build to what it says here.
+const jsonOmitemptyMeansZero = true
+
 // jsonDecode reads one JSON value from r into v.
 //
 // A member sent twice is taken as the last one, which is what this version
@@ -48,6 +54,35 @@ func jsonDecode(r io.Reader, v any, lax bool) error {
 			return errTrailing
 		}
 		return err
+	}
+	return nil
+}
+
+// jsonEncode writes v into buf as JSON, with no newline after it.
+//
+// The Encoder is what builds a value straight into a writer here, and it ends
+// every value with a newline that it cannot be told not to write. json_v2.go
+// writes no newline, so this one comes off again and the two builds put the
+// same bytes on the wire.
+//
+// A value that fails to marshal writes nothing, because this version builds the
+// whole thing before it writes any of it. The caller truncates the buffer
+// anyway, so the two builds do not have to agree about that.
+func jsonEncode(buf *jsonBuf, v any) error {
+	enc := json.NewEncoder(buf)
+
+	// This version turns <, > and & into escapes so that a body can be dropped
+	// into a script tag without closing it. json_v2.go dropped that, on the
+	// grounds that a response served as application/json is not in a script
+	// tag and one that is belongs to the template package, which escapes what
+	// it is given. Off here, so both builds send the character that was there.
+	enc.SetEscapeHTML(false)
+
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	if n := len(buf.b); n > 0 && buf.b[n-1] == '\n' {
+		buf.b = buf.b[:n-1]
 	}
 	return nil
 }

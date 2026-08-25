@@ -108,9 +108,9 @@ var rows = []Row{
 		Time: 2000 * time.Nanosecond, Allocs: 16,
 	},
 	{
-		ID: "respond/json", Group: httpPath, Doc: "08", Since: "M1",
+		ID: "respond/json", Group: httpPath, Doc: "08",
 		Op:   "web.JSON of a 12-field struct",
-		Time: 2500 * time.Nanosecond, Allocs: 4,
+		Time: 2500 * time.Nanosecond, Allocs: 5,
 	},
 	{
 		ID: "respond/problem", Group: httpPath, Doc: "06", Since: "M1",
