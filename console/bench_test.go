@@ -54,6 +54,39 @@ func BenchmarkTableJSON(b *testing.B) {
 	}
 }
 
+// repeated hands out the same answer forever, so a benchmark can ask as many
+// questions as it likes without building the answers first.
+type repeated struct {
+	answer string
+	at     int
+}
+
+func (r *repeated) Read(p []byte) (int, error) {
+	n := copy(p, r.answer[r.at:])
+	r.at += n
+	if r.at == len(r.answer) {
+		r.at = 0
+	}
+	return n, nil
+}
+
+// BenchmarkAsk measures the machinery around a prompt rather than the prompt.
+// What a real one costs is a person typing.
+//
+// What it does catch is the version that builds a buffered reader per question,
+// which is four kilobytes each time and, worse, reads ahead and eats the answer
+// to the next one.
+func BenchmarkAsk(b *testing.B) {
+	io := New(&repeated{answer: "Ada\n"}, io.Discard, io.Discard, Options{Interaction: InteractionAlways})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := io.Ask("Name", ""); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkInfo is the cost of a status line, and of the same line when
 // --quiet turned it off. The second one is what a loop that reports progress
 // pays when nobody is reading, which should be close to nothing.

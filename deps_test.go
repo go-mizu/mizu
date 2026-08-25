@@ -57,12 +57,12 @@ var allowedModules = []string{
 	// casing tables that the alternative would mean copying in by hand.
 	"golang.org/x/text",
 
-	// Asking whether a writer is a terminal, for mizu/console and mizu/log,
-	// and reading a password without echoing it, which mizu/console needs
-	// next. The standard library has neither. The version this replaced asked
-	// whether the writer was a character device, which says yes to /dev/null,
-	// and the version it does not become is one that writes termios ioctls per
-	// platform by hand.
+	// Asking whether a stream is a terminal, for mizu/console and mizu/log, and
+	// reading a password without echoing it, for the prompts in mizu/console.
+	// The standard library has neither. The version this replaced asked whether
+	// the writer was a character device, which says yes to /dev/null, and the
+	// version it does not become is one that writes termios ioctls per platform
+	// by hand.
 	"golang.org/x/term",
 }
 
