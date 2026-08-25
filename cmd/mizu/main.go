@@ -1,11 +1,12 @@
 // Command mizu is the toolkit's command line tool.
 //
-// It does five things today.
+// It does six things today.
 //
 //	mizu new              write a new project that builds, tests and runs
 //	mizu gen              write what the markers in a project ask for
 //	mizu gen --check      report what is out of date and write nothing
 //	mizu doctor           check the project and say what is wrong with it
+//	mizu about            print what the project is made of
 //	mizu version          print the version, one fact per line
 //	mizu hash:tune        measure argon2id here and print the cost to configure
 //
@@ -52,6 +53,7 @@ func newApp() *console.App {
 		Before:  g.before,
 	}
 	a.Add(
+		&About{},
 		&Doctor{},
 		&Gen{},
 		&HashTune{},
