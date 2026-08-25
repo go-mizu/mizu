@@ -55,6 +55,12 @@
 // letter is a bug in the program, and nobody typing at a terminal can do
 // anything about it.
 //
+// [ParseInt], [ParseUint], [ParseFloat], [ParseDuration], [ParseTime] and
+// [ParseString] are what those constructors parse with, exported so that a list
+// can have the same parsing and the same messages:
+//
+//	console.Slice(&c.Ports, console.ParseUint, ",")
+//
 // # Commands
 //
 // A [Command] is a struct with two methods: [Spec] says what it is called and
