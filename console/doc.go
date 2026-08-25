@@ -34,6 +34,27 @@
 // drops the rest, because a warning nobody sees is the reason the flag gets
 // blamed later. Debug lines appear from [Verbose] up.
 //
+// # Flags and arguments
+//
+// [Parse] fills a command's fields from a command line. A [Flag] and an [Arg]
+// each name a [Value], which is the interface from the standard library's flag
+// package, so anything already written against that works here.
+//
+// The forms it takes are the ones people type: --days 7 and --days=7 and -d7,
+// -abc for three flags that take no argument, --no-dry-run for the opposite of
+// a boolean, -vv for a count, -- for the end of the flags, and a flag before,
+// after or between the positional arguments. A bare - and a negative number are
+// arguments rather than flags, since that is what somebody meant by them.
+//
+// A flag that was not given takes its environment variable, then its default,
+// and is an error if it was required and there was neither. All of those errors
+// are a [UsageError], which is the difference between a command that failed and
+// a command that never started, and it is what the caller exits 2 for.
+//
+// A mistake in the declaration is a panic instead: two flags with the same
+// letter is a bug in the program, and nobody typing at a terminal can do
+// anything about it.
+//
 // # Asking questions
 //
 // [IO.Ask], [IO.AskSecret], [IO.Confirm], [IO.Choice] and [IO.MultiChoice] read
