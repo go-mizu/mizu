@@ -1,0 +1,18 @@
+# Password hashes for the hash/argon2id/verify and hash/bcrypt/verify benchmarks.
+#
+# Changing this file invalidates every historical number for the benchmarks that
+# read it, because the cost of verifying a hash is set by the parameters written
+# into the hash itself. A verify against a cost 12 bcrypt hash and a verify
+# against a cost 10 one are different operations, and comparing them across a
+# release says the framework got faster when nothing about it changed. If a
+# parameter here has to move, reset the baseline in the same commit and say so
+# in the message.
+#
+# The password behind all of them is "correct horse battery staple". These are
+# fixtures rather than secrets: the password is written here in the open, and
+# nothing outside these benchmarks reads the file.
+#
+# One line per hash: the name, whitespace, and the encoded hash.
+
+argon2id	$argon2id$v=19$m=19456,t=2,p=1$IzFnO4mF1K7dSNvdR/jmZQ$U5Rc73Exjy0D9f1z4GvREUmZfcepzdFTs+XF70EyjZY
+bcrypt	$2a$12$QjmfX.JbWEqCEM..04mZfOKlp.TlJP002lgmkjhFk0PPPZa5A7esK

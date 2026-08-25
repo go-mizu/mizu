@@ -225,3 +225,50 @@ jobs:
       - name: Test
         working-directory: tools/milestonebot
         run: go test ./...
+
+  # bench is a nested module too, for the same reason: it loads Go packages with
+  # golang.org/x/tools, and nothing a user installs should carry that.
+  #
+  # No numbers are recorded here. A hosted runner is a shared machine and its
+  # timings move by a factor of two between runs, so a threshold on one would
+  # fail for reasons that have nothing to do with the commit. What this job
+  # protects is the part that a noisy machine cannot lie about: that the
+  # benchmarks compile and run, that every budgeted operation still has a
+  # benchmark reporting the name its row is filed under, and that none of them
+  # has picked up a habit that makes two runs stop being comparable.
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+          cache-dependency-path: bench/go.sum
+
+      - name: Check formatting
+        working-directory: bench
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: bench
+        run: go vet ./...
+
+      - name: Test
+        working-directory: bench
+        run: go test ./...
+
+      - name: Every budgeted operation is measured
+        working-directory: bench
+        run: go run ./cmd/benchrun check
+
+      - name: The benchmarks follow the rules
+        working-directory: bench
+        run: go run ./cmd/benchrun lint
