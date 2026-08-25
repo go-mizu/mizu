@@ -49,6 +49,11 @@ func TestAMessageWithAnEntryPasses(t *testing.T) {
 			golden: "error: config.go:7:3: App.Name and App.Also are both app.name\n",
 		},
 		{
+			name:   "a message written through a function of the package's own",
+			call:   `errf(pos, "%s has no settings in it", name)`,
+			golden: "error: config.go:4:6: Config has no settings in it\n",
+		},
+		{
 			name:   "a message holding a percent sign",
 			call:   `fmt.Errorf("%s is 100%% of the budget already", name)`,
 			golden: "error: budget.go:9:2: http.serve is 100% of the budget already\n",
@@ -135,11 +140,69 @@ func TestMessagesInATestFileAreNotCounted(t *testing.T) {
 // Looking in the wrong place is quiet in the way that matters: there is
 // nothing to check, so everything passes.
 func TestLookingAtCodeWithNoMessagesInItFails(t *testing.T) {
-	dir, pkg := covering(t, "package p\n\nfunc f() int { return 1 }\n", "error: nothing\n")
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "code that reports nothing",
+			src:  "package p\n\nfunc f() int { return 1 }\n",
+		},
+		{
+			name: "a call through something that is not a name",
+			src:  "package p\n\nfunc f() { report[0](\"a message no golden file holds\") }\n",
+		},
+		{
+			name: "a call on something that is not a package",
+			src:  "package p\n\nfunc f() { _ = errors.Is(err, os.ErrNotExist) }\n",
+		},
+		{
+			name: "a message built somewhere else",
+			src:  "package p\n\nfunc f() { _ = fmt.Errorf(format, name) }\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, pkg := covering(t, tt.src, "error: config.go:4:6: Config has no settings in it\n")
+
+			r := watch(t, func(tb testing.TB) { Cover(tb, dir, pkg) })
+			if got := r.only(t); !strings.Contains(got, "no messages in it") {
+				t.Errorf("says %q, want it to say the code holds no messages", got)
+			}
+		})
+	}
+}
+
+// The two ways of looking somewhere there is nothing to look at, which is the
+// mistake somebody makes when they move a corpus or a package.
+func TestLookingSomewhereThatIsNotThereFails(t *testing.T) {
+	dir, pkg := covering(t,
+		"package p\n\nfunc f() { _ = errors.New(\"no such table in this database\") }\n",
+		"error: app.toml:2:8: no such table in this database\n")
+
+	t.Run("a corpus", func(t *testing.T) {
+		r := watch(t, func(tb testing.TB) { Cover(tb, filepath.Join(dir, "nowhere"), pkg) })
+		if got := r.only(t); !strings.Contains(got, "nowhere") {
+			t.Errorf("says %q, want it to name the directory it could not read", got)
+		}
+	})
+	t.Run("a package", func(t *testing.T) {
+		r := watch(t, func(tb testing.TB) { Cover(tb, dir, filepath.Join(pkg, "nowhere")) })
+		if got := r.only(t); !strings.Contains(got, "nowhere") {
+			t.Errorf("says %q, want it to name the directory it could not read", got)
+		}
+	})
+}
+
+// A package that does not parse is the package worth running this on, so
+// saying which file and where beats saying nothing.
+func TestCodeThatDoesNotParseFails(t *testing.T) {
+	dir, pkg := covering(t, "package p\n\nfunc f( {\n", "error: app.toml:2:8: no such table in this database\n")
 
 	r := watch(t, func(tb testing.TB) { Cover(tb, dir, pkg) })
-	if got := r.only(t); !strings.Contains(got, "no messages in it") {
-		t.Errorf("says %q, want it to say the code holds no messages", got)
+	if got := r.only(t); !strings.Contains(got, "messages.go") {
+		t.Errorf("says %q, want it to name the file it could not read", got)
 	}
 }
 
