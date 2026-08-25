@@ -98,10 +98,10 @@
 //	}
 //
 // [Globals] are the flags every command takes: --verbose, --quiet, --json,
-// --color, --no-color, --no-interaction and --timeout. They are taken out of
-// the command line wherever they were written, so --json means the same thing
-// before the command name and after it, and a command only ever sees its own
-// flags. A program adds the ones that belong to it, such as --env, with
+// --diag-file, --color, --no-color, --no-interaction and --timeout. They are
+// taken out of the command line wherever they were written, so --json means the
+// same thing before the command name and after it, and a command only ever sees
+// its own flags. A program adds the ones that belong to it, such as --env, with
 // [App.Globals].
 //
 // The exit codes are the ones from sysexits.h, so a shell script and a process
@@ -122,6 +122,19 @@
 // The error a command returns is printed as one line. Its chain of causes is
 // printed under it from --verbose up, because the answer is usually three wraps
 // down and that is worth a flag rather than four lines on every failure.
+//
+// Under --json that line is a mizu.diag/1 document instead, on stderr, whatever
+// kind of error came back. stdout is the answer the command was asked for and
+// it is one document, so a command that had already written half of one before
+// it failed would otherwise leave a stream that is not JSON at all. Every
+// error becomes a document, including one that never reached the command, which
+// is what lets a program read every mizu command the same way rather than only
+// the ones written with --json in mind.
+//
+// --diag-file, or MIZU_DIAG_FILE, writes the same document to a file on top of
+// whatever the command printed, on every run rather than only a failing one. It
+// is for a generator invoked through go generate, which has no command line to
+// put --json on and whose stdout belongs to the file it is writing.
 //
 // # Asking questions
 //
