@@ -114,4 +114,18 @@ var templates = map[string]template{
 	"size.array":    {1, "%s must have %v items."},
 	"size.file":     {1, "%s must be %v kilobytes."},
 	"size.duration": {1, "%s must be %v."},
+
+	"cidr":     {0, "%s must be a network in CIDR notation, such as 10.0.0.0/8."},
+	"e164":     {0, "%s must be a phone number in international format, starting with a country code."},
+	"email":    {0, "%s must be an email address."},
+	"hostname": {0, "%s must be a host name."},
+	"ip":       {0, "%s must be an IP address."},
+	"ipv4":     {0, "%s must be an IPv4 address."},
+	"ipv6":     {0, "%s must be an IPv6 address."},
+	"mac":      {0, "%s must be a hardware address, such as 00:1b:44:11:3a:b7."},
+	"port":     {0, "%s must be a port number between 1 and 65535."},
+	"ulid":     {0, "%s must be a ULID."},
+	"uri":      {0, "%s must be a URI, including the scheme."},
+	"url":      {0, "%s must be a URL, starting with http:// or https://."},
+	"uuid":     {0, "%s must be a UUID."},
 }

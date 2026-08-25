@@ -56,6 +56,7 @@ jobs:
           - { pkg: router, target: FuzzMatchesServeMux }
           - { pkg: str, target: FuzzIs }
           - { pkg: toml, target: FuzzParse }
+          - { pkg: validate, target: FuzzFormats }
     steps:
       - uses: actions/checkout@v6
 

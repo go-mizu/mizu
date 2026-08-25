@@ -17,6 +17,29 @@
 //	}
 //	return bad.OrNil()
 //
+// # Checks that are not a line of Go
+//
+// A rule like min is written out where it is used, because
+// utf8.RuneCountInString(in.Title) < 3 is something to read in a debugger and a
+// call into this package is something to step into. The rules that take a page
+// to get right are functions instead, and the generated code, the reflective
+// interpreter and a hand-written method all call the same one.
+//
+//	if in.Email != "" && !validate.IsEmail(in.Email) {
+//		bad.Add("email", validate.Failed("email"))
+//	}
+//
+// [IsEmail], [IsURL], [IsURI], [IsHostname], [IsIP], [IsIPv4], [IsIPv6],
+// [IsCIDR], [IsMAC], [IsPort], [IsUUID], [IsULID] and [IsE164] are the ones
+// that have landed. Each takes a string, because a string is what a form sends,
+// and each has a sentence in [English] under the same name a struct tag would
+// spell it.
+//
+// None of them treat the empty string as a pass. Whether a field is allowed to
+// be missing is what required says, and a check that answered both questions
+// would make a field that is optional and a field that is optional-but-valid
+// impossible to tell apart.
+//
 // # What comes out
 //
 // [Errors.OrNil] is nil when nothing failed and an [errs.Error] when something
