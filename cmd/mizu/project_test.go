@@ -15,9 +15,12 @@ import (
 // new_test.go checks what was written. These check that what was written is a
 // project: it builds, the binary answers, and the generators are clean in it.
 //
-// Linux and macOS, amd64 and arm64 are what the first criterion asks for, and
-// they come from CI running go test ./... on ubuntu-latest, ubuntu-24.04-arm
-// and macos-latest. There is nothing here that has to know which one it is on.
+// Linux and macOS, amd64 and arm64 are what the first criterion asks for.
+// Three of those four come from CI running go test ./... on ubuntu-latest,
+// ubuntu-24.04-arm and macos-latest. The fourth is darwin/amd64, which has no
+// row in that matrix and gets these two tests as a step on the generator
+// determinism job, which is on macos-15-intel for its own reasons. There is
+// nothing here that has to know which one it is on.
 
 // binary is the executable go build leaves in a project directory.
 func binary(dir, name string) string {
