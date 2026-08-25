@@ -55,6 +55,12 @@ func Struct(ctx context.Context, value any) error {
 	if p.err != nil {
 		return p.err
 	}
+	// A struct with no rules on it is most structs, and web.Bind calls this on
+	// every one it fills in, so the case where there is nothing to check ends
+	// here rather than allocating a V to collect nothing into.
+	if len(p.fields) == 0 {
+		return nil
+	}
 
 	v := New()
 	if err := p.run(ctx, v, rv, ""); err != nil {

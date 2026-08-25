@@ -137,8 +137,41 @@
 // An empty value is treated as a field nobody filled in rather than as a
 // mistake, unless the field is a string, where an empty string is a value. A
 // blank number input posts an empty string and that is not a client sending
-// nonsense. Saying it had to be filled in is validation's job, and validation
-// is the next milestone.
+// nonsense. Saying it had to be filled in is validation's job, which is the
+// next section.
+//
+// # Validation
+//
+// [Bind] checks what it bound before it returns, so a handler that got a struct
+// back got one whose rules passed.
+//
+//	type signup struct {
+//		Email string `form:"email" validate:"required,email"`
+//		Name  string `form:"name" validate:"required,min=2"`
+//	}
+//
+// A struct with a Validate method is asked it, which is the method mizu
+// gen:validate writes and the one somebody writes by hand for a rule that reads
+// two fields at once. Everything else has its validate tags read by
+// [github.com/go-mizu/mizu/validate.Struct]. The method wins because a
+// generated one holds those same tags, and running both would report every
+// failure twice. A hand-written method that wants the tags as well calls
+// validate.Struct itself, which does not look for the method and so cannot
+// recurse.
+//
+// What comes back is an error of kind Unprocessable, which is a 422, carrying
+// one Field per rule that failed under the name the request used. That is the
+// same shape a bind failure has, so a form redisplay does not care which it
+// got.
+//
+// A request that would not bind is not checked. A field the decoder could not
+// read is at its zero value, and answering that it was required would blame a
+// box somebody filled in, so the 400 that names the field that would not decode
+// is the whole answer.
+//
+// There is no way to bind without checking. A handler that wants the values as
+// they arrived has [Ctx.Query], [Ctx.Form], [Ctx.Param] and [Ctx.JSON], which
+// read the request without a plan and without a rule.
 //
 // # Bodies
 //
@@ -191,8 +224,8 @@
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Storing an
-// upload, validation, content negotiation, the pagination types and the RFC
-// 9457 renderer arrive with their own milestones.
+// upload, content negotiation, the pagination types and the RFC 9457 renderer
+// arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They
