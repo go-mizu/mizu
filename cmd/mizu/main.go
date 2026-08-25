@@ -1,10 +1,13 @@
 // Command mizu is the toolkit's command line tool.
 //
-// It does six things today.
+// It does eight things today.
 //
 //	mizu new              write a new project that builds, tests and runs
 //	mizu gen              write what the markers in a project ask for
 //	mizu gen --check      report what is out of date and write nothing
+//	mizu check            type check and vet, the fastest answer there is
+//	mizu verify           run everything that has to pass before a change is done
+//	mizu verify --fix     write what can be written, then carry on
 //	mizu doctor           check the project and say what is wrong with it
 //	mizu about            print what the project is made of
 //	mizu version          print the version, one fact per line
@@ -58,6 +61,8 @@ func newApp() *console.App {
 		&Gen{},
 		&HashTune{},
 		&New{},
+		&Verify{quick: true},
+		&Verify{},
 		&Version{},
 	)
 	for _, g := range generators {

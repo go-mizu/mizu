@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/go-mizu/mizu/console"
-	"github.com/go-mizu/mizu/gen"
 )
 
 // A level is how much a finding matters.
@@ -238,7 +237,7 @@ func discover(ctx context.Context) (project, error) {
 		return project{}, fmt.Errorf("reading go list -m: %w", err)
 	}
 	if mod.Dir == "" {
-		return project{}, errors.New("this directory is not in a module, and mizu doctor checks a project")
+		return project{}, errors.New("this directory is not in a module, and a project is what this command reads")
 	}
 	p := project{Dir: mod.Dir, Module: mod.Path, Go: mod.GoVersion}
 
@@ -311,26 +310,10 @@ func toolchainFindings(p project) []finding {
 	}}
 }
 
-func checkGenerated(_ context.Context, p project) ([]finding, error) {
-	// Nothing below writes anything, since the writer is in check mode, so
-	// there is no half-finished state for a cancellation to leave behind and
-	// the loop in Run is where an interrupted run stops.
-	pkgs, err := load(p.Dir, []string{"./..."})
-	if err != nil {
-		return nil, err
-	}
-
-	var files []gen.File
-	for _, g := range generators {
-		out, err := g.run(pkgs...)
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, out...)
-	}
-
-	w := &gen.Writer{Dir: p.Dir, Check: true}
-	results, err := w.Write(files...)
+func checkGenerated(ctx context.Context, p project) ([]finding, error) {
+	// Nothing here writes anything, since generate was asked to check, so there
+	// is no half-finished state for a cancellation to leave behind.
+	results, err := generate(ctx, p, false)
 	if err != nil {
 		return nil, err
 	}
