@@ -8,7 +8,7 @@ import (
 // Status sets the status the next write sends, and returns the Ctx so it reads
 // in front of the write it applies to.
 //
-//	return c.Status(http.StatusCreated).JSON(user)
+//	return c.Status(http.StatusCreated).Text(user.ID)
 //
 // Nothing goes out here. The status is sent by whatever writes next, and a
 // handler that sets one and then writes nothing has sent a 200, because that is

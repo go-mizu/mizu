@@ -21,6 +21,7 @@ func init() {
 	register("mw/compress", benchCompress)
 	register("mw/etag", benchETag)
 	register("bind/form", benchBindForm)
+	register("bind/json", benchBindJSON)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -195,28 +196,40 @@ func benchCtxAcquire(b *testing.B) {
 	}
 }
 
-// listing is the struct the two binding benchmarks fill: twelve fields, in the
-// shape a search page sends, with a slice and a date in it because both cost
-// more than a string does.
+// listing is the struct the binding benchmarks fill: twelve fields, in the shape
+// a search page sends, with a slice and a date in it because both cost more than
+// a string does.
+//
+// The tags are the names the fields would get anyway, since a field with no tag
+// is read under its own name in snake case. They are written out so the JSON
+// benchmark and the form benchmark are filling the same struct from the same
+// names, rather than one of them leaning on a decoder that matches names
+// loosely.
 type listing struct {
-	Q        string
-	Tags     []string
-	Page     int
-	PerPage  int
-	Sort     string
-	Order    string
-	MinPrice float64
-	MaxPrice float64
-	InStock  bool
-	Since    time.Time
-	Kind     string
-	Cursor   string
+	Q        string    `json:"q"`
+	Tags     []string  `json:"tags"`
+	Page     int       `json:"page"`
+	PerPage  int       `json:"per_page"`
+	Sort     string    `json:"sort"`
+	Order    string    `json:"order"`
+	MinPrice float64   `json:"min_price"`
+	MaxPrice float64   `json:"max_price"`
+	InStock  bool      `json:"in_stock"`
+	Since    time.Time `json:"since"`
+	Kind     string    `json:"kind"`
+	Cursor   string    `json:"cursor"`
 }
 
 // listingForm is one request's worth of listing, as a browser would post it.
 const listingForm = "q=water&tags=go&tags=web&page=2&per_page=25&sort=name&" +
 	"order=asc&min_price=1.5&max_price=99&in_stock=on&since=2026-01-02&" +
 	"kind=all&cursor=eyJpZCI6MTAwfQ"
+
+// listingJSON is the same request as an API client would send it.
+const listingJSON = `{"q":"water","tags":["go","web"],"page":2,"per_page":25,` +
+	`"sort":"name","order":"asc","min_price":1.5,"max_price":99,` +
+	`"in_stock":true,"since":"2026-01-02T00:00:00Z","kind":"all",` +
+	`"cursor":"eyJpZCI6MTAwfQ"}`
 
 // benchBindForm is what reading a request into a struct costs.
 //
@@ -242,6 +255,36 @@ func benchBindForm(b *testing.B) {
 	body := &replay{s: listingForm}
 	r := httptest.NewRequest("POST", "/things", nil)
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Body = body
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		body.i = 0
+		r.Form, r.PostForm = nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchBindJSON is the same struct filled from a JSON body instead of a form.
+//
+// It is the cheaper of the two, which is worth knowing before anybody reaches for
+// a form for an API. The decoder reads the bytes once and writes the fields as it
+// goes, where a form is parsed into a map of slices of strings first and then
+// read out of it.
+//
+// The query string is empty, so nothing here parses a form. Binding a struct with
+// no query fields in it would skip that anyway, but a struct like this one has
+// them and the point is to measure the body.
+func benchBindJSON(b *testing.B) {
+	h := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[listing](c)
+		return err
+	})
+
+	body := &replay{s: listingJSON}
+	r := httptest.NewRequest("POST", "/things", nil)
+	r.Header.Set("Content-Type", "application/json")
 	r.Body = body
 	w := &discardWriter{header: make(http.Header)}
 

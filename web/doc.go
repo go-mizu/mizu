@@ -140,11 +140,36 @@
 // nonsense. Saying it had to be filled in is validation's job, and validation
 // is the next milestone.
 //
+// # Bodies
+//
+// What the body is read as is what the request said it was. A JSON content
+// type, or one ending in +json, is decoded as JSON, and an XML one as XML.
+// Nothing else with a body in it is read, and a request that sends one under a
+// type this does not decode comes back as an error of kind Unsupported, which
+// is a 415. A body sent with no content type at all is left where it is and
+// only the query string is read.
+//
+// A member the struct has no field for is a mistake, on the grounds that a
+// client sending titel instead of title should hear about it rather than watch
+// the field stay empty. A struct that embeds [AllowUnknown] says the opposite,
+// which is what a webhook payload wants.
+//
+//	type hook struct {
+//		web.AllowUnknown
+//
+//		Event string `json:"event"`
+//	}
+//
+// [Ctx.JSON] reads the body as JSON into anything, without the query string,
+// the path or the headers coming into it. It is for a payload that is not a
+// struct, or one whose signature was already checked, since a body
+// [Ctx.BodyBytes] has read is the same body afterwards.
+//
 // # What is not here yet
 //
-// Reading a request is here and so is enough writing to answer one. The body
-// decoders for JSON and XML, file uploads, validation, content negotiation, the
-// pagination types and the RFC 9457 renderer arrive with their own milestones.
+// Reading a request is here and so is enough writing to answer one. File
+// uploads, validation, content negotiation, the pagination types and the RFC
+// 9457 renderer arrive with their own milestones.
 //
 // Scope, Locale, User and Session are in doc 08 and are not here, because each
 // of them would return a type from a package that does not exist yet. They
