@@ -142,10 +142,7 @@ func survey(ctx context.Context, p project) (inventory, error) {
 		inv.Module.Mizu, inv.Module.Replaced, _ = toolkit(ctx, p.Dir)
 	}
 
-	inv.Generated, err = generatedIn(os.DirFS(p.Dir))
-	if err != nil {
-		return inventory{}, err
-	}
+	inv.Generated = generatedIn(os.DirFS(p.Dir))
 	return inv, nil
 }
 
@@ -166,9 +163,14 @@ func listPackages(ctx context.Context, dir string) ([]listed, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parsePackages(out)
+}
 
-	// go list writes one object after another rather than an array of them, so
-	// this reads until the stream runs out instead of unmarshalling once.
+// parsePackages reads what go list -json wrote.
+//
+// It writes one object after another rather than an array of them, so this
+// reads until the stream runs out instead of unmarshalling once.
+func parsePackages(out string) ([]listed, error) {
 	var pkgs []listed
 	dec := json.NewDecoder(strings.NewReader(out))
 	for dec.More() {
@@ -224,6 +226,11 @@ func toolkit(ctx context.Context, dir string) (v, replaced string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	return parseModule(out)
+}
+
+// parseModule reads what go list -m -json wrote about one module.
+func parseModule(out string) (v, replaced string, err error) {
 	var m struct {
 		Version string
 		Replace *module
@@ -274,13 +281,14 @@ var skipped = []string{"node_modules", "testdata", "vendor"}
 // The header is the go command's convention rather than mizu's, so this reads
 // the output of every generator the project runs. That is the point: the
 // question it answers is which files not to edit by hand.
-func generatedIn(fsys fs.FS) ([]generated, error) {
+//
+// Nothing here fails. A file or a directory that cannot be read is not evidence
+// of anything, and a command that reports what a project is made of has no
+// business ending over one.
+func generatedIn(fsys fs.FS) []generated {
 	files := map[string][]string{}
-	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
+	fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// A directory that cannot be read is not evidence of anything, and
-			// a command that reports what a project is made of has no business
-			// ending over one.
 			return nil
 		}
 		if d.IsDir() {
@@ -301,16 +309,13 @@ func generatedIn(fsys fs.FS) ([]generated, error) {
 		files[by] = append(files[by], name)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
 
 	out := make([]generated, 0, len(files))
 	for _, by := range slices.Sorted(maps.Keys(files)) {
 		slices.Sort(files[by])
 		out = append(out, generated{By: by, Files: files[by]})
 	}
-	return out, nil
+	return out
 }
 
 // head is the start of a file, which is as much as the header rule can be
