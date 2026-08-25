@@ -305,6 +305,16 @@ var rows = []Row{
 		Time: 180 * time.Nanosecond, Allocs: 3,
 	},
 	{
+		ID: "diag/text", Group: everythingElse, Doc: "36",
+		Op:   "One diagnostic with a code, a source snippet and a suggestion, rendered for a terminal",
+		Time: 3 * time.Microsecond, Allocs: 24,
+	},
+	{
+		ID: "diag/json", Group: everythingElse, Doc: "37",
+		Op:   "The same diagnostic as a mizu.diag/1 document",
+		Time: 10 * time.Microsecond, Allocs: 16,
+	},
+	{
 		ID: "trace/span/off", Group: everythingElse, Doc: "26", Since: "M8",
 		Op:   "Span start and end, sampled out",
 		Time: 60 * time.Nanosecond, Allocs: 0,
