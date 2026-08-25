@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"strings"
 )
@@ -96,6 +97,37 @@ const (
 	commandPrefix = "cmd:"
 )
 
+// unreadable is what a secret pointing at a file that will not open says.
+//
+// The message from the operating system is not it. A file that is not there is
+// "no such file or directory" on Linux and "The system cannot find the file
+// specified." on Windows, so what somebody reads would depend on where the
+// program ran, and one of the two ends in a full stop in the middle of a
+// diagnostic. The two cases worth naming are named, and the message says what
+// was pointed at as well as what was wrong with it, because file:/run/secrets/db
+// is what somebody typed and /run/secrets/db is what failed.
+//
+// The original stays underneath, so errors.Is still answers and --verbose still
+// prints what the system said.
+func unreadable(path, written string, err error) error {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return &indirectError{path + " is not there, and " + written + " says to read it", err}
+	case errors.Is(err, fs.ErrPermission):
+		return &indirectError{path + " cannot be read by this process, and " + written + " says to read it", err}
+	}
+	return err
+}
+
+// An indirectError is a message of mizu's own with the cause still under it.
+type indirectError struct {
+	msg   string
+	cause error
+}
+
+func (e *indirectError) Error() string { return e.msg }
+func (e *indirectError) Unwrap() error { return e.cause }
+
 // indirect follows file:, env: and cmd: in the value of a secret field.
 //
 // It only applies to a field marked secret, which is what these are for. A
@@ -115,9 +147,10 @@ func (l *Loader) indirect(f Field, v Value) (Value, error) {
 
 	switch {
 	case strings.HasPrefix(s, filePrefix):
-		data, err := os.ReadFile(strings.TrimPrefix(s, filePrefix))
+		path := strings.TrimPrefix(s, filePrefix)
+		data, err := os.ReadFile(path)
 		if err != nil {
-			return v, err
+			return v, unreadable(path, s, err)
 		}
 		// A file written by a person ends with a newline, and a secret with a
 		// newline on the end of it is a long afternoon.
