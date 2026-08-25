@@ -220,6 +220,52 @@ jobs:
           chmod +x builds/mizu-ubuntu-latest/mizu.build
           builds/mizu-ubuntu-latest/mizu.build version --json
 
+  # Generated code is checked in, so a generator that depends on the machine it
+  # ran on writes a diff the next contributor did not ask for and cannot avoid.
+  # The check that catches it is mizu gen --check, and a check like that is only
+  # worth having if it says the same thing everywhere.
+  #
+  # The order the input arrives in is a Go test, in cmd/mizu/determinism_test.go,
+  # along with both GOMAXPROCS values. That test runs on every row of the matrix
+  # at the top of this file. This job is the part that matrix cannot do: it adds
+  # darwin/amd64, which has no row up there, and it runs the check itself over
+  # the repository's own generated files rather than over a fixture.
+  #
+  # macos-15-intel is the darwin/amd64 runner. The comment at the top of this
+  # file is about macos-13, which GitHub retired, and it is still the reason the
+  # test matrix has no darwin/amd64 row: one job that has to finish is worth
+  # paying a queue for, and five are not.
+  determinism:
+    name: Generator determinism (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest # linux/amd64
+          - ubuntu-24.04-arm # linux/arm64
+          - macos-latest # darwin/arm64
+          - macos-15-intel # darwin/amd64
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+
+      - name: The output does not depend on the order or on GOMAXPROCS
+        run: go test -count=1 -run 'TestThe(Generators|AgentsFile)' ./cmd/mizu/
+
+      - name: Every generated file is what the generators write, on one processor
+        env:
+          GOMAXPROCS: "1"
+        run: go run ./cmd/mizu gen --check ./...
+
+      - name: The same, on eight
+        env:
+          GOMAXPROCS: "8"
+        run: go run ./cmd/mizu gen --check ./...
+
   # tools/milestonebot is a nested module, so `go test ./...` at the root does
   # not reach it. It runs the label file through its own validator, which is
   # why a broken .github/labels.yml fails here rather than on the push to main
