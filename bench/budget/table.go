@@ -63,14 +63,19 @@ var rows = []Row{
 		Time: 3 * time.Microsecond, Allocs: 70,
 	},
 	{
+		ID: "bind/json", Group: httpPath, Doc: "08",
+		Op:   "The same struct from a JSON body, reflection binder",
+		Time: 600 * time.Nanosecond, Allocs: 10,
+	},
+	{
 		ID: "bind/gen/form", Group: httpPath, Doc: "08", Since: "M1",
 		Op:   "The same form through a generated binder",
 		Time: 800 * time.Nanosecond, Allocs: 5,
 	},
 	{
 		ID: "bind/gen/json", Group: httpPath, Doc: "08", Since: "M1",
-		Op:   "The same struct from a 2 KB JSON body, generated binder",
-		Time: 4 * time.Microsecond, Allocs: 6,
+		Op:   "The same JSON body through a generated binder",
+		Time: 300 * time.Nanosecond, Allocs: 4,
 	},
 	{
 		ID: "validate/gen", Group: httpPath, Doc: "08", Since: "M1",

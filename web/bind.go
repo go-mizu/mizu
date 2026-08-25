@@ -1,8 +1,6 @@
 package web
 
 import (
-	"errors"
-	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -69,7 +67,7 @@ func (c *Ctx) Bind(dst any) error {
 	if p.err != nil {
 		return p.err
 	}
-	return p.run(c, v)
+	return p.run(c, dst, v)
 }
 
 // A source is where one field's value comes from.
@@ -95,6 +93,7 @@ const (
 type plan struct {
 	fields []binding
 	values bool  // whether anything reads the query or the form
+	lax    bool  // whether the struct embeds AllowUnknown
 	err    error // a field this cannot bind, reported to every caller
 }
 
@@ -120,7 +119,7 @@ func planFor(t reflect.Type) *plan {
 	if p, ok := plans.Load(t); ok {
 		return p.(*plan)
 	}
-	p := new(plan)
+	p := &plan{lax: laxFor(t)}
 	p.walk(t, "", nil, map[reflect.Type]bool{t: true})
 	actual, _ := plans.LoadOrStore(t, p)
 	return actual.(*plan)
@@ -141,6 +140,12 @@ func (p *plan) walk(t reflect.Type, prefix string, index []int, seen map[reflect
 	for i := range t.NumField() {
 		sf := t.Field(i)
 		if sf.PkgPath != "" && !sf.Anonymous {
+			continue
+		}
+
+		// The marker is a marker. It has no fields and nothing sends one, and
+		// walking into it would only be a slower way of finding that out.
+		if sf.Type == allowUnknownType {
 			continue
 		}
 
@@ -315,13 +320,17 @@ func snake(s string) string {
 func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
 func isLower(c byte) bool { return c >= 'a' && c <= 'z' }
 
-// run fills v in from the request.
+// run fills v in from the request, where dst is the pointer v came out of.
 //
 // Every field that would not decode is reported, rather than the first one, so
 // a form comes back with everything wrong with it marked at once. That is what
 // a form redisplay needs and it is what validation does in the next step, so
 // the two read the same way.
-func (p *plan) run(c *Ctx, v reflect.Value) error {
+func (p *plan) run(c *Ctx, dst any, v reflect.Value) error {
+	var bad []errs.Field
+
+	// The form is read once, here, and only when something is going to ask it
+	// for a field. A struct made of headers does not touch the body.
 	if p.values {
 		c.values()
 		if c.formErr != nil {
@@ -329,7 +338,6 @@ func (p *plan) run(c *Ctx, v reflect.Value) error {
 		}
 	}
 
-	var bad []errs.Field
 	for i := range p.fields {
 		b := &p.fields[i]
 		got, ok := b.read(c)
@@ -340,20 +348,21 @@ func (p *plan) run(c *Ctx, v reflect.Value) error {
 			bad = append(bad, errs.Field{Name: b.name, Code: err.code, Msg: err.msg})
 		}
 	}
+
+	// The body goes on top of what the query said, so a member the body carries
+	// wins and a parameter the body left out still arrives. Both decoders merge
+	// into the struct rather than replacing it, which is what makes that work
+	// without anything keeping track of which field came from where.
+	fields, err := c.decodeBody(dst, p.lax)
+	if err != nil {
+		return err
+	}
+
+	bad = append(bad, fields...)
 	if bad == nil {
 		return nil
 	}
-	return errs.New(errs.Invalid, "bind.invalid", "That request could not be read.").WithFields(bad...)
-}
-
-// formError is what a body that would not parse comes back as.
-func formError(err error) error {
-	var big *http.MaxBytesError
-	if errors.As(err, &big) {
-		return errs.Wrapf(err, errs.TooLarge, "bind.too_large",
-			"That request body is over the %d byte limit.", big.Limit)
-	}
-	return errs.Wrap(err, errs.Invalid, "bind.unreadable", "That form could not be read.")
+	return invalid(bad)
 }
 
 // read is every value the request sent under this field's name, and whether it

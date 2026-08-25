@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/go-mizu/mizu/errs"
 	"github.com/go-mizu/mizu/router"
@@ -225,6 +226,87 @@ func ExampleBind() {
 	fmt.Println(w.Body)
 	// Output:
 	// "water" [go web] page 2 of 25
+}
+
+// A JSON body binds through the same call and the same struct. What the body
+// carries wins, and what it left out the query string still fills in.
+func ExampleBind_body() {
+	type post struct {
+		Title string   `json:"title"`
+		Tags  []string `json:"tags"`
+		Draft bool     `json:"draft"`
+	}
+
+	create := web.H(func(c *web.Ctx) error {
+		in, err := web.Bind[post](c)
+		if err != nil {
+			return err
+		}
+		return c.Text(fmt.Sprintf("%q %v draft %v", in.Title, in.Tags, in.Draft))
+	})
+
+	r := httptest.NewRequest("POST", "/posts?draft=true",
+		strings.NewReader(`{"title":"water","tags":["go"]}`))
+	r.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	create.ServeHTTP(w, r)
+
+	fmt.Println(w.Body)
+	// Output:
+	// "water" [go] draft true
+}
+
+// A member the struct has no field for is a mistake, unless the struct embeds
+// AllowUnknown to say that it is not. A webhook payload that grows a field is
+// the case for it.
+func ExampleAllowUnknown() {
+	type hook struct {
+		web.AllowUnknown
+
+		Event string `json:"event"`
+	}
+
+	receive := web.H(func(c *web.Ctx) error {
+		in, err := web.Bind[hook](c)
+		if err != nil {
+			return err
+		}
+		return c.Text(in.Event)
+	})
+
+	r := httptest.NewRequest("POST", "/hooks",
+		strings.NewReader(`{"event":"paid","added_in_v3":true}`))
+	r.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	receive.ServeHTTP(w, r)
+
+	fmt.Println(w.Body)
+	// Output:
+	// paid
+}
+
+// Ctx.JSON reads the body and nothing else, for a payload that is not a struct
+// or one whose signature was checked before it was decoded.
+func ExampleCtx_JSON() {
+	receive := web.H(func(c *web.Ctx) error {
+		var in map[string]int
+		if err := c.JSON(&in); err != nil {
+			return err
+		}
+		return c.Text(fmt.Sprint(in["items"] * in["each"]))
+	})
+
+	r := httptest.NewRequest("POST", "/total", strings.NewReader(`{"items":3,"each":7}`))
+	r.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	receive.ServeHTTP(w, r)
+
+	fmt.Println(w.Body)
+	// Output:
+	// 21
 }
 
 // A value that will not decode comes back as one errs.Field per field, which is
