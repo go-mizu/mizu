@@ -20,9 +20,11 @@ It never appears in an import path.
 go build ./...                      # the toolkit
 go test ./...                       # tests
 go test -race ./...                 # what CI runs
-go test -bench=. -run=XXX ./...     # benchmarks, no tests
 go run ./cmd/mizu version           # the CLI
 go -C tools/milestonebot test ./... # the repository tooling, a separate module
+go -C bench test -run='^$' -bench=. ./micro/  # the benchmarks, also a separate module
+go -C bench run ./cmd/benchrun check          # every budgeted operation has a benchmark
+go -C bench run ./cmd/benchrun lint           # the rules that make two runs comparable
 gofmt -l .                          # must print nothing
 go vet ./...
 scripts/tag-release.sh v0.7.0 --dry-run  # what a release would tag
@@ -37,7 +39,7 @@ These are checked by CI or by a test, so breaking one produces a red build rathe
 
 - **No `internal/`.** Anywhere. If it should not be exported, do not write it.
 - **No package imports the composition root.** Every package works standalone. This is the rule the whole toolkit claim rests on.
-- **The core depends on the standard library and `golang.org/x`, and nothing else.** `deps_test.go` asserts the import graph and the `require` list, so a test-only dependency fails too. The list is `golang.org/x/crypto`, the `golang.org/x/sys` it brings with it, and `golang.org/x/text` for Unicode casing. Adding another `golang.org/x` repository means an entry in `allowedModules` with the reason next to it. Anything outside `golang.org/x` goes in its own module, the way `tools/milestonebot` does, and needs an entry in the decision register.
+- **The core depends on the standard library and `golang.org/x`, and nothing else.** `deps_test.go` asserts the import graph and the `require` list, so a test-only dependency fails too. The list is `golang.org/x/crypto`, the `golang.org/x/sys` it brings with it, and `golang.org/x/text` for Unicode casing. Adding another `golang.org/x` repository means an entry in `allowedModules` with the reason next to it. Anything outside `golang.org/x` goes in its own module, the way `tools/milestonebot` and `bench` do, and needs an entry in the decision register.
 - **Generated code is checked in and byte-identical across platforms, architectures, `GOMAXPROCS` values, and input order.**
 - **`gofmt` is clean and `go vet` passes.**
 - **New behaviour has a test that fails without the change.**
@@ -48,6 +50,7 @@ These are checked by CI or by a test, so breaking one produces a red build rathe
 - Error messages name what went wrong and what to do about it. They are documentation and are reviewed as documentation.
 - Prefer a small interface somebody can implement over a boolean that switches behaviour inside yours.
 - A performance claim comes with a benchmark. Without one it is an opinion.
+- A benchmark that belongs to a budgeted operation goes in `bench/micro`, registered under the ID its row in `bench/budget` carries. `benchrun check` fails on a row with no benchmark and on a benchmark with no row.
 
 ## Prose style, including in comments and commit messages
 

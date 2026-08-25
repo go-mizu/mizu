@@ -146,20 +146,30 @@ func TestNothingImportsTheCompositionRoot(t *testing.T) {
 	}
 }
 
-// The tools are their own modules.
+// The tools and the benchmarks are their own modules.
 //
-// tools/milestonebot parses YAML, which means it has a dependency, which is
-// fine as long as it stays over there. This test says out loud what keeps it
-// there, so that moving a tool into the main module is a decision somebody
-// makes rather than one that happens.
-func TestToolsAreNotInTheMainModule(t *testing.T) {
+// tools/milestonebot parses YAML and bench loads Go packages with
+// golang.org/x/tools, which means both have dependencies, which is fine as long
+// as they stay over there. Neither is something a user of the toolkit installs,
+// so neither has any business in the go.sum of one.
+//
+// This test says out loud what keeps them out, so that moving one of them into
+// the main module is a decision somebody makes rather than one that happens.
+func TestNestedModulesAreNotInTheMainModule(t *testing.T) {
+	nested := []string{
+		"github.com/go-mizu/mizu/tools/",
+		"github.com/go-mizu/mizu/bench/",
+	}
+
 	g, err := archtest.Load(".", "./...")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range g.Packages() {
-		if strings.HasPrefix(p, "github.com/go-mizu/mizu/tools/") {
-			t.Errorf("%s is in the main module's build graph, and tools belong in their own module", p)
+		for _, prefix := range nested {
+			if strings.HasPrefix(p, prefix) {
+				t.Errorf("%s is in the main module's build graph, and %s is a module of its own", p, strings.TrimSuffix(prefix, "/"))
+			}
 		}
 	}
 }

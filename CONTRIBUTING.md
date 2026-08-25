@@ -17,11 +17,23 @@ Go 1.27 or later.
 There is nothing else to install.
 If a change ever requires a tool that is not in the standard distribution, that is a decision to argue for in an issue before writing the code.
 
-The repository tooling lives in its own module, so it is not in `go test ./...` at the root:
+The repository tooling and the benchmarks live in modules of their own, so neither is in `go test ./...` at the root:
 
 ```bash
 go -C tools/milestonebot test ./...
+go -C bench test ./...
 ```
+
+The benchmarks are in `bench/`, along with the budget that says what each operation is meant to cost:
+
+```bash
+go -C bench test -run='^$' -bench=. ./micro/  # run them
+go -C bench run ./cmd/benchrun check          # every budgeted operation has a benchmark
+go -C bench run ./cmd/benchrun lint           # the rules that make two runs comparable
+```
+
+`bench/doc.go` explains what the numbers are for and what the rules are.
+Most of the budget describes packages that do not exist yet, and those rows say which milestone brings them.
 
 ## How the work is organised
 
@@ -119,7 +131,7 @@ The last one arrived with `mizu/str`, because `strings.Title` has been deprecate
 The deprecation notice points at `x/text/cases`, and the alternative is copying the Unicode casing tables in by hand.
 
 Everything else is a third-party dependency and stays out of the core.
-A library that needs one goes in a module of its own, the way `tools/milestonebot` does with its YAML parser.
+A library that needs one goes in a module of its own, the way `tools/milestonebot` does with its YAML parser and `bench` does with `golang.org/x/tools`.
 A nested module keeps its dependencies to itself, and somebody who imports the toolkit never sees them.
 That is also where database drivers and cloud clients will live.
 
