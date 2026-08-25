@@ -1,0 +1,1 @@
+error: bind.go:4:5: Listing is marked to bind and is not a type

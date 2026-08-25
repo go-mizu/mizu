@@ -1,0 +1,1 @@
+error: bind.go:4:6: Listing is marked to bind and has no fields the request can fill in

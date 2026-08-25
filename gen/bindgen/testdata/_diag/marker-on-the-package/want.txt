@@ -1,0 +1,1 @@
+error: bind.go:2:1: the bind marker is on something with no name

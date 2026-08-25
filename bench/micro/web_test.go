@@ -24,6 +24,8 @@ func init() {
 	register("bind/form", benchBindForm)
 	register("bind/json", benchBindJSON)
 	register("bind/upload", benchBindUpload)
+	register("bind/gen/form", benchBindGenForm)
+	register("bind/gen/json", benchBindGenJSON)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -198,30 +200,6 @@ func benchCtxAcquire(b *testing.B) {
 	}
 }
 
-// listing is the struct the binding benchmarks fill: twelve fields, in the shape
-// a search page sends, with a slice and a date in it because both cost more than
-// a string does.
-//
-// The tags are the names the fields would get anyway, since a field with no tag
-// is read under its own name in snake case. They are written out so the JSON
-// benchmark and the form benchmark are filling the same struct from the same
-// names, rather than one of them leaning on a decoder that matches names
-// loosely.
-type listing struct {
-	Q        string    `json:"q"`
-	Tags     []string  `json:"tags"`
-	Page     int       `json:"page"`
-	PerPage  int       `json:"per_page"`
-	Sort     string    `json:"sort"`
-	Order    string    `json:"order"`
-	MinPrice float64   `json:"min_price"`
-	MaxPrice float64   `json:"max_price"`
-	InStock  bool      `json:"in_stock"`
-	Since    time.Time `json:"since"`
-	Kind     string    `json:"kind"`
-	Cursor   string    `json:"cursor"`
-}
-
 // listingForm is one request's worth of listing, as a browser would post it.
 const listingForm = "q=water&tags=go&tags=web&page=2&per_page=25&sort=name&" +
 	"order=asc&min_price=1.5&max_price=99&in_stock=on&since=2026-01-02&" +
@@ -242,7 +220,7 @@ const listingJSON = `{"q":"water","tags":["go","web"],"page":2,"per_page":25,` +
 // and puts each string where it goes, which is the rest.
 //
 // That split is what the generator is for. A generated binder reads the values
-// without building the map, and the budget has a row waiting for it.
+// without building the map, and bind/gen/form is the same request through one.
 //
 // The form is posted rather than put in the query string so the body decoding
 // path is the one being measured. Both forms are cleared each time around, since
@@ -281,6 +259,68 @@ func benchBindForm(b *testing.B) {
 func benchBindJSON(b *testing.B) {
 	h := web.H(func(c *web.Ctx) error {
 		_, err := web.Bind[listing](c)
+		return err
+	})
+
+	body := &replay{s: listingJSON}
+	r := httptest.NewRequest("POST", "/things", nil)
+	r.Header.Set("Content-Type", "application/json")
+	r.Body = body
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		body.i = 0
+		r.Form, r.PostForm = nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchBindGenForm is bind/form again with a generated binder on the struct.
+//
+// The struct is the same twelve fields and the request is the same bytes, so the
+// difference between the two rows is the whole of what generating a binder buys
+// on a form. It is the pair of numbers to look at before deciding whether a
+// route is worth a marker.
+//
+// Most of what goes away is the map. The reflective binder asks net/http for
+// the values, which builds a url.Values and fills it before the first field is
+// written; the generated one walks the body a pair at a time and writes each
+// value into the field it belongs to. What is left in both is the same: read the
+// body, unescape each pair, and turn eleven strings into ints, floats, a bool
+// and a date.
+func benchBindGenForm(b *testing.B) {
+	h := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[genListing](c)
+		return err
+	})
+
+	body := &replay{s: listingForm}
+	r := httptest.NewRequest("POST", "/things", nil)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Body = body
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		body.i = 0
+		r.Form, r.PostForm = nil, nil
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchBindGenJSON is bind/json again with a generated binder on the struct.
+//
+// A JSON body is decoded by the same decoder either way, so this row is not
+// measuring the generator against reflection so much as showing what is left
+// when the generator has nothing to take away. What it does remove is the plan:
+// the reflective binder looks the type up, walks its fields and decides there
+// are no values to read, where the generated one has that decision compiled in.
+//
+// The query string is empty, so nothing here parses a form.
+func benchBindGenJSON(b *testing.B) {
+	h := web.H(func(c *web.Ctx) error {
+		_, err := web.Bind[genListing](c)
 		return err
 	})
 

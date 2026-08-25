@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"mime"
@@ -86,6 +87,13 @@ func (c *Ctx) values() url.Values {
 		return c.r.Form
 	}
 	c.form = true
+
+	// A body somebody already read is put back before net/http goes looking for
+	// it, since the bytes are still here and a form that parsed as empty because
+	// the signature was checked first is a bad afternoon.
+	if c.read {
+		c.r.Body = io.NopCloser(bytes.NewReader(c.body))
+	}
 
 	// ParseForm reads the query string, and an urlencoded body when there is
 	// one. It leaves a multipart body alone.

@@ -56,6 +56,13 @@ func BindInto[T any](c *Ctx, dst *T) error {
 func (c *Ctx) Bind(dst any) error {
 	c.live("Bind")
 
+	// A type that binds itself binds itself, which is how a generated binder
+	// gets used without anybody choosing it at the call site. The two are held
+	// to the same behaviour, so nothing below here has to know which ran.
+	if g, ok := dst.(Binder); ok {
+		return g.BindRequest(c)
+	}
+
 	v := reflect.ValueOf(dst)
 	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
 		return errs.Newf(errs.Internal, "bind.target",

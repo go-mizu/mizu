@@ -378,3 +378,74 @@ func ExampleBind_errors() {
 	// page invalid_number Must be a whole number.
 	// per_page out_of_range Is too large for this field.
 }
+
+// bindSearch is a struct with a generated binder on it.
+//
+// The marker is what a struct in an application carries, and mizu gen bind
+// writes the method under it. The method is spelled out here because a method
+// cannot be declared inside a function, and it is character for character what
+// the generator writes for this struct.
+//
+//mizu:bind
+type bindSearch struct {
+	Q    string   `query:"q"`
+	Tags []string `query:"tags"`
+	Page int      `query:"page"`
+}
+
+// BindRequest fills a bindSearch from the request.
+//
+// It is the method web.Bind calls for this type. Each field is read from the
+// place its tags name, and every value that will not decode is reported rather
+// than the first one.
+func (v *bindSearch) BindRequest(c *web.Ctx) error {
+	b := c.Binding()
+
+	var tags []string
+
+	for name, value := range b.Values() {
+		switch name {
+		case "q":
+			v.Q = value
+		case "tags":
+			if tags == nil {
+				tags = []string{}
+			}
+			tags = append(tags, value)
+		case "page":
+			web.Int(b, &v.Page, name, value)
+		}
+	}
+
+	if tags != nil {
+		v.Tags = tags
+	}
+
+	b.Body(v)
+	return b.Err()
+}
+
+// A struct that binds itself is bound by its own method, and everything else is
+// bound by reflection. The call is the same call, the error is the same error,
+// and a handler cannot tell which one ran.
+//
+// What the generated one buys is the values: it reads the query string and the
+// form body a pair at a time and writes each one straight into the field it
+// belongs to, where the reflective binder asks net/http for a map of every name
+// the request carries and fills it in before the first field is written.
+func ExampleBinder() {
+	list := web.H(func(c *web.Ctx) error {
+		in, err := web.Bind[bindSearch](c)
+		if err != nil {
+			return err
+		}
+		return c.Text(fmt.Sprintf("%q %v page %d", in.Q, in.Tags, in.Page))
+	})
+
+	w := httptest.NewRecorder()
+	list.ServeHTTP(w, httptest.NewRequest("GET", "/?q=water&tags=go&tags=web&page=2", nil))
+
+	fmt.Println(w.Body)
+	// Output:
+	// "water" [go web] page 2
+}
