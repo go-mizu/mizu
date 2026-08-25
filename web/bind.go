@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/go-mizu/mizu/errs"
+	"github.com/go-mizu/mizu/validate"
 )
 
 // Bind decodes the request into a T.
@@ -60,7 +61,10 @@ func (c *Ctx) Bind(dst any) error {
 	// gets used without anybody choosing it at the call site. The two are held
 	// to the same behaviour, so nothing below here has to know which ran.
 	if g, ok := dst.(Binder); ok {
-		return g.BindRequest(c)
+		if err := g.BindRequest(c); err != nil {
+			return err
+		}
+		return c.check(dst)
 	}
 
 	v := reflect.ValueOf(dst)
@@ -74,7 +78,28 @@ func (c *Ctx) Bind(dst any) error {
 	if p.err != nil {
 		return p.err
 	}
-	return p.run(c, dst, v)
+	if err := p.run(c, dst, v); err != nil {
+		return err
+	}
+	return c.check(dst)
+}
+
+// check runs the rules the bound struct carries.
+//
+// A type with a Validate method is asked it, which is the method mizu
+// gen:validate writes and the one somebody writes by hand for a rule that
+// crosses two fields. Anything else has its validate tags read by
+// [github.com/go-mizu/mizu/validate.Struct]. The method wins because a
+// generated one is those same tags already written out, and running both would
+// report every failure twice.
+//
+// A struct with no rules on it costs a lookup and no allocations, so a request
+// that has nothing to check does not pay for the step.
+func (c *Ctx) check(dst any) error {
+	if v, ok := dst.(validate.Validator); ok {
+		return v.Validate(c.Context())
+	}
+	return validate.Struct(c.Context(), dst)
 }
 
 // A source is where one field's value comes from.
