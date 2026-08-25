@@ -91,8 +91,9 @@
 //
 // # From a configuration
 //
-// [New] builds all of the above from a [github.com/go-mizu/mizu/config.Log],
-// which is the struct an application loads from files and the environment.
+// [New] builds all of the above from an [Options], which is the struct an
+// application embeds in its configuration and loads from files and the
+// environment.
 //
 //	logger, closer, err := log.New(cfg.Log)
 //	if err != nil {
