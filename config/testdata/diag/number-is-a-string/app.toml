@@ -1,0 +1,2 @@
+[database]
+max_open_conns = "25"

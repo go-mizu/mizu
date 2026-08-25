@@ -1,0 +1,1 @@
+error: tenant is required: tenant slug, or all

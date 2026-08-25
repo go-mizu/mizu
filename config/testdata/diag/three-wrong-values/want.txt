@@ -1,0 +1,5 @@
+error: app.toml:2:9: App.Debug: want a boolean, got string
+
+error: app.toml:5:11: HTTP.Timeout: want a length of time such as 30s or 2h45m, got "half an hour"
+
+error: app.toml:8:18: DB.MaxOpenConns: want an integer, got string

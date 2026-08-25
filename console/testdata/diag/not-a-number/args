@@ -1,0 +1,6 @@
+users:prune
+--days
+soon
+-r
+spam
+acme

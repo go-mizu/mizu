@@ -72,7 +72,7 @@ type Unknown struct {
 
 func (u Unknown) Error() string {
 	var b strings.Builder
-	b.WriteString(u.From.String())
+	b.WriteString(u.From.Where())
 	b.WriteString(": unknown setting ")
 	b.WriteString(strconv.Quote(u.Path))
 	if did := diag.Did(u.Near, strconv.Quote); did != "" {

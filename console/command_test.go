@@ -124,9 +124,9 @@ func TestUnknownCommand(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{[]string{"migrat"}, `unknown command "migrat", did you mean migrate?`},
+		{[]string{"migrat"}, `unknown command "migrat", did you mean "migrate"?`},
 		{[]string{"nothing:like:it"}, `unknown command "nothing:like:it", run "mizu help" for the list`},
-		{[]string{"help", "migrat"}, `unknown command "migrat", did you mean migrate?`},
+		{[]string{"help", "migrat"}, `unknown command "migrat", did you mean "migrate"?`},
 		{[]string{"--nope"}, `unknown flag --nope, run "mizu help" for what this takes`},
 	} {
 		err := run(t, a, c, tt.argv...)

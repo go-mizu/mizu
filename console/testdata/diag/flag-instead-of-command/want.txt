@@ -1,0 +1,1 @@
+error: unknown flag --dry-run, run "shop help" for what this takes

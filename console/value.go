@@ -128,7 +128,24 @@ func ParseInt[T ~int | ~int8 | ~int16 | ~int32 | ~int64](s string) (T, error) {
 	if v := T(n); int64(v) == n {
 		return v, nil
 	}
-	return 0, fmt.Errorf("%s does not fit", s)
+	lo, hi := limits[T]()
+	if strings.HasPrefix(s, "-") {
+		return 0, fmt.Errorf("%s does not fit, the smallest is %d", s, lo)
+	}
+	return 0, fmt.Errorf("%s does not fit, the largest is %d", s, hi)
+}
+
+// limits are the smallest and largest values T can hold.
+//
+// Shifting a one up to the sign bit lands on the smallest, because that is what
+// signed overflow does in Go, and the largest is one less than its negation.
+// The alternative is a switch over eight types that has to be extended every
+// time the constraint is, and a message that says the wrong number when nobody
+// extends it.
+func limits[T ~int | ~int8 | ~int16 | ~int32 | ~int64]() (lo, hi T) {
+	for lo = 1; lo > 0; lo <<= 1 {
+	}
+	return lo, -(lo + 1)
 }
 
 // Uint returns a Value that parses an unsigned number.
@@ -149,7 +166,9 @@ func ParseUint[T ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr](s stri
 	if v := T(n); uint64(v) == n {
 		return v, nil
 	}
-	return 0, fmt.Errorf("%s does not fit", s)
+	var largest T
+	largest-- // wraps to all ones, which is the largest an unsigned type holds
+	return 0, fmt.Errorf("%s does not fit, the largest is %d", s, uint64(largest))
 }
 
 // Float returns a Value that parses a number with a fractional part.
@@ -164,13 +183,19 @@ func ParseFloat[T ~float32 | ~float64](s string) (T, error) {
 	if v := T(f); !isInf(float64(v)) || isInf(f) {
 		return v, nil
 	}
-	return 0, fmt.Errorf("%s does not fit", s)
+	// Only a float32 gets here. A float64 that strconv already parsed cannot
+	// overflow on the way into a float64, so the number that is too large is
+	// too large for the smaller of the two and there is only one bound to name.
+	return 0, fmt.Errorf("%s does not fit, the largest is about %g", s, maxFloat32)
 }
 
 // isInf reports whether f is an infinity, without pulling in math for it.
 func isInf(f float64) bool { return f > maxFloat || f < -maxFloat }
 
-const maxFloat = 1.7976931348623157e308
+const (
+	maxFloat   = 1.7976931348623157e308
+	maxFloat32 = 3.4028234663852886e38
+)
 
 // numError turns what strconv says into something worth printing.
 //
@@ -272,7 +297,30 @@ func parseTime(s string, layouts []string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("%q is not a time, try %s", s, layouts[0])
+	return time.Time{}, fmt.Errorf("%q is not a time, try %s", s, examples(layouts))
+}
+
+// examples renders each layout as a time, for the end of the message about one
+// that would not parse.
+//
+// The layout itself is what Go wants and not what a person types. Somebody told
+// to try 2006-01-02T15:04:05Z07:00 has been shown a string that is not a time
+// at all, and the usual next move is to type it in and be told the same thing
+// again. What comes out of here is a real timestamp that would have been
+// accepted, which is the fix rather than a description of it.
+//
+// Every layout is listed, because a field that takes two forms and mentions one
+// of them is why somebody writes the date out the long way.
+func examples(layouts []string) string {
+	// The instant every Go layout is written in terms of, so the example of a
+	// layout reads as the layout with real numbers in it.
+	ref := time.Date(2006, time.January, 2, 15, 4, 5, 0, time.UTC)
+
+	out := make([]string, len(layouts))
+	for i, layout := range layouts {
+		out[i] = ref.Format(layout)
+	}
+	return strings.Join(out, " or ")
 }
 
 // Text returns a Value for any type that knows how to read itself from text,

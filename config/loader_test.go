@@ -608,7 +608,7 @@ func TestUnknownMessage(t *testing.T) {
 	}{
 		{
 			Unknown{Path: "database.max_conns", From: Source{From: FromFile, Name: "config/production.toml:14:1"}, Near: []string{"database.max_open_conns"}},
-			`file config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns"?`,
+			`config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns"?`,
 		},
 		{
 			Unknown{
@@ -616,7 +616,7 @@ func TestUnknownMessage(t *testing.T) {
 				From: Source{From: FromFile, Name: "config/production.toml:14:1"},
 				Near: []string{"database.max_open_conns", "database.max_idle_conns"},
 			},
-			`file config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns" or "database.max_idle_conns"?`,
+			`config/production.toml:14:1: unknown setting "database.max_conns", did you mean "database.max_open_conns" or "database.max_idle_conns"?`,
 		},
 		{
 			Unknown{Path: "nope", From: Source{From: FromFlag, Name: "--config.nope=1"}},

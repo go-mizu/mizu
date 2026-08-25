@@ -1,0 +1,1 @@
+error: --workers: -2 is negative

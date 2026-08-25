@@ -1,0 +1,6 @@
+users:prune
+--before
+last tuesday
+-r
+spam
+acme

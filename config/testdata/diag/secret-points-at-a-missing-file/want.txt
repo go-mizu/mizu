@@ -1,0 +1,1 @@
+error: app.toml:3:7: App.Key: no-such-secret is not there, and file:no-such-secret says to read it

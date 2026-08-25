@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,7 +153,7 @@ func TestFieldErrorMessage(t *testing.T) {
 				Value: Value{Source: Source{From: FromFile, Name: "config/local.toml:3:8"}},
 				Err:   errors.New("nope"),
 			},
-			want: "file config/local.toml:3:8: DB.Port: nope",
+			want: "config/local.toml:3:8: DB.Port: nope",
 		},
 		{
 			name: "a variable says which one",
@@ -243,8 +244,38 @@ func TestSecretFromMissingFile(t *testing.T) {
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("Err is %v, want it to be about a file that is not there", err)
 	}
+	if !strings.Contains(err.Error(), missing+" is not there") {
+		t.Errorf("Err says %v, want it to name the file rather than quote the system", err)
+	}
 	if got != "" {
 		t.Errorf("read as %q, want nothing", got)
+	}
+}
+
+// What the system says about a file it will not open is different on every
+// platform, and on Windows it is a sentence ending in a full stop, so the two
+// cases worth naming are named here instead.
+func TestAFileThatWillNotOpen(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"not there", fs.ErrNotExist, "/run/secrets/db is not there, and file:/run/secrets/db says to read it"},
+		{"not readable", fs.ErrPermission, "/run/secrets/db cannot be read by this process, and file:/run/secrets/db says to read it"},
+		{"something else", errors.New("input/output error"), "input/output error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := unreadable("/run/secrets/db", "file:/run/secrets/db", tt.err)
+			if err.Error() != tt.want {
+				t.Errorf("says %q, want %q", err, tt.want)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Errorf("%v no longer carries the cause", err)
+			}
+		})
 	}
 }
 

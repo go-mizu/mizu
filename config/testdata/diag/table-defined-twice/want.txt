@@ -1,0 +1,1 @@
+error: app.toml:4:1: table app is defined twice, and was already defined at app.toml:1:1

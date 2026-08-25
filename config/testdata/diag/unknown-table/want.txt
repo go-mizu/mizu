@@ -1,0 +1,1 @@
+error: app.toml:4:1: unknown setting "redis"

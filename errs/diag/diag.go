@@ -382,6 +382,11 @@ func (e *listError) Unwrap() []error {
 // That last part is what makes --json cheap to add to a command: whatever went
 // wrong, there is a mizu.diag/1 document to print, and a command that grows a
 // real diagnostic later starts emitting it without its caller changing.
+//
+// A join of ordinary errors becomes one diagnostic each rather than one
+// diagnostic holding all of them. Configuration reports three wrong settings by
+// joining three errors, and three problems are three entries in the list, three
+// objects under --json, and three things to fix.
 func Of(err error) List {
 	if err == nil {
 		return nil
@@ -403,25 +408,37 @@ func Of(err error) List {
 // than one that reports the outer error. A hundred is far past any real chain.
 const maxDepth = 100
 
-func collect(err error, l *List, depth int) {
+// collect appends what err carries and reports whether it carried anything.
+//
+// The answer is what tells a join apart from a wrap. A branch of a join that
+// held no diagnostic is still one of the problems and becomes its own
+// diagnostic, because that is what a join means. A wrapped error that held none
+// is left to [Of], which reports the outer message, because "boot: reading
+// config/app.toml: no such file" is one problem and the wrapping is the part
+// that says where.
+func collect(err error, l *List, depth int) bool {
 	for err != nil && depth > 0 {
 		depth--
 		switch x := err.(type) {
 		case Diagnostic:
 			*l = append(*l, x)
-			return
+			return true
 		case *Diagnostic:
 			*l = append(*l, *x)
-			return
+			return true
 		case interface{ Unwrap() []error }:
-			for _, e := range x.Unwrap() {
-				collect(e, l, depth)
+			errs := x.Unwrap()
+			for _, e := range errs {
+				if !collect(e, l, depth) {
+					*l = append(*l, Diagnostic{Message: e.Error()})
+				}
 			}
-			return
+			return len(errs) > 0
 		case interface{ Unwrap() error }:
 			err = x.Unwrap()
 		default:
-			return
+			return false
 		}
 	}
+	return false
 }

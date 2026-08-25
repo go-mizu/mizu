@@ -1,0 +1,1 @@
+error: app.toml:2:9: Log.Level: want a level such as debug, info, warn or error, got "verbose"

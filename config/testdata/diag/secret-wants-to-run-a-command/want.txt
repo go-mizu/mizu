@@ -1,0 +1,1 @@
+error: app.toml:3:7: App.Key: running a command for a value is turned off here, so cmd:op read op://vault/shop/key cannot be read

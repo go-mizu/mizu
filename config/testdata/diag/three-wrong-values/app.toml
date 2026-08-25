@@ -1,0 +1,8 @@
+[app]
+debug = "yes"
+
+[http]
+timeout = "half an hour"
+
+[database]
+max_open_conns = "twenty five"

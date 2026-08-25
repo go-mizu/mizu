@@ -1,0 +1,1 @@
+error: app.toml:1:5: want ] to close the header for app, got the end of the line

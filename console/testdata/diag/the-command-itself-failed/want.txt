@@ -1,0 +1,1 @@
+error: the database at 127.0.0.1:5432 is not accepting connections, start it with docker compose up db
