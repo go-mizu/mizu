@@ -1,6 +1,7 @@
 package micro
 
 import (
+	"context"
 	"testing"
 
 	"github.com/go-mizu/mizu/validate"
@@ -10,6 +11,7 @@ func init() {
 	register("validate/report", benchValidateReport)
 	register("validate/format", benchValidateFormat)
 	register("validate/build", benchValidateBuild)
+	register("validate/reflect", benchValidateReflect)
 }
 
 // benchValidateBuild is a builder doing what a handler would: four fields, ten
@@ -37,6 +39,63 @@ func benchValidateBuild(b *testing.B) {
 			v.Field("id", "01ARZ3NDEKTSV4RRFFQ69G5FAV").Required().ULID()
 		})
 		if err := v.Err(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// signup is the struct the reflective interpreter and the generated validator
+// are both measured on: 12 fields and 20 rules, which is a form somebody would
+// actually post.
+type signup struct {
+	Email string   `json:"email" validate:"required,email"`
+	Title string   `json:"title" validate:"required,min=3,max=120"`
+	Slug  string   `json:"slug" validate:"required"`
+	Site  string   `json:"site" validate:"omitempty,url"`
+	IP    string   `json:"ip" validate:"omitempty,ip"`
+	ID    string   `json:"id" validate:"required,ulid"`
+	Ref   string   `json:"ref" validate:"uuid"`
+	Body  string   `json:"body" validate:"required,min=10"`
+	Tags  []string `json:"tags" validate:"required,max=5"`
+	Count int      `json:"count" validate:"between=1 10"`
+	Phone string   `json:"phone" validate:"e164"`
+	Host  string   `json:"host" validate:"hostname"`
+}
+
+// benchValidateReflect is the same work as validate/gen through struct tags
+// read at runtime, and the pair is the whole argument for the generator.
+//
+// The rules a tag names are resolved once per type and kept, so what a call
+// costs is walking the plan, pulling each field out by index into an interface,
+// and running the same Check chain a handler would have written. The reflection
+// that is left is the field access, and that is what the row measures.
+//
+// There are 16 allocations for 12 fields, and most of them are a field's value
+// going into an interface so that a Check can hold it. That is the cost the
+// generator does not pay, and it is the whole of the difference between this
+// row and validate/gen. A count that climbs faster than the field count means
+// the plan is being rebuilt on every call, which would be a bug rather than a
+// cost.
+func benchValidateReflect(b *testing.B) {
+	ctx := context.Background()
+	in := signup{
+		Email: "first.last@example.com",
+		Title: "A reasonable title",
+		Slug:  "a-reasonable-title",
+		Site:  "https://example.com/a/b?q=1",
+		IP:    "2001:db8::1",
+		ID:    "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Ref:   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		Body:  "Long enough to pass the minimum.",
+		Tags:  []string{"go", "web"},
+		Count: 3,
+		Phone: "+14155552671",
+		Host:  "mail.example.com",
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if err := validate.Struct(ctx, in); err != nil {
 			b.Fatal(err)
 		}
 	}

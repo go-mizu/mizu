@@ -103,9 +103,9 @@ var rows = []Row{
 		Time: 900 * time.Nanosecond, Allocs: 0,
 	},
 	{
-		ID: "validate/reflect", Group: httpPath, Doc: "08", Since: "M1",
+		ID: "validate/reflect", Group: httpPath, Doc: "08",
 		Op:   "Same via the reflective interpreter",
-		Time: 36 * time.Microsecond, Allocs: 140,
+		Time: 2000 * time.Nanosecond, Allocs: 16,
 	},
 	{
 		ID: "respond/json", Group: httpPath, Doc: "08", Since: "M1",
