@@ -24,12 +24,6 @@ const (
 	heartbeat = 30 * time.Second
 )
 
-// animated reports whether stderr is something worth drawing on.
-//
-// Two questions in one. A pipe cannot be redrawn, and a command that was asked
-// to be quiet or to speak JSON should not be decorating anything.
-func (c *IO) animated() bool { return c.decorated() && isTerminal(c.err) }
-
 // A Bar reports progress through a known number of steps.
 //
 // On a terminal it is a bar that redraws in place. Anywhere else it is a line
@@ -92,7 +86,7 @@ func (b *Bar) set(n int) {
 	if b.done {
 		return
 	}
-	if !b.c.animated() {
+	if !b.c.animate {
 		b.report()
 		return
 	}
@@ -117,7 +111,7 @@ func (b *Bar) Done() {
 	}
 	b.done = true
 	switch {
-	case b.c.animated():
+	case b.c.animate:
 		b.paint()
 		fmt.Fprintln(b.c.err)
 	case b.c.decorated() && b.reported != b.current:
@@ -235,7 +229,7 @@ func (c *IO) Spinner(message string) *Spinner {
 		close(s.gone)
 		return s
 	}
-	if !c.animated() {
+	if !c.animate {
 		fmt.Fprintf(c.err, "%s...\n", message)
 	}
 	go s.run()
@@ -247,7 +241,7 @@ func (s *Spinner) run() {
 	defer close(s.gone)
 
 	every := heartbeat
-	if s.c.animated() {
+	if s.c.animate {
 		every = tick
 	}
 	t := time.NewTicker(every)
@@ -258,7 +252,7 @@ func (s *Spinner) run() {
 		case <-s.stop:
 			return
 		case <-t.C:
-			if s.c.animated() {
+			if s.c.animate {
 				fmt.Fprint(s.c.err, "\r", styleDim.wrap(frames[frame%len(frames)], s.c.colorErr), " ", s.message, "\x1b[K")
 				continue
 			}
@@ -273,7 +267,7 @@ func (s *Spinner) Stop() {
 	s.once.Do(func() {
 		close(s.stop)
 		<-s.gone
-		if s.c.animated() {
+		if s.c.animate {
 			// The line the spinner was drawn on is the caller's again, and
 			// what it held was never information.
 			fmt.Fprint(s.c.err, "\r\x1b[K")

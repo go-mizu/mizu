@@ -75,6 +75,12 @@ type IO struct {
 	errWidth int
 
 	interactive bool
+	// animate is whether stderr is worth drawing on, which is two questions:
+	// a pipe cannot be redrawn, and a command asked to be quiet or to speak
+	// JSON should not be decorating anything. It is decided once, like colour,
+	// rather than asked per redraw, because asking is an ioctl and a bar can
+	// be advanced a million times.
+	animate bool
 	// reader is built by the first prompt and kept, because it buffers. See
 	// [IO.readLine].
 	reader *bufio.Reader
@@ -86,7 +92,7 @@ type IO struct {
 // passing a buffer for one of them does not change the other. Whether prompts
 // ask is decided once here, for the same reason and from the same question.
 func New(in io.Reader, out, err io.Writer, opts Options) *IO {
-	return &IO{
+	c := &IO{
 		in:          in,
 		out:         out,
 		err:         err,
@@ -98,6 +104,8 @@ func New(in io.Reader, out, err io.Writer, opts Options) *IO {
 		errWidth:    terminalWidth(err, opts.Width),
 		interactive: canPrompt(in, err, opts.Interaction),
 	}
+	c.animate = c.decorated() && isTerminal(err)
+	return c
 }
 
 // Stdio returns an IO on the process's own streams.

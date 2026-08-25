@@ -3,6 +3,7 @@ package console
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -442,6 +443,19 @@ func TestPromptsNeedBothStreams(t *testing.T) {
 	}
 	if canPrompt(strings.NewReader("Ada\n"), os.Stderr, InteractionAuto) {
 		t.Error("a command reading from a pipe was told it could ask questions")
+	}
+}
+
+// TestReadError separates the two ways an answer fails to arrive. The stream
+// ending is a user who walked away, and anything else is a broken stream,
+// which are different things to report.
+func TestReadError(t *testing.T) {
+	if got := readError(io.EOF); !errors.Is(got, ErrAborted) {
+		t.Errorf("the end of the input became %v, want an abort", got)
+	}
+	broken := errors.New("read |0: file already closed")
+	if got := readError(broken); !errors.Is(got, broken) {
+		t.Errorf("a broken stream became %v", got)
 	}
 }
 

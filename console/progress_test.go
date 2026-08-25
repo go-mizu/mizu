@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestRender is the bar itself, which is the part a terminal is not needed to
@@ -121,6 +122,21 @@ func TestBarDoneReportsTheLastState(t *testing.T) {
 	bar.Done() // and again, which a deferred one after an early return does
 
 	if got := s.err.String(); got != "4% (4/100)\n" {
+		t.Errorf("the bar wrote %q", got)
+	}
+}
+
+// TestBarAfterDone covers the step that arrives late, from a goroutine that had
+// not quite finished when the bar did. It is recorded and it is not drawn,
+// because the line the bar was on belongs to whatever was printed next.
+func TestBarAfterDone(t *testing.T) {
+	s := newStreams(t, Options{})
+
+	bar := s.io.Progress(10)
+	bar.Done()
+	bar.Advance(5)
+
+	if got := s.err.String(); got != "0% (0/10)\n" {
 		t.Errorf("the bar wrote %q", got)
 	}
 }
@@ -278,9 +294,105 @@ func TestTaskRunsTheWorkWhenNobodyIsReading(t *testing.T) {
 	}
 }
 
-func TestAnimated(t *testing.T) {
-	s := newStreams(t, Options{})
-	if s.io.animated() {
-		t.Error("a buffer was taken for something worth drawing on")
+func TestAnimate(t *testing.T) {
+	for name, opts := range map[string]Options{
+		"a buffer": {},
+		"quiet":    {Verbosity: Quiet},
+		"json":     {JSON: true},
+	} {
+		s := newStreams(t, opts)
+		if s.io.animate {
+			t.Errorf("%s was taken for something worth drawing on", name)
+		}
+	}
+}
+
+// onATerminal is an IO that thinks stderr is one.
+//
+// A go test run has no terminal and there is no portable way to make one, so
+// the half of this file that only runs on a terminal reaches in and sets the
+// answer. What that leaves untested is the ioctl, which belongs to x/term.
+func onATerminal(t *testing.T) *streams {
+	t.Helper()
+
+	s := newStreams(t, Options{Width: 40, Color: ColorNever})
+	s.io.animate = true
+	return s
+}
+
+func TestBarOnATerminal(t *testing.T) {
+	s := onATerminal(t)
+
+	bar := s.io.Progress(10)
+	bar.Set(5)
+	bar.Advance(5) // too soon after the last redraw, so this one waits for Done
+	bar.Done()
+
+	got := s.err.String()
+	if strings.Count(got, "\r") != 2 {
+		t.Errorf("the bar wrote %q, want a redraw for the step and one for the finish", got)
+	}
+	if !strings.Contains(got, " 50% ") || !strings.Contains(got, "100% ") {
+		t.Errorf("the bar wrote %q", got)
+	}
+	if !strings.HasSuffix(got, "\n") {
+		t.Errorf("the bar wrote %q, and left the cursor on its own line", got)
+	}
+	if strings.Contains(got, "(5/10)") {
+		t.Errorf("the bar wrote %q, which is the line a log gets rather than the bar", got)
+	}
+}
+
+// TestBarDoesNotRedrawPerStep is what keeps a tight loop from spending its
+// afternoon writing escape sequences at a terminal nobody can read that fast.
+func TestBarDoesNotRedrawPerStep(t *testing.T) {
+	s := onATerminal(t)
+
+	bar := s.io.Progress(1000)
+	for range 1000 {
+		bar.Advance(1)
+	}
+
+	if got := strings.Count(s.err.String(), "\r"); got != 1 {
+		t.Errorf("a thousand steps redrew %d times", got)
+	}
+}
+
+// TestBarDoneMovesTheCursorOn covers the bar that finished where it started,
+// since the line it was drawn on still belongs to it.
+func TestBarDoneMovesTheCursorOn(t *testing.T) {
+	s := onATerminal(t)
+
+	s.io.Progress(10).Done()
+
+	if got := s.err.String(); !strings.HasPrefix(got, "\r") || !strings.HasSuffix(got, "\x1b[K\n") {
+		t.Errorf("the bar wrote %q", got)
+	}
+}
+
+func TestSpinnerOnATerminal(t *testing.T) {
+	s := onATerminal(t)
+
+	spin := s.io.Spinner("running migrations")
+	time.Sleep(3 * tick)
+	spin.Stop()
+
+	got := s.err.String()
+	if !strings.Contains(got, frames[0]) || !strings.Contains(got, "running migrations") {
+		t.Errorf("the spinner wrote %q", got)
+	}
+	if !strings.HasSuffix(got, "\r\x1b[K") {
+		t.Errorf("the spinner wrote %q, and left its line behind", got)
+	}
+}
+
+func TestElapsed(t *testing.T) {
+	// Under a second is worth a millisecond. Over one is not: a migration that
+	// took 1.4 seconds is not 1.42981 seconds.
+	if got := elapsed(time.Now().Add(-1500 * time.Millisecond)); got.Round(100*time.Millisecond) != got {
+		t.Errorf("elapsed returned %v, want it rounded", got)
+	}
+	if got := elapsed(time.Now().Add(-20 * time.Millisecond)); got < 20*time.Millisecond {
+		t.Errorf("elapsed returned %v, want at least the 20ms that passed", got)
 	}
 }
