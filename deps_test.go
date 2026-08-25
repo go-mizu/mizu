@@ -122,12 +122,26 @@ func TestGoModRequiresNothing(t *testing.T) {
 // package that reaches back up to it turns the toolkit into a framework you
 // cannot take apart, and it is the one import that makes eject impossible.
 // The dependency runs one way, always.
+//
+// There is one exemption and it is named below rather than pattern matched, so
+// that adding a second one is a line in this file somebody has to write.
 func TestNothingImportsTheCompositionRoot(t *testing.T) {
+	// mizutest is a fixture for an application that has already been wired, so
+	// it hands back the *mizu.Router the test registers routes on and takes a
+	// *mizu.App to serve. It sits beside the composition root rather than under
+	// it, and nothing a user ships imports it. Eject is unaffected: a project
+	// that has ejected still has an http.Handler, which is what mizutest.Serve
+	// takes.
+	const fixture = "github.com/go-mizu/mizu/mizutest"
+
 	g, err := archtest.Load(".", "./...")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, v := range g.Forbid("github.com/go-mizu/mizu/...", "github.com/go-mizu/mizu") {
+		if v.Package == fixture {
+			continue
+		}
 		t.Errorf("package imports the composition root\n%s", v.Error())
 	}
 }
