@@ -40,6 +40,48 @@
 // would make a field that is optional and a field that is optional-but-valid
 // impossible to tell apart.
 //
+// # Rules on the struct
+//
+// Most rules are the same three or four on every field, and writing them out
+// is writing the same lines again. A struct says them in a tag instead, and
+// [Struct] runs them:
+//
+//	type CreatePost struct {
+//		Title string   `json:"title" validate:"required,min=3,max=200"`
+//		Body  string   `json:"body" validate:"required"`
+//		Site  string   `json:"site" validate:"omitempty,url"`
+//		Tags  []string `json:"tags" validate:"max=5,dive,required"`
+//	}
+//
+// Rules are separated by commas and a rule's parameters follow an equals sign.
+// required, omitempty, min, max, between, size and the thirteen format checks
+// are the ones that are there, and each is the method of the same name on a
+// [Check]: the tag interpreter runs the chain above rather than a second copy
+// of it, so the two cannot answer differently.
+//
+// dive says that the rules after it are about the elements rather than about
+// the field, so max=5 counts the tags and required is asked of each one. A
+// failure inside a list is named for where it was, tags.1, and a struct inside
+// one is named the way a nested struct is anywhere else, lines.1.sku.
+//
+// The name a failure comes back under is the name the request used. It comes
+// from the same tags web.Bind reads, which is a path, header, cookie, form or
+// query tag, then the json tag, then the field's own name in snake case, so a
+// field that would not bind and a field that would not validate come back
+// under one name and a form marks one input.
+//
+// A tag this cannot run is a mistake in the program rather than in the request:
+// an unknown rule, a bound that is not a number, a format check on an int. It
+// comes back as an [errs.Internal] naming the field and saying what is wrong
+// with it, on every check of that type rather than only on the requests that
+// fill the field in.
+//
+// [Register] adds a rule of somebody's own to the ones a tag can name. It takes
+// a [Rule], which is a name and a method, and the method is handed a [Field] to
+// look at. A value the rule rejected is recorded with [Field.Fail]. An error
+// returned is something that went wrong outside the request, a lookup that
+// could not be made, and it travels up rather than becoming a 422.
+//
 // # Rules written out in order
 //
 // [New] starts a list of checks for the rules a struct tag cannot say: a rule

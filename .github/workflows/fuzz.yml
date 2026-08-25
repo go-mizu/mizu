@@ -57,6 +57,7 @@ jobs:
           - { pkg: str, target: FuzzIs }
           - { pkg: toml, target: FuzzParse }
           - { pkg: validate, target: FuzzFormats }
+          - { pkg: validate, target: FuzzParseTag }
     steps:
       - uses: actions/checkout@v6
 
