@@ -159,6 +159,27 @@ func BenchmarkParse(b *testing.B) {
 	}
 }
 
+// BenchmarkHelp is the command list for an application with as many commands as
+// a large one has, which is what somebody sees while waiting for it.
+//
+// It sorts and groups every time rather than keeping an ordering, because the
+// list is printed once and building it is a millisecond of a person's attention
+// at most. The number here is what says that is still true.
+func BenchmarkHelp(b *testing.B) {
+	var a App
+	a.Name = "mizu"
+	for i := range 200 {
+		name := fmt.Sprintf("group%d:command%d", i%12, i)
+		a.Add(&simple{name: name, desc: "Does the thing that " + name + " does"})
+	}
+	io := New(strings.NewReader(""), io.Discard, io.Discard, Options{Color: ColorNever})
+
+	b.ReportAllocs()
+	for b.Loop() {
+		a.Help(io)
+	}
+}
+
 // BenchmarkInfo is the cost of a status line, and of the same line when
 // --quiet turned it off. The second one is what a loop that reports progress
 // pays when nobody is reading, which should be close to nothing.

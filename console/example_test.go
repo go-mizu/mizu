@@ -1,6 +1,7 @@
 package console_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -187,6 +188,74 @@ func ExampleParse_usage() {
 	// Output:
 	// unknown flag --dayz, did you mean --days
 	// --days: "soon" is not a number
+}
+
+// greet is a command: fields, a spec that points the flags at them, and a Run
+// that reads them as ordinary Go values.
+type greet struct {
+	loud bool
+	name string
+}
+
+func (c *greet) Spec() console.Spec {
+	return console.Spec{
+		Name: "greet",
+		Desc: "Say hello to somebody",
+		Flags: []console.Flag{
+			{Name: "loud", Desc: "Shout it", Value: console.Bool(&c.loud)},
+		},
+		Args: []console.Arg{
+			{Name: "name", Required: true, Desc: "Who to greet", Value: console.String(&c.name)},
+		},
+	}
+}
+
+func (c *greet) Run(ctx context.Context, io *console.IO) error {
+	hello := "hello, " + c.name
+	if c.loud {
+		hello = strings.ToUpper(hello)
+	}
+	io.Line(hello)
+	return nil
+}
+
+func ExampleApp() {
+	app := &console.App{Name: "hello", Desc: "hello greets people."}
+	app.Add(&greet{})
+
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{Color: console.ColorNever})
+	if err := app.Run(context.Background(), io, []string{"greet", "--loud", "Ada"}); err != nil {
+		io.Error("%v", err)
+	}
+
+	// Output:
+	// HELLO, ADA
+}
+
+// Asking what a command takes is not a failure, so help goes to stdout and the
+// command does not run. The required argument is missing here, which is the
+// usual reason to be asking.
+func ExampleApp_help() {
+	app := &console.App{Name: "hello", Desc: "hello greets people."}
+	app.Add(&greet{})
+
+	io := console.New(strings.NewReader(""), os.Stdout, os.Stdout, console.Options{Color: console.ColorNever})
+	if err := app.Run(context.Background(), io, []string{"help", "greet"}); err != nil {
+		io.Error("%v", err)
+	}
+
+	// Output:
+	// Say hello to somebody
+	//
+	// Usage:
+	//   hello greet [flags] <name>
+	//
+	// Arguments:
+	//   name  Who to greet
+	//
+	// Flags:
+	//       --loud  Shout it
+	//   -h, --help  Show what this command takes
 }
 
 // With no terminal, a prompt takes its default, and a prompt with no default is
