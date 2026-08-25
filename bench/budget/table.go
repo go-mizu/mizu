@@ -43,6 +43,16 @@ var rows = []Row{
 		Time: 3 * time.Microsecond, Allocs: 22,
 	},
 	{
+		ID: "mw/compress", Group: httpPath, Doc: "07",
+		Op:   "gzip an 8 KB HTML page, pooled writer",
+		Time: 15 * time.Microsecond, Allocs: 8,
+	},
+	{
+		ID: "mw/etag", Group: httpPath, Doc: "07",
+		Op:   "Hold an 8 KB page, hash it and answer a matching If-None-Match",
+		Time: 5 * time.Microsecond, Allocs: 9,
+	},
+	{
 		ID: "ctx/acquire", Group: httpPath, Doc: "08",
 		Op:   "web.H around a handler that does nothing: acquire, fill, release",
 		Time: 200 * time.Nanosecond, Allocs: 2,

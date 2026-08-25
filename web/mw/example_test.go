@@ -1,6 +1,7 @@
 package mw_test
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"log/slog"
@@ -269,4 +270,64 @@ func ExampleMethodOverride() {
 	fmt.Println(w.Code, w.Body)
 	// Output:
 	// 200 deleted post 7
+}
+
+func ExampleCompress() {
+	page := strings.Repeat("mizu is water and water is mizu. ", 100)
+
+	h := mw.Compress()(web.H(func(c *web.Ctx) error {
+		return c.Text(page)
+	}))
+
+	r := httptest.NewRequest("GET", "/posts", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	sent := w.Body.Len()
+	gz, err := gzip.NewReader(w.Body)
+	if err != nil {
+		panic(err)
+	}
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Content-Encoding:", w.Header().Get("Content-Encoding"))
+	fmt.Println("Vary:", w.Header().Get("Vary"))
+	fmt.Println("smaller:", sent < len(page))
+	fmt.Println("same page:", string(body) == page)
+	// Output:
+	// Content-Encoding: gzip
+	// Vary: Accept-Encoding
+	// smaller: true
+	// same page: true
+}
+
+func ExampleETag() {
+	// Compress goes outside ETag, so the tag is for the page rather than for
+	// the compression of it, and a client that takes gzip and one that does not
+	// hold the same validator.
+	h := web.Chain(web.H(func(c *web.Ctx) error {
+		return c.Text("the front page")
+	}), mw.Compress(), mw.ETag())
+
+	// The first request builds the page and comes back with a validator.
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, httptest.NewRequest("GET", "/", nil))
+	fmt.Println(first.Code, first.Body.Len(), "bytes")
+
+	// The client sends the validator back and the body stays home.
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("If-None-Match", first.Header().Get("ETag"))
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, r)
+	fmt.Println(second.Code, second.Body.Len(), "bytes")
+
+	fmt.Println("same tag:", second.Header().Get("ETag") == first.Header().Get("ETag"))
+	// Output:
+	// 200 14 bytes
+	// 304 0 bytes
+	// same tag: true
 }

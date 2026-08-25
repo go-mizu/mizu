@@ -68,8 +68,10 @@ func (c *Ctx) Request() *http.Request {
 // so a handler that writes through this rather than through the helpers still
 // gets a sensible answer from [Ctx.StatusCode], still gets an error page rather
 // than a second status, and is still counted by whatever middleware is logging
-// the request. Flushing, hijacking and the deadline calls go through
-// http.ResponseController and reach the server's writer unchanged.
+// the request. Hijacking and the deadline calls go through
+// http.ResponseController and reach the server's writer unchanged. Flushing goes
+// through the Recorder first, so that middleware holding the body sees the flush
+// and lets go of it, and then on to the server's writer.
 func (c *Ctx) Writer() http.ResponseWriter {
 	c.live("Writer")
 	return c.res

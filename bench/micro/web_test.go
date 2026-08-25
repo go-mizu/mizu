@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,20 @@ func init() {
 	register("mw/chain", benchChain)
 	register("mw/requestid", benchRequestID)
 	register("mw/lifecycle", benchLifecycle)
+	register("mw/compress", benchCompress)
+	register("mw/etag", benchETag)
+}
+
+// page is the response the two body middleware are measured against: eight
+// kilobytes of markup, which is a middling server rendered page.
+var page = []byte(strings.Repeat("<p>mizu is water and water is mizu.</p>\n", 200))
+
+// html serves page with a content type on it.
+func html() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(page)
+	})
 }
 
 // benchChain is what a middleware chain costs before any of it does anything.
@@ -97,6 +112,61 @@ func benchLifecycle(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchCompress is gzip over an eight kilobyte page.
+//
+// This is the one middleware whose cost is the work rather than the plumbing,
+// and it is CPU that buys bandwidth. The number to compare it against is what
+// the same page costs to send: at a megabyte a second of link, which is a phone
+// on a bad connection, eight kilobytes is eight milliseconds and this is
+// microseconds.
+//
+// The gzip writer comes from a pool, so what is in the loop is the compression
+// itself, the reset and the header work. A run that shows the allocation count
+// jumping by a 32KB window is a pool that stopped working.
+func benchCompress(b *testing.B) {
+	h := mw.Compress()(html())
+
+	r := httptest.NewRequest("GET", "/things/7", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w := &discardWriter{header: make(http.Header)}
+
+	b.SetBytes(int64(len(page)))
+	b.ReportAllocs()
+	for b.Loop() {
+		// Vary is added rather than set, so the header has to go back to empty
+		// or the slice behind it grows for the length of the run.
+		clear(w.header)
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchETag is the request the middleware exists for: a client that already has
+// the page, and a 304 that costs no body.
+//
+// The work is holding eight kilobytes, one SHA-256 pass over them and the
+// comparison, and it is spent to send nothing at all. The saving is the whole
+// response, so this is worth it at any number that is not absurd, which is why
+// the budget is generous and what it watches for is the shape changing rather
+// than the number moving.
+func benchETag(b *testing.B) {
+	h := mw.ETag()(html())
+
+	// One request to learn the tag, which is what a client would have kept.
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, httptest.NewRequest("GET", "/things/7", nil))
+
+	r := httptest.NewRequest("GET", "/things/7", nil)
+	r.Header.Set("If-None-Match", first.Header().Get("ETag"))
+	w := &discardWriter{header: make(http.Header)}
+
+	b.SetBytes(int64(len(page)))
+	b.ReportAllocs()
+	for b.Loop() {
+		clear(w.header)
 		h.ServeHTTP(w, r)
 	}
 }
