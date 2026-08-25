@@ -48,12 +48,31 @@ func TestCompareFindsAnOperationNobodyMeasures(t *testing.T) {
 // TestCompareFindsARowThatArrivedEarly is the case that would otherwise pass
 // quietly. The benchmark is there, the row is there, and the row still says the
 // work has not started, so the table tells a reader to expect nothing.
+//
+// The row it uses is whichever one is waiting today, for the same reason
+// measuredIDs reads the budget: naming one here means rewriting this test the
+// day that row is measured.
 func TestCompareFindsARowThatArrivedEarly(t *testing.T) {
-	got := compare(append(measuredIDs(), "router/match"))
+	early := waiting(t)
 
-	if len(got) != 1 || !strings.Contains(got[0], "its row says it arrives with M1") {
-		t.Errorf("compare said %v", got)
+	got := compare(append(measuredIDs(), early.ID))
+
+	if len(got) != 1 || !strings.Contains(got[0], "its row says it arrives with "+early.Since) {
+		t.Errorf("compare said %v about %s", got, early.ID)
 	}
+}
+
+// waiting is the first row in the budget that names a milestone it is waiting
+// for, and it skips the test once every row is measured.
+func waiting(t *testing.T) budget.Row {
+	t.Helper()
+	for _, r := range budget.Rows() {
+		if !r.Measured() {
+			return r
+		}
+	}
+	t.Skip("every row is measured, so there is no early arrival to find")
+	return budget.Row{}
 }
 
 func TestCompareSortsWhatItFinds(t *testing.T) {

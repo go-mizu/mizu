@@ -1,0 +1,1 @@
+error: bad pattern "{host}/x": "{host}" reads as the host, so the path is missing the / it starts with

@@ -53,6 +53,7 @@ jobs:
           - { pkg: crypt, target: FuzzRoundTrip }
           - { pkg: hash, target: FuzzBcrypt }
           - { pkg: hash, target: FuzzVerify }
+          - { pkg: router, target: FuzzMatchesServeMux }
           - { pkg: str, target: FuzzIs }
           - { pkg: toml, target: FuzzParse }
     steps:

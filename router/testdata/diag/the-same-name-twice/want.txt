@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/{id}/comments/{id}": "id" names two wildcards, and each one is a different piece of the path

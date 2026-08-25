@@ -43,14 +43,16 @@ func TestTableIsMarkdownAllTheWayDown(t *testing.T) {
 	}
 }
 
+// Both halves of the last column, read off the budget rather than written down,
+// so that measuring a row is a change to one file.
 func TestTableSaysWhichMilestoneBringsARow(t *testing.T) {
 	got := table()
 
-	if !strings.Contains(got, "| `router/match` |") || !strings.Contains(got, "| 07 | M1 |") {
-		t.Errorf("the table does not say router/match arrives with M1:\n%s", got)
-	}
-	if !strings.Contains(got, "| 06 | measured |") {
-		t.Errorf("the table does not say which rows are measured now:\n%s", got)
+	for _, r := range budget.Rows() {
+		want := "| " + r.Doc + " | " + arrives(r.Since) + " |"
+		if !strings.Contains(got, want) {
+			t.Errorf("the table has no row reading %q, and %s is one:\n%s", want, r.ID, got)
+		}
 	}
 }
 

@@ -1,0 +1,1 @@
+error: "/posts/latest" answers more methods than "GET /posts/{id}", registered at app/routes.go:1, and matches fewer paths than it, so neither of them is the one to prefer

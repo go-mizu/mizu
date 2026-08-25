@@ -1,0 +1,1 @@
+error: bad pattern "GET /files/{path...:slug}": {path...} takes the rest of the path, and a constraint reads one segment

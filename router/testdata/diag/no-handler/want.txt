@@ -1,0 +1,1 @@
+error: GET /posts has no handler, and a route with nothing to run is a route nobody meant to write

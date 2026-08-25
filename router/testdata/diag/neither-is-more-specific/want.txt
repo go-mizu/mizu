@@ -1,0 +1,1 @@
+error: "GET /{kind}/latest/edit" and "GET /posts/{id}/edit", registered at app/routes.go:1, both match "/posts/latest/edit", and neither of them is the more specific

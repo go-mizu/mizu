@@ -10,14 +10,15 @@ import "time"
 // the two drift apart.
 var rows = []Row{
 	// The HTTP path. The design is doc 07 and doc 08, which arrive with M1, so
-	// nothing here is measured yet.
+	// the router rows are measured and the rest of it is waiting on the package
+	// that will do the work.
 	{
-		ID: "router/match", Group: httpPath, Doc: "07", Since: "M1",
+		ID: "router/match", Group: httpPath, Doc: "07",
 		Op:   "Match a 3-segment path with 2 parameters in a 400-route table",
 		Time: 300 * time.Nanosecond, Allocs: 0,
 	},
 	{
-		ID: "router/miss", Group: httpPath, Doc: "07", Since: "M1",
+		ID: "router/miss", Group: httpPath, Doc: "07",
 		Op:   "Non-matching path, 400-route table",
 		Time: 250 * time.Nanosecond, Allocs: 0,
 	},

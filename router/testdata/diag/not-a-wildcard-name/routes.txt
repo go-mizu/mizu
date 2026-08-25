@@ -1,0 +1,1 @@
+GET /posts/{post-id}

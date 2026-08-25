@@ -1,0 +1,1 @@
+error: bad pattern "GET /posts/{$}/edit": {$} says the path ends there, so nothing can come after it
