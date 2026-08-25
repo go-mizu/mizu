@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/json"
-	"flag"
+	"context"
 	"fmt"
-	"io"
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
+
+	"github.com/go-mizu/mizu/console"
 )
 
 // version is what mizu knows about itself.
@@ -27,6 +28,13 @@ type version struct {
 	OS       string `json:"os"`
 	Arch     string `json:"arch"`
 }
+
+// self is what this binary was built from.
+//
+// It is read once because debug.ReadBuildInfo parses the embedded table every
+// time it is called, and both the --version flag and the version command want
+// the same answer out of it.
+var self = sync.OnceValue(func() version { return versionOf(debug.ReadBuildInfo()) })
 
 // versionOf reads what it can out of build info. Info is nil when the binary
 // was built in a way that strips it, which is rare and not worth an error, so
@@ -94,28 +102,33 @@ func short(rev string) string {
 	return rev
 }
 
-func runVersion(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	asJSON := fs.Bool("json", false, "print the version as a JSON object")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, "Usage: mizu version [-json]\n\nPrint version information.\n\nFlags:\n")
-		fs.PrintDefaults()
-	}
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("version takes no arguments, got %q", fs.Arg(0))
-	}
+// Version prints what mizu knows about itself.
+type Version struct{}
 
-	v := versionOf(debug.ReadBuildInfo())
-	if !*asJSON {
-		_, err := io.WriteString(stdout, v.String())
-		return err
+func (c *Version) Spec() console.Spec {
+	return console.Spec{
+		Name: "version",
+		Desc: "Print version information",
+		Long: versionLong,
 	}
-
-	enc := json.NewEncoder(stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
 }
+
+func (c *Version) Run(ctx context.Context, io *console.IO) error {
+	v := self()
+	if io.JSONMode() {
+		return io.JSON(v)
+	}
+	io.Print("%s", v.String())
+	return nil
+}
+
+const versionLong = `Every fact here comes from the build information the compiler embeds, so a
+binary reports what it was built from without anything having been passed at
+build time.
+
+A binary from go install carries the module version it was installed at. One
+built from a checkout carries the commit and the time instead, and says dirty
+when the tree had uncommitted changes in it.
+
+Run it with --json for the same facts as an object, which is what to paste into
+a bug report.`

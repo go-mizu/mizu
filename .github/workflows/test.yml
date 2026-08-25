@@ -191,7 +191,7 @@ jobs:
           fi
 
       - name: Show what the binary says about itself
-        run: "$RUNNER_TEMP/mizu.1 version -json"
+        run: "$RUNNER_TEMP/mizu.1 version --json"
 
   # tools/milestonebot is a nested module, so `go test ./...` at the root does
   # not reach it. It runs the label file through its own validator, which is

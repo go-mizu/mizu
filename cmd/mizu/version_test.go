@@ -6,6 +6,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+
+	"github.com/go-mizu/mizu/console"
+	"github.com/go-mizu/mizu/console/consoletest"
 )
 
 func TestVersionOf(t *testing.T) {
@@ -143,14 +146,12 @@ func TestVersionString(t *testing.T) {
 	}
 }
 
-func TestRunVersionText(t *testing.T) {
-	var out, errOut strings.Builder
-	if err := run([]string{"version"}, &out, &errOut); err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+func TestVersionCommand(t *testing.T) {
+	r := consoletest.Run(t, &Version{}, consoletest.Args()).AssertSuccess()
+
+	lines := strings.Split(strings.TrimRight(r.Stdout(), "\n"), "\n")
 	if len(lines) != 2 {
-		t.Fatalf("output has %d lines, want 2:\n%s", len(lines), out.String())
+		t.Fatalf("output has %d lines, want 2:\n%s", len(lines), r.Stdout())
 	}
 	if !strings.HasPrefix(lines[0], "mizu ") {
 		t.Errorf("first line = %q, want it to start with mizu", lines[0])
@@ -158,20 +159,18 @@ func TestRunVersionText(t *testing.T) {
 	if !strings.Contains(lines[1], runtime.GOARCH) {
 		t.Errorf("second line = %q, want it to name the architecture", lines[1])
 	}
-	if errOut.Len() != 0 {
-		t.Errorf("wrote %q to stderr", errOut.String())
-	}
+	r.AssertNoErrorOutput()
 }
 
-func TestRunVersionJSON(t *testing.T) {
-	var out, errOut strings.Builder
-	if err := run([]string{"version", "-json"}, &out, &errOut); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+func TestVersionCommandJSON(t *testing.T) {
+	r := consoletest.Run(t, &Version{},
+		consoletest.Args(),
+		consoletest.With(console.Options{JSON: true}),
+	).AssertSuccess()
 
 	var v version
-	if err := json.Unmarshal([]byte(out.String()), &v); err != nil {
-		t.Fatalf("output is not JSON: %v\n%s", err, out.String())
+	if err := json.Unmarshal([]byte(r.Stdout()), &v); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, r.Stdout())
 	}
 	if v.Version == "" {
 		t.Error("version field is empty")
@@ -182,25 +181,32 @@ func TestRunVersionJSON(t *testing.T) {
 	if v.OS != runtime.GOOS || v.Arch != runtime.GOARCH {
 		t.Errorf("os/arch = %s/%s, want %s/%s", v.OS, v.Arch, runtime.GOOS, runtime.GOARCH)
 	}
+}
 
-	// The double dash form is the one people type. The flag package takes
-	// both, and a test says so rather than leaving it to be discovered.
-	var out2 strings.Builder
-	if err := run([]string{"version", "--json"}, &out2, &errOut); err != nil {
-		t.Fatalf("run with --json: %v", err)
-	}
-	if out2.String() != out.String() {
-		t.Error("-json and --json gave different output")
+// --json is a global flag, so it means the same thing on either side of the
+// command name and no command has to declare it.
+func TestVersionJSONIsGlobal(t *testing.T) {
+	for _, argv := range [][]string{
+		{"version", "--json"},
+		{"--json", "version"},
+	} {
+		out, errOut := say(t)
+		if code := newApp().Start(t.Context(), nil, out, errOut, argv); code != console.CodeOK {
+			t.Fatalf("%v exited %d: %s", argv, code, errOut)
+		}
+		var v version
+		if err := json.Unmarshal(out.Bytes(), &v); err != nil {
+			t.Errorf("%v printed something that is not JSON: %v\n%s", argv, err, out)
+		}
 	}
 }
 
-func TestRunVersionRejectsArguments(t *testing.T) {
-	var out, errOut strings.Builder
-	err := run([]string{"version", "extra"}, &out, &errOut)
-	if err == nil {
-		t.Fatal("version accepted a positional argument")
+func TestVersionTakesNoArguments(t *testing.T) {
+	out, errOut := say(t)
+	if code := newApp().Start(t.Context(), nil, out, errOut, []string{"version", "extra"}); code != console.CodeUsage {
+		t.Fatalf("exited %d, want %d", code, console.CodeUsage)
 	}
-	if !strings.Contains(err.Error(), "extra") {
-		t.Errorf("error = %q, want it to name the argument", err)
+	if !strings.Contains(errOut.String(), "extra") {
+		t.Errorf("the error does not name the argument:\n%s", errOut)
 	}
 }

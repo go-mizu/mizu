@@ -1,75 +1,115 @@
 package main
 
 import (
-	"flag"
+	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/go-mizu/mizu/console"
 )
 
-func TestRunWithNoArgumentsPrintsUsage(t *testing.T) {
-	var out, errOut strings.Builder
-	if err := run(nil, &out, &errOut); err != nil {
-		t.Fatalf("run: %v", err)
+// say returns the two streams a command line writes to. Buffers rather than
+// the process's own, which is the whole reason [console.App.Start] exists next
+// to [console.App.Main].
+func say(tb testing.TB) (out, errOut *bytes.Buffer) {
+	tb.Helper()
+	return new(bytes.Buffer), new(bytes.Buffer)
+}
+
+// start runs a command line and returns what it printed and the code a process
+// would have exited with.
+func start(tb testing.TB, argv ...string) (out, errOut *bytes.Buffer, code int) {
+	tb.Helper()
+	out, errOut = say(tb)
+	return out, errOut, newApp().Start(tb.Context(), nil, out, errOut, argv)
+}
+
+// Registration is where a command with no name or a name already taken is
+// found, and it panics. Building the app in a test is what makes that a test
+// failure rather than something the first person to run the binary discovers.
+func TestTheAppBuilds(t *testing.T) {
+	a := newApp()
+	if a.Name != "mizu" {
+		t.Errorf("the app is called %q", a.Name)
 	}
-	for _, want := range []string{"Usage:", "version"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("usage does not mention %q:\n%s", want, out.String())
-		}
-	}
-	if errOut.Len() != 0 {
-		t.Errorf("usage went to stderr: %q", errOut.String())
+	if a.Version == "" {
+		t.Error("the app has no version, so --version says nothing")
 	}
 }
 
-func TestRunHelpForms(t *testing.T) {
-	for _, arg := range []string{"help", "-h", "--help"} {
-		t.Run(arg, func(t *testing.T) {
-			var out, errOut strings.Builder
-			if err := run([]string{arg}, &out, &errOut); err != nil {
-				t.Fatalf("run: %v", err)
+func TestNoArgumentsPrintsHelp(t *testing.T) {
+	out, errOut, code := start(t)
+	if code != console.CodeOK {
+		t.Fatalf("exited %d", code)
+	}
+	for _, want := range []string{"mizu", "hash:tune", "version"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the help does not mention %q:\n%s", want, out)
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("help went to stderr: %q", errOut)
+	}
+}
+
+func TestHelpForms(t *testing.T) {
+	for _, argv := range [][]string{{"help"}, {"-h"}, {"--help"}, {"help", "version"}} {
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			out, _, code := start(t, argv...)
+			if code != console.CodeOK {
+				t.Fatalf("exited %d", code)
 			}
-			if !strings.Contains(out.String(), "Usage:") {
-				t.Errorf("%s printed no usage:\n%s", arg, out.String())
+			if !strings.Contains(out.String(), "version") {
+				t.Errorf("printed no help:\n%s", out)
 			}
 		})
 	}
 }
 
-func TestRunUnknownCommand(t *testing.T) {
-	var out, errOut strings.Builder
-	err := run([]string{"serve"}, &out, &errOut)
-	if err == nil {
-		t.Fatal("unknown command was accepted")
+func TestUnknownCommand(t *testing.T) {
+	_, errOut, code := start(t, "verison")
+	if code != console.CodeUsage {
+		t.Fatalf("exited %d, want %d", code, console.CodeUsage)
 	}
-	if !strings.Contains(err.Error(), "serve") {
-		t.Errorf("error = %q, want it to name the command", err)
-	}
-	if !strings.Contains(err.Error(), "mizu help") {
-		t.Errorf("error = %q, want it to point at mizu help", err)
+	// The suggestion is the point. A typo one letter away from a real command
+	// should not send somebody to the help.
+	if !strings.Contains(errOut.String(), "version") {
+		t.Errorf("nothing suggested the command they meant:\n%s", errOut)
 	}
 }
 
-// A -h on a subcommand comes back as flag.ErrHelp, which main turns into exit
-// status 2 rather than an error message. The flag package has already printed
-// the usage by then, so printing anything else would say it twice.
-func TestSubcommandHelpReturnsErrHelp(t *testing.T) {
-	var out, errOut strings.Builder
-	err := run([]string{"version", "-h"}, &out, &errOut)
-	if err != flag.ErrHelp {
-		t.Fatalf("run returned %v, want flag.ErrHelp", err)
-	}
-	if !strings.Contains(errOut.String(), "-json") {
-		t.Errorf("usage does not mention the flag:\n%s", errOut.String())
-	}
-}
-
-func TestEveryCommandHasASummary(t *testing.T) {
-	for _, c := range commands {
-		if c.name == "" || c.summary == "" || c.run == nil {
-			t.Errorf("command %+v is missing a field", c)
+// The global flags are listed in the help a program prints, so somebody who has
+// only ever run mizu can find out that --json exists.
+func TestHelpListsTheGlobalFlags(t *testing.T) {
+	out, _, _ := start(t, "--help")
+	for _, want := range []string{"--verbose", "--json", "--profile", "--trace"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the help does not mention %q:\n%s", want, out)
 		}
-		if strings.HasSuffix(c.summary, ".") {
-			t.Errorf("summary %q ends in a full stop, and the usage list reads better without", c.summary)
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	out, _, code := start(t, "--version")
+	if code != console.CodeOK {
+		t.Fatalf("exited %d", code)
+	}
+	if !strings.HasPrefix(out.String(), "mizu ") {
+		t.Errorf("--version printed %q", out)
+	}
+}
+
+// Every command's help is read by somebody who has not run it yet, so the two
+// lines it is described by are worth holding to a shape.
+func TestEveryCommandDescribesItself(t *testing.T) {
+	for _, argv := range [][]string{{"help", "hash:tune"}, {"help", "version"}} {
+		out, _, code := start(t, argv...)
+		if code != console.CodeOK {
+			t.Errorf("%v exited %d", argv, code)
+			continue
+		}
+		if !strings.Contains(out.String(), "Usage:") {
+			t.Errorf("%v printed no usage line:\n%s", argv, out)
 		}
 	}
 }

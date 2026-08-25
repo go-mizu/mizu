@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
+	"github.com/go-mizu/mizu/console"
 	"github.com/go-mizu/mizu/hash"
 )
 
@@ -46,62 +44,52 @@ func tuningOf(t hash.Tuning) tuning {
 	}
 }
 
-func runHashTune(args []string, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("hash:tune", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	target := fs.Duration("target", 250*time.Millisecond, "how long one hash should take")
-	passes := fs.Int("passes", 2, "argon2id passes, held fixed while the memory is tuned")
-	lanes := fs.Int("lanes", 1, "argon2id lanes, held fixed while the memory is tuned")
-	asJSON := fs.Bool("json", false, "print the result as a JSON object")
-	fs.Usage = func() {
-		fmt.Fprint(stderr, tuneUsage)
-		fs.PrintDefaults()
-	}
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return fmt.Errorf("hash:tune takes no arguments, got %q", fs.Arg(0))
-	}
+// HashTune measures argon2id on this machine and prints the cost to configure.
+type HashTune struct {
+	Target time.Duration
+	Passes int
+	Lanes  int
+}
 
+func (c *HashTune) Spec() console.Spec {
+	return console.Spec{
+		Name: "hash:tune",
+		Desc: "Measure argon2id on this machine",
+		Long: tuneLong,
+		Flags: []console.Flag{
+			{Name: "target", Default: "250ms", Desc: "How long one hash should take", Value: console.Duration(&c.Target)},
+			{Name: "passes", Default: "2", Desc: "Argon2id passes, held fixed while the memory is tuned", Value: console.Int(&c.Passes)},
+			{Name: "lanes", Default: "1", Desc: "Argon2id lanes, held fixed while the memory is tuned", Value: console.Int(&c.Lanes)},
+		},
+	}
+}
+
+func (c *HashTune) Run(ctx context.Context, io *console.IO) error {
 	// The command hashes for several seconds and prints nothing while it does,
-	// which reads as a hang. The note goes to stderr so that -json still writes
+	// which reads as a hang. The note goes to stderr, so --json still writes
 	// one object to stdout and nothing else.
-	fmt.Fprintf(stderr, "Measuring argon2id on this machine, aiming for %v a hash. This takes a few seconds.\n", *target)
+	io.Info("Measuring argon2id on this machine, aiming for %v a hash. This takes a few seconds.", c.Target)
 
-	// A context that is never canceled, because nothing here cancels one yet.
-	// Commands take their arguments and their streams and nothing else, and
-	// giving them a context to carry a deadline and a signal is part of the
-	// command structs in M0-10 rather than something to invent here.
-	t, err := hash.Tune(context.Background(), hash.Target{Duration: *target, Passes: *passes, Lanes: *lanes})
+	t, err := hash.Tune(ctx, hash.Target{Duration: c.Target, Passes: c.Passes, Lanes: c.Lanes})
 	if err != nil {
 		return err
 	}
 
-	if *asJSON {
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(tuningOf(t))
+	if io.JSONMode() {
+		return io.JSON(tuningOf(t))
 	}
-	_, err = io.WriteString(stdout, report(t))
-	return err
+	io.Print("%s", report(t))
+	return nil
 }
 
-const tuneUsage = `Usage: mizu hash:tune [-target=250ms] [-passes=2] [-lanes=1] [-json]
-
-Measure argon2id on this machine and print the cost to configure.
-
-It raises the memory until one hash takes about the target, because memory is
+const tuneLong = `It raises the memory until one hash takes about the target, because memory is
 what a machine built to guess passwords is short of. The answer is never below
 the 19 MiB, two passes and one lane that OWASP recommends.
 
 Run it on the machine that will run the application. A cost measured on a build
 server and deployed to a smaller instance is a slow login with no explanation.
 Where that is not possible, set GOMEMLIMIT to what the smaller machine has and
-run it here, which at least gets the concurrency right.
-
-Flags:
-`
+run it here, which at least gets the concurrency right.`
 
 // plural counts something in a sentence somebody has to read. The second word
 // is the plural where adding an s does not give it.

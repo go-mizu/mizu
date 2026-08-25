@@ -1,4 +1,6 @@
 # Go build outputs
+# go build ./cmd/... leaves the binary here, named after its directory.
+/mizu
 *.exe
 *.exe~
 *.dll

@@ -87,6 +87,25 @@ type App struct {
 	// same name.
 	Globals []Flag
 
+	// Before, when it is set, runs after a command line has been understood
+	// and before the command does anything, and what it returns runs once the
+	// command has finished, whether it worked or not.
+	//
+	// It is where the work that belongs to every command goes: reading the
+	// configuration the global flags point at, opening what the commands
+	// share, starting a profile. The context it returns is the one the command
+	// is given, which is how what it opened gets there, and a nil context
+	// leaves the one it was handed alone.
+	//
+	// It does not run for --help, for an unknown command, or for a command
+	// line that did not parse. Somebody asking what a command takes should not
+	// wait for a database to answer first, and a program that cannot start is
+	// a worse answer to a typo than the typo.
+	//
+	// An error stops the command from running and is reported the way the
+	// command's own would be, so it can pick an exit code with [Exit].
+	Before func(ctx context.Context, c *IO) (context.Context, func(), error)
+
 	cmds []entry
 
 	// globals is what Start parsed, kept so that help can list them. Help
@@ -177,6 +196,19 @@ func (a *App) Run(ctx context.Context, c *IO, argv []string) error {
 	}
 	if err := Parse(e.spec.Flags, e.spec.Args, rest); err != nil {
 		return err
+	}
+
+	if a.Before != nil {
+		next, done, err := a.Before(ctx, c)
+		if err != nil {
+			return err
+		}
+		if next != nil {
+			ctx = next
+		}
+		if done != nil {
+			defer done()
+		}
 	}
 	return e.cmd.Run(ctx, c)
 }

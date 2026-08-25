@@ -135,7 +135,7 @@ jobs:
           TAG="${GITHUB_REF#refs/tags/}"
           go build -trimpath -o "$RUNNER_TEMP/mizu" ./cmd/mizu
           "$RUNNER_TEMP/mizu" version
-          got=$("$RUNNER_TEMP/mizu" version -json | grep '"version"' | cut -d'"' -f4)
+          got=$("$RUNNER_TEMP/mizu" version --json | grep '"version"' | cut -d'"' -f4)
           echo "binary reports $got, tag is $TAG"
 
       - uses: actions/upload-artifact@v5
