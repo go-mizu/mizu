@@ -301,6 +301,42 @@
 // [github.com/go-mizu/mizu/view]'s job and escaping what goes into one is the
 // template package's.
 //
+// # Returning a response instead of writing one
+//
+// A [Responder] is a value that knows how to send itself, and [R] adapts a
+// handler that returns one:
+//
+//	type postView struct{ post Post }
+//
+//	func (v postView) Respond(c *web.Ctx) error {
+//		return web.JSON(c, v.post)
+//	}
+//
+//	func show(c *web.Ctx) (postView, error) {
+//		p, err := posts.Find(c.Context(), c.Param("id"))
+//		if err != nil {
+//			return postView{}, err
+//		}
+//		return postView{p}, nil
+//	}
+//
+//	r.Handle("GET /posts/{id}", web.H(web.R(show)))
+//
+// What that buys is a handler that is a function from a request to a value. A
+// test calls show and reads the value, with no recorder and no parse in
+// between, and the code that turns a post into bytes is written once rather
+// than at the end of every handler that has one.
+//
+// R takes the return type as a type parameter, so show names its own view type
+// rather than the interface, and a handler that returns the wrong one does not
+// compile. A handler with more than one answer names Responder and returns
+// whichever it has.
+//
+// Neither shape is the blessed one. A handler that writes and returns an error
+// is shorter for the response that is one line, and this is worth having when
+// the same value is returned from several places or when what it looks like is
+// worth testing on its own.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Storing an

@@ -449,3 +449,47 @@ func ExampleBinder() {
 	// Output:
 	// "water" [go web] page 2
 }
+
+// stockView is what a handler returns when the response is a value rather than
+// a write. The handler decides what the answer is and this decides what it
+// looks like, so a test can call one without going near the other.
+type stockView struct {
+	name string
+	left int
+}
+
+func (v stockView) Respond(c *web.Ctx) error {
+	if v.left == 0 {
+		return c.Status(http.StatusGone).Text(v.name + " is gone")
+	}
+	return c.Text(fmt.Sprintf("%s: %d left", v.name, v.left))
+}
+
+// R adapts a handler that returns its response, which is the shape where the
+// handler is a function from a request to a value and the writing is somewhere
+// else. The return type is the handler's own, not the interface, because R
+// takes it as a type parameter.
+func ExampleR() {
+	show := func(c *web.Ctx) (stockView, error) {
+		switch c.Param("name") {
+		case "water":
+			return stockView{"water", 12}, nil
+		case "ice":
+			return stockView{"ice", 0}, nil
+		}
+		return stockView{}, errs.New(errs.NotFound, "stock.unknown", "no such thing")
+	}
+
+	r := router.New()
+	r.Handle("GET /stock/{name}", web.H(web.R(show)))
+
+	for _, name := range []string{"water", "ice"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", "/stock/"+name, nil))
+		fmt.Println(w.Code, w.Body)
+	}
+
+	// Output:
+	// 200 water: 12 left
+	// 410 ice is gone
+}
