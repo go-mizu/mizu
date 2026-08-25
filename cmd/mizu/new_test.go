@@ -97,7 +97,11 @@ func TestNewWritesACLIProject(t *testing.T) {
 	if got := tree(t, dir); !slices.Equal(got, wanted) {
 		t.Errorf("wrote %v, want %v", got, wanted)
 	}
-	if main := read(t, filepath.Join(dir, "main.go")); !strings.Contains(main, `Name: "greeter"`) {
+	// The two facts are checked apart from each other because the field is in
+	// a struct literal, and gofmt moves the value along when a longer field
+	// name lands next to it.
+	main := read(t, filepath.Join(dir, "main.go"))
+	if !strings.Contains(main, "console.App{") || !strings.Contains(main, `"greeter"`) {
 		t.Errorf("main.go does not name the app:\n%s", main)
 	}
 	res.AssertErrorContains("go run . greet ada")
@@ -517,6 +521,10 @@ func resolve(t *testing.T, dir string) {
 	gocmd(t, dir, "mod", "edit",
 		"-require=github.com/go-mizu/mizu@v0.0.0",
 		"-replace=github.com/go-mizu/mizu="+root(t))
+	// The tidy is here rather than left to the first build because a go command
+	// that is only reading, go list among them, refuses to run against a go.mod
+	// that is not finished.
+	gocmd(t, dir, "mod", "tidy")
 }
 
 func gocmd(t *testing.T, dir string, args ...string) {

@@ -47,3 +47,15 @@ func TestHelpListsEveryCommand(t *testing.T) {
 		t.Errorf("help does not mention greet:\n%s", &out)
 	}
 }
+
+// The version is the one answer a bug report is worth nothing without, so it
+// is worth a test that it comes out at all. What it says depends on how the
+// binary was built, and go test builds this one from a checkout, so the value
+// is not something to assert on.
+func TestVersion(t *testing.T) {
+	r := consoletest.Run(t, &Version{}, consoletest.Args()).AssertSuccess()
+
+	if !strings.HasPrefix(r.Stdout(), "{{.Name}} ") {
+		t.Errorf("version printed %q", r.Stdout())
+	}
+}

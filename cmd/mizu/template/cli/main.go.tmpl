@@ -4,6 +4,8 @@ package main
 import (
 	"context"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/go-mizu/mizu/console"
@@ -20,11 +22,26 @@ func main() {
 // is an app whose commands are already filled in.
 func newApp() *console.App {
 	app := &console.App{
-		Name: "{{.Name}}",
-		Desc: "What this tool does, in one line",
+		Name:    "{{.Name}}",
+		Desc:    "What this tool does, in one line",
+		Version: buildVersion(),
 	}
-	app.Add(&Greet{})
+	app.Add(&Greet{}, &Version{})
 	return app
+}
+
+// buildVersion is what this binary was built from.
+//
+// It comes out of the table the compiler already embeds, so there are no
+// -ldflags to remember and nothing to keep in step: a binary from go install
+// carries the module version it was installed at, and one built from a
+// checkout carries "(devel)".
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" {
+		return "unknown"
+	}
+	return info.Main.Version
 }
 
 // Greet is one command.
@@ -61,5 +78,33 @@ func (c *Greet) Run(ctx context.Context, io *console.IO) error {
 		hello = strings.ToUpper(hello)
 	}
 	io.Line(hello)
+	return nil
+}
+
+// Version is the first thing anybody types at a binary they did not build, and
+// the answer a bug report is worth nothing without.
+//
+// The JSON form is there because --json is a global flag, so every command
+// takes it whether or not it does anything with it, and one that takes it and
+// then prints a line for a person is one a script cannot read.
+type Version struct{}
+
+func (c *Version) Spec() console.Spec {
+	return console.Spec{
+		Name: "version",
+		Desc: "Print what this was built from",
+	}
+}
+
+func (c *Version) Run(ctx context.Context, io *console.IO) error {
+	if io.JSONMode() {
+		return io.JSON(map[string]string{
+			"version": buildVersion(),
+			"go":      runtime.Version(),
+			"os":      runtime.GOOS,
+			"arch":    runtime.GOARCH,
+		})
+	}
+	io.Print("{{.Name}} %s %s %s/%s\n", buildVersion(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return nil
 }
