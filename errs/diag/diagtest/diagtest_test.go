@@ -293,6 +293,29 @@ func TestADirectoryWithNoCaseDirectoriesIsEmpty(t *testing.T) {
 	}
 }
 
+// A corpus that has lost its entries passes every test in its package and
+// tests nothing, and the usual cause is a directory that got renamed.
+func TestRunGivesUpOnACorpusWithNothingInIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), nil, 0o666); err != nil {
+		t.Fatal(err)
+	}
+
+	r := watch(t, func(tb testing.TB) { plan(tb, dir) })
+	if got := r.only(t); !strings.Contains(got, "holds no cases") {
+		t.Errorf("says %q, want it to say the corpus is empty", got)
+	}
+}
+
+func TestRunGivesUpOnACorpusThatIsNotThere(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "testdata", "diag")
+
+	r := watch(t, func(tb testing.TB) { plan(tb, dir) })
+	if got := r.only(t); !strings.Contains(got, dir) {
+		t.Errorf("says %q, want it to name the directory", got)
+	}
+}
+
 func TestLinesDropsBlanksAndComments(t *testing.T) {
 	_, c := corpus(t, map[string]string{
 		"args": "# what this checks\nusers:prune\n\n--days\nsoon\r\n\n# and nothing else\n",

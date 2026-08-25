@@ -118,16 +118,30 @@ func (c Case) Lines(tb testing.TB, name string) []string {
 func Run(t *testing.T, dir string, fn func(tb testing.TB, c Case) error) {
 	t.Helper()
 
-	cases, err := cases(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) == 0 {
-		t.Fatalf("%s holds no cases", dir)
-	}
-	for _, c := range cases {
+	for _, c := range plan(t, dir) {
 		t.Run(c.Name, func(t *testing.T) { c.verify(t, fn) })
 	}
+}
+
+// plan is the cases [Run] is about to run, and the place it gives up if there
+// are none.
+//
+// It takes a [testing.TB] for the same reason [Case.verify] does, which is that
+// a harness nobody can point at a broken corpus is a harness with a broken
+// corpus in it.
+func plan(tb testing.TB, dir string) []Case {
+	tb.Helper()
+
+	cases, err := cases(dir)
+	if err != nil {
+		tb.Fatal(err)
+		return nil
+	}
+	if len(cases) == 0 {
+		tb.Fatalf("%s holds no cases", dir)
+		return nil
+	}
+	return cases
 }
 
 // cases lists the case directories under dir, in name order, which is what
@@ -195,12 +209,12 @@ func (c Case) report(tb testing.TB, fn func(tb testing.TB, c Case) error) string
 // to read, and it is the same everywhere.
 func (c Case) trim(report string) string {
 	report = strings.ReplaceAll(report, c.Dir+string(filepath.Separator), "")
-	if filepath.Separator != '/' {
-		// A producer that built the path itself, with a slash, rather than
-		// asking the case for it.
-		report = strings.ReplaceAll(report, filepath.ToSlash(c.Dir)+"/", "")
-	}
-	return report
+
+	// Again for a producer that built the path itself, with a slash, rather
+	// than asking the case for it. Where the separator is already a slash this
+	// is the same replacement twice, which costs one pass over a short string
+	// and saves a branch that only one platform would ever take.
+	return strings.ReplaceAll(report, filepath.ToSlash(c.Dir)+"/", "")
 }
 
 // source is where [diag.Text] reads the lines it quotes.
