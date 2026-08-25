@@ -1,4 +1,3 @@
-// File: router_test.go
 package mizu
 
 import (
