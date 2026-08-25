@@ -103,6 +103,20 @@ func BenchmarkListSort(b *testing.B) {
 	}
 }
 
+// A registry lookup is a binary search over a slice that is kept in order, so
+// it allocates nothing and it does not get slower in a way anybody will notice
+// as the table grows. There is no budget row for it because there is nothing to
+// promise: an operation that is a handful of comparisons is not a number worth
+// arguing about, and if it ever becomes one the fix is a map.
+func BenchmarkLookup(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, ok := diag.Lookup("MZ1042"); !ok {
+			b.Fatal("MZ1042 is not in the registry")
+		}
+	}
+}
+
 // Unwrapping is what a command does once, at the top, to decide how to print
 // what came back up.
 func BenchmarkOf(b *testing.B) {

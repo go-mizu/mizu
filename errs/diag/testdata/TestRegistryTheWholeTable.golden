@@ -1,0 +1,18 @@
+MZ1000-MZ1999  configuration (doc 05)
+MZ2000-MZ2999  the database, the query builder and the ORM (doc 11)
+MZ3000-MZ3999  HTTP routing, binding, validation and responses (doc 07)
+MZ4000-MZ4999  RPC and gRPC (doc 38)
+MZ5000-MZ5999  views, assets and frontend interoperability (doc 09)
+MZ6000-MZ6999  sessions, authentication, authorization and crypto (doc 10)
+MZ7000-MZ7999  caches, locks, queues, jobs, the scheduler and events (doc 15)
+MZ8000-MZ8999  mail, notifications, storage, telemetry, translations and flags (doc 19)
+MZ9000-MZ9999  the toolchain, the console and the generators (doc 23)
+
+MZ1001  a configuration file is named but cannot be read
+MZ1002  a configuration file is not valid TOML
+MZ1003  an environment file has a line that is not a setting
+MZ1004  a setting holds a value of the wrong kind for the field that reads it
+MZ1005  a setting a program asked for is not set in any source
+MZ1006  a command line flag was given with no value after it
+MZ1007  a setting reads its value from a command and running commands is turned off
+MZ1042  a setting is written down that nothing asked for
