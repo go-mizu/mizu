@@ -1,0 +1,39 @@
+# {{.Name}}
+
+A command line tool built on [mizu](https://github.com/go-mizu/mizu)'s `console`
+package.
+
+## Running it
+
+```
+go mod tidy
+go run . greet ada
+go run . greet --loud ada
+go run . --help
+```
+
+## Testing it
+
+```
+go test ./...
+```
+
+A command is tested by calling it, not by starting a process. `consoletest`
+gives it streams it can read back and returns what it wrote along with the code
+it would have exited with, so a test is a function call.
+
+## What is here
+
+```
+main.go       the app, and the one command on it
+main_test.go  a test for each way that command can be run
+go.mod        the module
+```
+
+Every command is a struct with a `Spec` and a `Run`. The fields are where its
+flags and arguments parse into, which is why `Run` takes nothing beyond the
+context and the streams. Adding a command means adding a struct and a line in
+`newApp`.
+
+Every command also takes `--verbose`, `--quiet`, `--json`, `--color`,
+`--no-color`, `--no-interaction` and `--timeout` without declaring them.

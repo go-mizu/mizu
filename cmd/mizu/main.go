@@ -1,7 +1,8 @@
 // Command mizu is the toolkit's command line tool.
 //
-// It does four things today.
+// It does five things today.
 //
+//	mizu new              write a new project that builds, tests and runs
 //	mizu gen              write what the markers in a project ask for
 //	mizu gen --check      report what is out of date and write nothing
 //	mizu doctor           check the project and say what is wrong with it
@@ -48,6 +49,7 @@ func newApp() *console.App {
 		&Doctor{},
 		&Gen{},
 		&HashTune{},
+		&New{},
 		&Version{},
 	)
 	for _, g := range generators {

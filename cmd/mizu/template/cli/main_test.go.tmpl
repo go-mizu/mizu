@@ -1,0 +1,49 @@
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/go-mizu/mizu/console/consoletest"
+)
+
+// A command is tested by calling it, not by starting a process. The fixture
+// gives it streams it can read back and returns what the command wrote and the
+// code it would have exited with.
+
+func TestGreet(t *testing.T) {
+	consoletest.Run(t, &Greet{}, consoletest.Args("ada")).
+		AssertSuccess().
+		AssertOutput("Hello, ada!\n")
+}
+
+// Args with nothing in it is an empty command line, which is not the same as
+// leaving Args out: without it the fixture skips parsing and runs the command
+// with its fields as they are, so a default in the Spec is never applied.
+func TestGreetTakesADefaultName(t *testing.T) {
+	consoletest.Run(t, &Greet{}, consoletest.Args()).
+		AssertSuccess().
+		AssertOutput("Hello, world!\n")
+}
+
+func TestGreetLoud(t *testing.T) {
+	consoletest.Run(t, &Greet{}, consoletest.Args("--loud", "ada")).
+		AssertSuccess().
+		AssertOutput("HELLO, ADA!\n")
+}
+
+// The tests above call a command directly, which leaves the question of
+// whether it was ever added to the app. Help is the cheapest way to ask.
+func TestHelpListsEveryCommand(t *testing.T) {
+	var out, errOut bytes.Buffer
+
+	code := newApp().Start(t.Context(), strings.NewReader(""), &out, &errOut, []string{"--help"})
+
+	if code != 0 {
+		t.Fatalf("--help exited %d, stderr: %s", code, &errOut)
+	}
+	if !strings.Contains(out.String(), "greet") {
+		t.Errorf("help does not mention greet:\n%s", &out)
+	}
+}

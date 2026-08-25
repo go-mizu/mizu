@@ -1,0 +1,65 @@
+// Command {{.Name}} is a command line tool.
+package main
+
+import (
+	"context"
+	"os"
+	"strings"
+
+	"github.com/go-mizu/mizu/console"
+)
+
+func main() {
+	os.Exit(newApp().Main(os.Args[1:]))
+}
+
+// newApp builds the command line.
+//
+// It is a function rather than a package variable so that a test gets a fresh
+// one. A command holds what its flags parsed into, so an app that has run once
+// is an app whose commands are already filled in.
+func newApp() *console.App {
+	app := &console.App{
+		Name: "{{.Name}}",
+		Desc: "What this tool does, in one line",
+	}
+	app.Add(&Greet{})
+	return app
+}
+
+// Greet is one command.
+//
+// Every command is a struct with a Spec and a Run. The fields are where its
+// flags and arguments parse into, which is why Run takes no arguments beyond
+// the context and the streams.
+type Greet struct {
+	Name string
+	Loud bool
+}
+
+func (c *Greet) Spec() console.Spec {
+	return console.Spec{
+		Name: "greet",
+		Desc: "Say hello to somebody",
+		Flags: []console.Flag{
+			{Name: "loud", Short: 'l', Desc: "Shout it", Value: console.Bool(&c.Loud)},
+		},
+		Args: []console.Arg{
+			{Name: "name", Desc: "Who to greet", Default: "world", Value: console.String(&c.Name)},
+		},
+	}
+}
+
+// Run does the work.
+//
+// The answer goes to stdout through IO, not to os.Stdout, which is what lets a
+// test read it. Anything the tool says about itself goes to stderr, so that
+// piping the output somewhere gives the answer on its own.
+func (c *Greet) Run(ctx context.Context, io *console.IO) error {
+	hello := "Hello, " + c.Name + "!"
+	if c.Loud {
+		hello = strings.ToUpper(hello)
+	}
+	io.Line(hello)
+	return nil
+}

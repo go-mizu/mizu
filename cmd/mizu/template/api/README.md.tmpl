@@ -1,0 +1,40 @@
+# {{.Name}}
+
+An HTTP service built on [mizu](https://github.com/go-mizu/mizu).
+
+## Running it
+
+```
+go mod tidy
+go run .
+```
+
+It listens on `:8080`, or on `$ADDR` when that is set.
+
+```
+curl localhost:8080/
+curl localhost:8080/hello/ada
+curl localhost:8080/livez
+```
+
+## Testing it
+
+```
+go test ./...
+```
+
+The tests serve the real application through an in-memory recorder, so they
+open no sockets and pick no ports. That is what makes them fast enough to run
+on every save and safe to run in parallel.
+
+## What is here
+
+```
+main.go       the routes, and the handlers behind them
+main_test.go  a test for each route
+go.mod        the module
+```
+
+`newApp` is separate from `main` so that a test gets the same application the
+binary serves. Adding a route means adding a line to `newApp` and a function
+under it.
