@@ -15,14 +15,14 @@ import (
 	"github.com/go-mizu/mizu/gen"
 )
 
-// project copies one of the generators' test modules somewhere writable and
+// scratch copies one of the generators' test modules somewhere writable and
 // makes it the working directory, which is where a person runs mizu gen from.
 //
 // The copy is no longer beside the module it replaces, so the replace
 // directive is rewritten to say where that really is. Everything else about
 // the module is left alone, since the point is to run against the tree the
 // generator's own tests use rather than a second one that drifts from it.
-func project(tb testing.TB, testdata string) string {
+func scratch(tb testing.TB, testdata string) string {
 	tb.Helper()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
@@ -86,7 +86,7 @@ func read(t *testing.T, name string) string {
 }
 
 func TestGenCheckOnATreeThatIsUpToDate(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 
 	r := runGen(t, "--check", "./...").AssertSuccess()
 	r.AssertOutputContains("app/commands_gen.go")
@@ -97,14 +97,14 @@ func TestGenCheckOnATreeThatIsUpToDate(t *testing.T) {
 // The file the generator writes is named by where it belongs in the module, so
 // the answer does not depend on which directory the command was run from.
 func TestGenCheckFromASubdirectory(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	t.Chdir(filepath.Join(dir, "app"))
 
 	runGen(t, "--check", "./...").AssertSuccess().AssertOutputContains("app/commands_gen.go")
 }
 
 func TestGenCheckOnAStaleFile(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	before := read(t, name)
 	touch(t, name)
@@ -126,7 +126,7 @@ func TestGenCheckOnAStaleFile(t *testing.T) {
 }
 
 func TestGenCheckOnAMissingFile(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	if err := os.Remove(name); err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestGenCheckOnAMissingFile(t *testing.T) {
 }
 
 func TestGenWrites(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	want := read(t, name)
 	touch(t, name)
@@ -156,7 +156,7 @@ func TestGenWrites(t *testing.T) {
 // A file that has not changed is not rewritten, and the report says so rather
 // than claiming work that did not happen.
 func TestGenLeavesAnUpToDateFileAlone(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 
 	r := runGen(t, "./...").AssertSuccess()
 	r.AssertOutputContains("unchanged")
@@ -164,7 +164,7 @@ func TestGenLeavesAnUpToDateFileAlone(t *testing.T) {
 }
 
 func TestGenCreatesAMissingFile(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	want := read(t, name)
 	if err := os.Remove(name); err != nil {
@@ -181,7 +181,7 @@ func TestGenCreatesAMissingFile(t *testing.T) {
 // it, which breaks the package, which is the package the generator has to read
 // to write the fix. It has to be one step and not two.
 func TestGenReadsAPackageBrokenByItsOwnOutput(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	src := filepath.Join(dir, "app", "commands.go")
 	rename(t, src, "Tenant", "Owner")
 
@@ -205,7 +205,7 @@ func TestGenReadsAPackageBrokenByItsOwnOutput(t *testing.T) {
 // stubbing is for stale generated output and nothing else, so an error the
 // second load still finds is the one the person needs to see.
 func TestGenReportsARealCompileError(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	src := filepath.Join(dir, "app", "commands.go")
 	rename(t, src, "net/netip", "net/nope")
 
@@ -227,7 +227,7 @@ func rename(t *testing.T, name, from, to string) {
 }
 
 func TestGenConfig(t *testing.T) {
-	dir := project(t, configs)
+	dir := scratch(t, configs)
 	name := filepath.Join(dir, "app", "config_gen.go")
 	want := read(t, name)
 	touch(t, name)
@@ -241,7 +241,7 @@ func TestGenConfig(t *testing.T) {
 // Each generator is also a command of its own, so a project that only has one
 // kind of marker does not pay for the other.
 func TestGenOneGeneratorAtATime(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	touch(t, name)
 
@@ -257,17 +257,17 @@ func TestGenOneGeneratorAtATime(t *testing.T) {
 // With no packages it runs over everything under the current directory, which
 // is what a project runs and what the development loop repeats.
 func TestGenDefaultsToEverything(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 	runGen(t, "--check").AssertSuccess().AssertOutputContains("app/commands_gen.go")
 }
 
 func TestGenNamesOnePackage(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 	runGen(t, "--check", "./app").AssertSuccess().AssertOutputContains("app/commands_gen.go")
 }
 
 func TestGenOnAPackageWithNoMarkers(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 	r := runGen(t, "--check", "./broken").AssertSuccess()
 	r.AssertErrorContains("Nothing asked to be generated")
 	r.AssertNoOutput()
@@ -276,7 +276,7 @@ func TestGenOnAPackageWithNoMarkers(t *testing.T) {
 // A script reading the output wants a list either way, so JSON mode says the
 // empty one rather than saying nothing.
 func TestGenJSONWithNothingToGenerate(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 
 	r := consoletest.Run(t, &Gen{},
 		consoletest.Args("--check", "./broken"),
@@ -290,7 +290,7 @@ func TestGenJSONWithNothingToGenerate(t *testing.T) {
 }
 
 func TestGenOnAPatternThatMatchesNothing(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 	err := runGen(t, "--check", "./nowhere/...").AssertFailure()
 	if !strings.Contains(err.Error(), "nowhere") {
 		t.Errorf("the error is %q, want it to name the pattern", err)
@@ -315,7 +315,7 @@ func TestGenOnAModuleWithNoPackages(t *testing.T) {
 // The go command failing is different from a package failing to compile, and
 // it is the one case where there is nothing at all to work from.
 func TestGenWhenTheGoCommandFails(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("this is not a go.mod\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestGenWhenTheGoCommandFails(t *testing.T) {
 // file is written for the packages that were fine either. Half a generated
 // tree is a build that fails somewhere else for a reason nobody can see.
 func TestGenReportsWhatAGeneratorRefused(t *testing.T) {
-	dir := project(t, configs)
+	dir := scratch(t, configs)
 	src := filepath.Join(dir, "app", "second.go")
 	const second = `package app
 
@@ -356,7 +356,7 @@ type Second struct {
 // The writer refuses to overwrite a file that does not carry a generated
 // header, because the next run would take it for hand-written work.
 func TestGenWillNotOverwriteAHandWrittenFile(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	if err := os.WriteFile(name, []byte("package app\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -374,7 +374,7 @@ func TestGenWillNotOverwriteAHandWrittenFile(t *testing.T) {
 // A run that was interrupted stops before it writes anything, since a tree
 // half generated is worse than one not generated at all.
 func TestGenWritesNothingAfterAnInterrupt(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	name := filepath.Join(dir, "app", "commands_gen.go")
 	touch(t, name)
 	before := read(t, name)
@@ -395,7 +395,7 @@ func TestGenWritesNothingAfterAnInterrupt(t *testing.T) {
 }
 
 func TestGenJSON(t *testing.T) {
-	project(t, commands)
+	scratch(t, commands)
 
 	r := consoletest.Run(t, &Gen{},
 		consoletest.Args("--check", "./..."),
@@ -421,7 +421,7 @@ func TestGenJSON(t *testing.T) {
 // A run that fails still writes the table, because the list of what is out of
 // date is the answer somebody wants from a failed build.
 func TestGenJSONWhenSomethingIsStale(t *testing.T) {
-	dir := project(t, commands)
+	dir := scratch(t, commands)
 	touch(t, filepath.Join(dir, "app", "commands_gen.go"))
 
 	r := consoletest.Run(t, &Gen{},
@@ -562,7 +562,7 @@ func TestModuleRoot(t *testing.T) {
 // and that is the point: it says what the whole step costs. The parts of it
 // this package owns are measured separately below.
 func BenchmarkGenCheck(b *testing.B) {
-	project(b, commands)
+	scratch(b, commands)
 	c := console.New(nil, io.Discard, io.Discard, console.Options{})
 
 	b.ReportAllocs()

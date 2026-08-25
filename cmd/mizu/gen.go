@@ -87,7 +87,7 @@ func (c *Gen) Run(ctx context.Context, io *console.IO) error {
 		patterns = []string{"./..."}
 	}
 
-	pkgs, err := load(patterns)
+	pkgs, err := load("", patterns)
 	if err != nil {
 		return err
 	}
@@ -133,8 +133,11 @@ func (c *Gen) Run(ctx context.Context, io *console.IO) error {
 // empty package clause is enough to get past it.
 //
 // Errors from the second load are real, and they are the ones reported.
-func load(patterns []string) ([]*gen.Package, error) {
-	var cfg gen.Config
+//
+// The directory is where the patterns are resolved from, and the empty string
+// means the one the command was run in.
+func load(dir string, patterns []string) ([]*gen.Package, error) {
+	cfg := gen.Config{Dir: dir}
 	for {
 		pkgs, err := gen.Load(cfg, patterns...)
 		if err != nil {
