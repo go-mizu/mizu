@@ -26,7 +26,7 @@ import (
 // The difference between the presets is what is in the files rather than which
 // ones there are, and a project missing its .gitattributes or its README is
 // missing something somebody would have to write by hand.
-var wanted = []string{".gitattributes", ".gitignore", "README.md", "go.mod", "main.go", "main_test.go"}
+var wanted = []string{".gitattributes", ".gitignore", "AGENTS.md", "README.md", "go.mod", "main.go", "main_test.go"}
 
 // place is a path for a project that is not there yet.
 func place(t *testing.T, name string) string {
@@ -424,7 +424,11 @@ func TestNewWhenTheQuestionIsNotAnswered(t *testing.T) {
 }
 
 // Every preset writes the same files, and render is where that is decided.
+//
+// AGENTS.md is not one of them. It is read off the tree once the templates are
+// written rather than rendered from one, so it arrives after this step.
 func TestEveryPresetWritesTheSameFiles(t *testing.T) {
+	want := slices.DeleteFunc(slices.Clone(wanted), func(name string) bool { return name == agentsFile })
 	for _, p := range presets {
 		files, err := render(templates, p, data{Name: "blog", Module: "blog", Go: newGo})
 		if err != nil {
@@ -434,8 +438,8 @@ func TestEveryPresetWritesTheSameFiles(t *testing.T) {
 		for i, f := range files {
 			names[i] = f.Path
 		}
-		if !slices.Equal(names, wanted) {
-			t.Errorf("%s writes %v, want %v", p.name, names, wanted)
+		if !slices.Equal(names, want) {
+			t.Errorf("%s writes %v, want %v", p.name, names, want)
 		}
 	}
 }

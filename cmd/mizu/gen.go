@@ -18,18 +18,28 @@ import (
 
 // A generator is one thing mizu gen runs.
 //
-// The signature is the whole contract, and both generators already have it: a
-// set of loaded packages in, the files they ask for out. Adding one to the
-// list below is what registering a generator amounts to.
+// The signature is the whole contract: the module root and the loaded packages
+// in, the files they ask for out. Adding one to the list below is what
+// registering a generator amounts to.
+//
+// Most generators read the packages and ignore the root, since they write
+// beside the declaration they were made from. One that describes the project
+// rather than a declaration in it does the opposite.
 type generator struct {
 	name string
 	desc string
-	run  func(pkgs ...*gen.Package) ([]gen.File, error)
+	run  func(root string, pkgs ...*gen.Package) ([]gen.File, error)
 }
 
 var generators = []generator{
-	{"command", "Write the Spec methods for the structs marked //mizu:command", commandgen.Generate},
-	{"config", "Write the decoder for the struct marked //mizu:config", configgen.Generate},
+	{"agents", "Write AGENTS.md, what an agent reads before it edits anything", agents},
+	{"command", "Write the Spec methods for the structs marked //mizu:command", fromPackages(commandgen.Generate)},
+	{"config", "Write the decoder for the struct marked //mizu:config", fromPackages(configgen.Generate)},
+}
+
+// fromPackages adapts a generator that has no use for the module root.
+func fromPackages(f func(pkgs ...*gen.Package) ([]gen.File, error)) func(string, ...*gen.Package) ([]gen.File, error) {
+	return func(_ string, pkgs ...*gen.Package) ([]gen.File, error) { return f(pkgs...) }
 }
 
 // Gen runs generators over a set of packages.
@@ -99,7 +109,7 @@ func (c *Gen) Run(ctx context.Context, io *console.IO) error {
 	var files []gen.File
 	var refused []error
 	for _, g := range c.chosen() {
-		out, err := g.run(pkgs...)
+		out, err := g.run(root, pkgs...)
 		files = append(files, out...)
 		refused = append(refused, err)
 	}

@@ -283,7 +283,10 @@ func generatedIn(fsys fs.FS) []generated {
 		if err != nil || !gen.Generated(head) {
 			continue
 		}
-		by := generatorOf(head)
+		by := gen.GeneratedBy(head)
+		if by == "" {
+			by = "unknown"
+		}
 		files[by] = append(files[by], name)
 	}
 
@@ -308,29 +311,6 @@ func head(fsys fs.FS, name string) ([]byte, error) {
 	// a file shorter than the buffer comes back whole and the error with it.
 	b, _ := bufio.NewReaderSize(f, 4096).Peek(4096)
 	return b, nil
-}
-
-// generatorOf reads the tool out of a generated header.
-//
-// The go command's rule only fixes the two ends of the line, so what is in the
-// middle is whatever the tool decided to say about itself. This takes it as it
-// is, without the "by" that most of them write, and calls it unknown when there
-// is nothing between the ends.
-func generatorOf(data []byte) string {
-	for line := range strings.Lines(string(data)) {
-		line = strings.TrimRight(line, "\r\n")
-		if !strings.HasPrefix(line, "// Code generated ") || !strings.HasSuffix(line, "DO NOT EDIT.") {
-			continue
-		}
-		by := line[len("// Code generated ") : len(line)-len("DO NOT EDIT.")]
-		by = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(by), ";"))
-		by = strings.TrimPrefix(by, "by ")
-		if by = strings.TrimSuffix(by, "."); by == "" {
-			return "unknown"
-		}
-		return by
-	}
-	return "unknown"
 }
 
 // render writes the inventory for a person.
