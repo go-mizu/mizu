@@ -287,7 +287,11 @@ func TestOf(t *testing.T) {
 		{"a wrapped list", fmt.Errorf("loading: %w", diag.List{one, two}.Err()), diag.List{one, two}},
 		{"a wrapped diagnostic", fmt.Errorf("loading: %w", one), diag.List{one}},
 		{"joined", errors.Join(one, two), diag.List{one, two}},
-		{"joined with something else", errors.Join(one, errors.New("no such file")), diag.List{one}},
+		{"joined with something else", errors.Join(one, errors.New("no such file")), diag.List{one, {Message: "no such file"}}},
+		{"joined ordinary errors", errors.Join(errors.New("first"), errors.New("second")), diag.List{{Message: "first"}, {Message: "second"}}},
+		{"a join inside a join", errors.Join(errors.Join(errors.New("first"), errors.New("second")), one), diag.List{{Message: "first"}, {Message: "second"}, one}},
+		{"an error carrying nothing", errors.New("no such file"), diag.List{{Message: "no such file"}}},
+		{"a wrapped ordinary error", fmt.Errorf("boot: %w", errors.New("no such file")), diag.List{{Message: "boot: no such file"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := diag.Of(tt.err)
