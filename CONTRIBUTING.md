@@ -17,6 +17,16 @@ Go 1.27 or later.
 There is nothing else to install.
 If a change ever requires a tool that is not in the standard distribution, that is a decision to argue for in an issue before writing the code.
 
+The repository's own CLI is the shorter way to run the same things:
+
+```bash
+go run ./cmd/mizu check    # type check and vet, in about a second
+go run ./cmd/mizu verify   # gen, fmt, vet, build, test, doctor, in that order
+```
+
+`check` is what you run while you are working and `verify` is what you run before you push.
+`verify` takes about a minute on this repository, most of it the test suite, and it fails on the first stage that fails with the diagnostics from that stage rather than a wall of output.
+
 The repository tooling and the benchmarks live in modules of their own, so neither is in `go test ./...` at the root:
 
 ```bash
@@ -138,6 +148,12 @@ That is also where database drivers and cloud clients will live.
 
 **Doc comments say what it does not do.**
 The sentence that saves somebody an hour is almost never the one describing the happy path.
+
+**Every package has a `doc.go` and an example.**
+The package comment goes in `doc.go` rather than on top of whichever file the package started as, it opens with `Package <name>`, and the package has at least one `Example`.
+`docs_test.go` at the root checks those three, so a package that skips one fails the build rather than getting a documentation pass six months later by somebody reconstructing what it does from its signatures.
+An example that can assert carries an `// Output:` comment and is run as a test.
+The ones in the fixture packages cannot, because an assertion needs a test to fail and an example has none, so they are compiled and shown rather than run, and each of those packages says so.
 
 **Errors name the thing that went wrong and what to do about it.**
 An error message is documentation, reviewed as documentation, and a message somebody had to read three times is a bug in the message.
