@@ -1,9 +1,14 @@
 package web_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/gif"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -307,6 +312,48 @@ func ExampleCtx_JSON() {
 	fmt.Println(w.Body)
 	// Output:
 	// 21
+}
+
+// A *web.Upload field binds a file out of a multipart form. The type is
+// sniffed from the file's first bytes rather than taken from what the client
+// claimed it was sending.
+func ExampleUpload() {
+	type avatar struct {
+		Name  string      `form:"name"`
+		Image *web.Upload `form:"image"`
+	}
+
+	save := web.H(func(c *web.Ctx) error {
+		in, err := web.Bind[avatar](c)
+		if err != nil {
+			return err
+		}
+		return c.Text(fmt.Sprintf("%s sent %s, %s, %d bytes",
+			in.Name, in.Image.Filename, in.Image.MIME, in.Image.Size))
+	})
+
+	w := httptest.NewRecorder()
+	save.ServeHTTP(w, avatarRequest())
+
+	fmt.Println(w.Body)
+	// Output:
+	// water sent me.gif, image/gif, 35 bytes
+}
+
+// avatarRequest posts a name and a small GIF, which is the shortest real image
+// there is and keeps the example about the binding.
+func avatarRequest() *http.Request {
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+
+	w.WriteField("name", "water")
+	f, _ := w.CreateFormFile("image", "me.gif")
+	gif.Encode(f, image.NewPaletted(image.Rect(0, 0, 1, 1), color.Palette{color.Black}), nil)
+	w.Close()
+
+	r := httptest.NewRequest("POST", "/avatar", &body)
+	r.Header.Set("Content-Type", w.FormDataContentType())
+	return r
 }
 
 // A value that will not decode comes back as one errs.Field per field, which is
