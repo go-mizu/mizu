@@ -244,9 +244,25 @@ func TestIsTerminal(t *testing.T) {
 	}
 }
 
-// TestFormatOf is the other side of it, including the terminal a test does not
-// have. The null device is a character device on the systems that have one,
-// which is the same answer a terminal gives.
+// TestTheNullDeviceIsNotATerminal is the case that made this stop asking about
+// character devices. /dev/null is one, and so is NUL on Windows, so a program
+// whose output was redirected there used to be told it was talking to a person
+// and wrote colour escapes into nothing.
+func TestTheNullDeviceIsNotATerminal(t *testing.T) {
+	dev, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Skipf("no null device here: %v", err)
+	}
+	defer dev.Close()
+
+	if isTerminal(dev) {
+		t.Error("the null device says it is a terminal")
+	}
+	if got := formatOf(dev, ""); got != "json" {
+		t.Errorf("output going to the null device chose %q, want json", got)
+	}
+}
+
 func TestFormatOf(t *testing.T) {
 	if got := formatOf(io.Discard, "console"); got != "console" {
 		t.Errorf("a format that was asked for came back as %q", got)
@@ -255,15 +271,12 @@ func TestFormatOf(t *testing.T) {
 		t.Errorf("an output that is not a terminal chose %q, want json", got)
 	}
 
-	dev, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Skipf("no null device here: %v", err)
+	// The terminal side needs a terminal, which a test run under go test does
+	// not have unless somebody is watching it.
+	if !isTerminal(os.Stdout) {
+		t.Skip("stdout is not a terminal here")
 	}
-	defer dev.Close()
-	if !isTerminal(dev) {
-		t.Skip("the null device is not a character device here")
-	}
-	if got := formatOf(dev, ""); got != "console" {
+	if got := formatOf(os.Stdout, ""); got != "console" {
 		t.Errorf("an output that is a terminal chose %q, want console", got)
 	}
 }

@@ -4,9 +4,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
+
+	"golang.org/x/term"
 
 	"github.com/go-mizu/mizu/errs"
 )
@@ -92,17 +93,17 @@ func kindOf(err error) (errs.Kind, bool) {
 // isTerminal says whether a writer is a terminal, which is what decides colour
 // and, when a configuration does not say, the format.
 //
-// It asks the writer whether it is a character device rather than importing a
-// terminal package, which is the whole of what such a package would do here. A
-// pipe, a file and a container's output are all not one, which is the answer
-// that matters.
+// This used to ask whether the writer was a character device, which is close
+// enough to be tempting and wrong in a way nobody would look for: /dev/null is
+// a character device, so redirecting a program's output there produced colour
+// escapes written into nothing, and NUL on Windows is the same. Asking the
+// terminal instead is one ioctl and it is what x/term is for.
+//
+// It looks for the file descriptor through an interface rather than for an
+// *os.File, so a wrapper that forwards Fd is still recognised.
 func isTerminal(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	f, ok := w.(interface{ Fd() uintptr })
+	return ok && term.IsTerminal(int(f.Fd()))
 }
 
 // levelTag is the three letters a level prints as. It is a comparison rather

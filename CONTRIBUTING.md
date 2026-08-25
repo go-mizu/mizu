@@ -126,9 +126,10 @@ A password hash written by somebody who has not written one before is code where
 `D-075` in the decision register has the argument in full.
 
 Adding one is still a change with a reason attached, in `allowedModules` and in the review.
-Today the list is `golang.org/x/crypto`, the `golang.org/x/sys` it brings with it, and `golang.org/x/text`.
-The last one arrived with `mizu/str`, because `strings.Title` has been deprecated since Go 1.18 for capitalising the wrong letter in half the world's languages and nothing replaced it in the standard library.
+Today the list is `golang.org/x/crypto`, the `golang.org/x/sys` it brings with it, `golang.org/x/text`, and `golang.org/x/term`.
+`x/text` arrived with `mizu/str`, because `strings.Title` has been deprecated since Go 1.18 for capitalising the wrong letter in half the world's languages and nothing replaced it in the standard library.
 The deprecation notice points at `x/text/cases`, and the alternative is copying the Unicode casing tables in by hand.
+`x/term` arrived with `mizu/console`, which decides colour and prompt behaviour from whether the other end is a terminal, and it replaced a check in `mizu/log` that answered yes for `/dev/null`.
 
 Everything else is a third-party dependency and stays out of the core.
 A library that needs one goes in a module of its own, the way `tools/milestonebot` does with its YAML parser and `bench` does with `golang.org/x/tools`.
