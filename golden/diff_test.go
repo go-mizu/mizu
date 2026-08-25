@@ -202,6 +202,12 @@ func TestDiffStopsInEveryDirection(t *testing.T) {
 			want: "old\n" + long("same", 100),
 			got:  "new\n" + long("same", 100),
 		},
+		// The cap has to land inside the trailing context to stop it there, so
+		// the change above it is exactly as long as the cap allows.
+		"the cap runs out at the trailing context": {
+			want: long("old", maxLines/2) + long("same", 10),
+			got:  long("new", maxLines/2) + long("same", 10),
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {

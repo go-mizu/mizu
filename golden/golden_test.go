@@ -297,3 +297,20 @@ func TestAssertReportsAFileItCannotWrite(t *testing.T) {
 		t.Fatal("writing into a path that is not a directory passed, want it to fail")
 	}
 }
+
+// TestAssertReportsAFileItCannotReplace is the third way writing goes wrong:
+// the directory is fine and the path itself is not a file. It happens for real
+// when a golden file and a golden directory have been given the same name.
+func TestAssertReportsAFileItCannotReplace(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "TestThing.golden"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	r := &recorder{name: "TestThing"}
+
+	updating(t, func() { Assert(r, []byte("x"), Dir(dir)) })
+
+	if !r.failed {
+		t.Fatal("writing over a directory passed, want it to fail")
+	}
+}

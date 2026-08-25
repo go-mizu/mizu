@@ -60,10 +60,10 @@ func diff(path string, want, got []byte) string {
 		return true
 	}
 
+	// The leading context is at most context lines and the cap is far above
+	// that, so this is the one run that cannot reach it.
 	for _, l := range wantLines[from:head] {
-		if !write(" ", l) {
-			return b.String()
-		}
+		write(" ", l)
 	}
 	for _, l := range wantLines[head : len(wantLines)-tail] {
 		if !write("-", l) {
