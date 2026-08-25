@@ -2,14 +2,35 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"runtime/debug"
 
 	"github.com/go-mizu/mizu"
 )
 
+// name is what this service calls itself, on the command line and at the root.
+const name = "{{.Name}}"
+
 func main() {
+	// A service that ignores its arguments is one where --help opens a port.
+	// There are two things anybody types at a binary they did not build, and
+	// neither of them should start listening.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version", "--version":
+			fmt.Printf("%s %s\n", name, buildVersion())
+		case "help", "-h", "--help":
+			fmt.Printf("usage: %s\n\nServes HTTP on $ADDR, or on :8080.\n", name)
+		default:
+			fmt.Fprintf(os.Stderr, "%s takes no arguments, and there is help and version\n", name)
+			os.Exit(2)
+		}
+		return
+	}
+
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -18,6 +39,20 @@ func main() {
 	if err := newApp().Listen(addr); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// buildVersion is what this binary was built from.
+//
+// It comes out of the table the compiler already embeds, so there are no
+// -ldflags to remember and nothing to keep in step: a binary from go install
+// carries the module version it was installed at, and one built from a
+// checkout carries "(devel)".
+func buildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" {
+		return "unknown"
+	}
+	return info.Main.Version
 }
 
 // newApp builds the routes.
@@ -38,7 +73,7 @@ func newApp() *mizu.App {
 // index says what this service is, which is the one thing somebody who has
 // found the root of an unfamiliar service wants to know.
 func index(c *mizu.Ctx) error {
-	return c.JSON(http.StatusOK, map[string]string{"service": "{{.Name}}"})
+	return c.JSON(http.StatusOK, map[string]string{"service": name, "version": buildVersion()})
 }
 
 func hello(c *mizu.Ctx) error {

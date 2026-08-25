@@ -52,7 +52,7 @@ type preset struct {
 
 var presets = []preset{
 	{"api", "An HTTP service, with routes, a health check, and a test for each route", "go run ."},
-	{"cli", "A command line tool, with one command and a test for each way of running it", "go run . greet ada"},
+	{"cli", "A command line tool, with a command, a version, and a test for each of them", "go run . greet ada"},
 }
 
 // data is what the templates are rendered with.

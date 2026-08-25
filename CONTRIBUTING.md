@@ -160,6 +160,11 @@ The flag is global, so a new command takes it without doing anything, and a comm
 `cmd/mizu/json_test.go` walks the registry, runs each command with `--json`, and fails on one whose output is not a single JSON document.
 Adding a command means adding the line to that table that says how to run it, which is the point at which somebody decides what document it writes.
 
+**The project `mizu new` writes is a project.**
+A scaffold that compiles is not the same as a scaffold somebody can use, and the difference shows up at the first thing anybody types at a binary they did not build.
+Both presets answer `version` and `--version`, and the HTTP one answers them on the command line rather than opening a port.
+`cmd/mizu/project_test.go` writes each preset into a temporary directory, builds it, runs the binary, and checks that `mizu gen --check` is clean in a fresh project and names the file and the line once it is not.
+
 **Errors name the thing that went wrong and what to do about it.**
 An error message is documentation, reviewed as documentation, and a message somebody had to read three times is a bug in the message.
 
