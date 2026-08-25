@@ -83,6 +83,11 @@ var rows = []Row{
 		Time: 300 * time.Nanosecond, Allocs: 3,
 	},
 	{
+		ID: "validate/report", Group: httpPath, Doc: "08",
+		Op:   "Three failed rules turned into a 422 with a message each",
+		Time: 1500 * time.Nanosecond, Allocs: 24,
+	},
+	{
 		ID: "validate/gen", Group: httpPath, Doc: "08", Since: "M1",
 		Op:   "12 fields, 20 rules, all passing, generated validator",
 		Time: 900 * time.Nanosecond, Allocs: 0,
