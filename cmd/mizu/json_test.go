@@ -55,6 +55,10 @@ var jsonRuns = map[string]func(t *testing.T) []string{
 		scratch(t, configs)
 		return []string{"--check", "./..."}
 	},
+	"gen:validate": func(t *testing.T) []string {
+		scratch(t, validates)
+		return []string{"--check", "./..."}
+	},
 	"hash:tune": func(t *testing.T) []string {
 		return []string{quick}
 	},

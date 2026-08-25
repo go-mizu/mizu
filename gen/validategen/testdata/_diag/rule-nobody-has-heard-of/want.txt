@@ -1,0 +1,1 @@
+error: validate.go:5:2: cannot check Listing.Email, because there is no rule called emial, and one added with validate.Register is not a rule this can write, since it is looked up while the program runs

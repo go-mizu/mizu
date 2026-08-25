@@ -1,0 +1,1 @@
+error: validate.go:5:2: cannot check Listing.Extra, because generated code cannot see what an interface holds, and validate.Struct is the mode that can

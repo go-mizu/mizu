@@ -217,7 +217,17 @@ func (e *Errors) OrNil() error {
 		}
 	}
 
-	return errs.Wrap(e, errs.Unprocessable, Code, detail(n)).WithFields(fields...)
+	// The error keeps a copy rather than e itself, so that a caller's
+	//
+	//	var bad validate.Errors
+	//
+	// stays on the stack. Handing e to Wrap would make it outlive the function
+	// as far as the compiler can tell, and every validator that passes would pay
+	// for an Errors on the heap to say that nothing was wrong. The copy shares
+	// the map and the slice, so what errors.As hands back reads the same
+	// failures under the same names in the same order.
+	kept := *e
+	return errs.Wrap(&kept, errs.Unprocessable, Code, detail(n)).WithFields(fields...)
 }
 
 // message is the sentence for one failure, from whoever is writing them.

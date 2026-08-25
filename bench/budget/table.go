@@ -98,9 +98,9 @@ var rows = []Row{
 		Time: 1500 * time.Nanosecond, Allocs: 24,
 	},
 	{
-		ID: "validate/gen", Group: httpPath, Doc: "08", Since: "M1",
+		ID: "validate/gen", Group: httpPath, Doc: "08",
 		Op:   "12 fields, 20 rules, all passing, generated validator",
-		Time: 900 * time.Nanosecond, Allocs: 0,
+		Time: 900 * time.Nanosecond, Allocs: 2,
 	},
 	{
 		ID: "validate/reflect", Group: httpPath, Doc: "08",

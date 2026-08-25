@@ -1,0 +1,1 @@
+error: validate.go:5:2: cannot check Listing.Page, because email is a check on a string and this field is an int

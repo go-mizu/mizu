@@ -15,6 +15,7 @@ import (
 	"github.com/go-mizu/mizu/gen/bindgen"
 	"github.com/go-mizu/mizu/gen/commandgen"
 	"github.com/go-mizu/mizu/gen/configgen"
+	"github.com/go-mizu/mizu/gen/validategen"
 )
 
 // Generated code is checked in, which is what makes determinism worth proving
@@ -56,6 +57,7 @@ func TestTheGeneratorsWriteTheSameBytesInAnyOrder(t *testing.T) {
 		{"bind", binds, bindgen.Generate},
 		{"command", commands, commandgen.Generate},
 		{"config", configs, configgen.Generate},
+		{"validate", validates, validategen.Generate},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := scratch(t, c.testdata)

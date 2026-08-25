@@ -52,9 +52,10 @@ func scratch(tb testing.TB, testdata string) string {
 }
 
 const (
-	binds    = "gen/bindgen/testdata"
-	commands = "gen/commandgen/testdata"
-	configs  = "gen/configgen/testdata"
+	binds     = "gen/bindgen/testdata"
+	commands  = "gen/commandgen/testdata"
+	configs   = "gen/configgen/testdata"
+	validates = "gen/validategen/testdata"
 )
 
 // runGen runs one command line. The command is built fresh every time because
@@ -235,6 +236,20 @@ func TestGenConfig(t *testing.T) {
 	touch(t, name)
 
 	runGen(t, "./...").AssertSuccess().AssertErrorContains("Wrote 1 file")
+	if got := read(t, name); got != want {
+		t.Error("the file the generator wrote is not the one that was checked in")
+	}
+}
+
+func TestGenValidate(t *testing.T) {
+	dir := scratch(t, validates)
+	name := filepath.Join(dir, "app", "validate_gen.go")
+	want := read(t, name)
+	touch(t, name)
+
+	consoletest.Run(t, &Gen{only: "validate"}, consoletest.Args("./...")).
+		AssertSuccess().
+		AssertErrorContains("Wrote 1 file")
 	if got := read(t, name); got != want {
 		t.Error("the file the generator wrote is not the one that was checked in")
 	}
@@ -459,6 +474,7 @@ func TestGenSpecs(t *testing.T) {
 		{&Gen{only: "bind"}, "gen:bind", generators[1].desc},
 		{&Gen{only: "command"}, "gen:command", generators[2].desc},
 		{&Gen{only: "config"}, "gen:config", generators[3].desc},
+		{&Gen{only: "validate"}, "gen:validate", generators[4].desc},
 	}
 	for _, tt := range tests {
 		spec := tt.cmd.Spec()
@@ -490,7 +506,7 @@ func TestGenIsInTheApp(t *testing.T) {
 	if code != console.CodeOK {
 		t.Fatalf("exited %d", code)
 	}
-	for _, want := range []string{"gen", "gen:command", "gen:config"} {
+	for _, want := range []string{"gen", "gen:command", "gen:config", "gen:validate"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the help does not list %q:\n%s", want, out)
 		}

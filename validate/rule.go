@@ -60,7 +60,11 @@ type Field struct {
 
 	// Value is what the field holds, with pointers followed, so a rule that
 	// wants a string asserts for a string whether the field was a string or a
-	// pointer to one. A nil pointer arrives as nil.
+	// pointer to one. A nil pointer arrives as the zero value of what it points
+	// at, which is what makes that assertion safe to write without a branch for
+	// the pointer case. Telling an absent field from an empty one is what
+	// required is for, and a rule that should not run on an empty field is
+	// written after omitempty.
 	Value any
 
 	// Params are what the tag configured the rule with, so vat=DE arrives as

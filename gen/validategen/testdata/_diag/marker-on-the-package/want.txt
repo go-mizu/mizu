@@ -1,0 +1,1 @@
+error: validate.go:2:1: the validate marker is on something with no name

@@ -11,6 +11,7 @@ func init() {
 	register("validate/report", benchValidateReport)
 	register("validate/format", benchValidateFormat)
 	register("validate/build", benchValidateBuild)
+	register("validate/gen", benchValidateGen)
 	register("validate/reflect", benchValidateReflect)
 }
 
@@ -44,22 +45,48 @@ func benchValidateBuild(b *testing.B) {
 	}
 }
 
-// signup is the struct the reflective interpreter and the generated validator
-// are both measured on: 12 fields and 20 rules, which is a form somebody would
-// actually post.
-type signup struct {
-	Email string   `json:"email" validate:"required,email"`
-	Title string   `json:"title" validate:"required,min=3,max=120"`
-	Slug  string   `json:"slug" validate:"required"`
-	Site  string   `json:"site" validate:"omitempty,url"`
-	IP    string   `json:"ip" validate:"omitempty,ip"`
-	ID    string   `json:"id" validate:"required,ulid"`
-	Ref   string   `json:"ref" validate:"uuid"`
-	Body  string   `json:"body" validate:"required,min=10"`
-	Tags  []string `json:"tags" validate:"required,max=5"`
-	Count int      `json:"count" validate:"between=1 10"`
-	Phone string   `json:"phone" validate:"e164"`
-	Host  string   `json:"host" validate:"hostname"`
+// filled is the signup a handler would have bound, with everything passing, so
+// that both validators run every rule to the end rather than stopping at the
+// first failure.
+func filled() signup {
+	return signup{
+		Email: "first.last@example.com",
+		Title: "A reasonable title",
+		Slug:  "a-reasonable-title",
+		Site:  "https://example.com/a/b?q=1",
+		IP:    "2001:db8::1",
+		ID:    "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Ref:   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		Body:  "Long enough to pass the minimum.",
+		Tags:  []string{"go", "web"},
+		Count: 3,
+		Phone: "+14155552671",
+		Host:  "mail.example.com",
+	}
+}
+
+// benchValidateGen is the same twelve fields and twenty rules as
+// validate/reflect, checked by the method mizu gen:validate wrote.
+//
+// Nothing here reads a type at runtime. Each rule is the comparison it was
+// always going to be, written out against a field the compiler knows the type
+// of, and validate.Errors stays on the stack because a run where nothing failed
+// never hands it to anybody.
+//
+// The 2 allocations are net/url building a URL inside IsURL, which is the same
+// pair validate/format pays for the same check. That is the number to hold: a
+// third one means something in the generated code started boxing a field, which
+// is the whole of the difference between this row and the one below it.
+func benchValidateGen(b *testing.B) {
+	ctx := context.Background()
+	in := genSignup(filled())
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if err := in.Validate(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 // benchValidateReflect is the same work as validate/gen through struct tags
@@ -78,20 +105,7 @@ type signup struct {
 // cost.
 func benchValidateReflect(b *testing.B) {
 	ctx := context.Background()
-	in := signup{
-		Email: "first.last@example.com",
-		Title: "A reasonable title",
-		Slug:  "a-reasonable-title",
-		Site:  "https://example.com/a/b?q=1",
-		IP:    "2001:db8::1",
-		ID:    "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-		Ref:   "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-		Body:  "Long enough to pass the minimum.",
-		Tags:  []string{"go", "web"},
-		Count: 3,
-		Phone: "+14155552671",
-		Host:  "mail.example.com",
-	}
+	in := filled()
 
 	b.ReportAllocs()
 	for b.Loop() {

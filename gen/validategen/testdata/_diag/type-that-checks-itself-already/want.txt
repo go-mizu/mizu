@@ -1,0 +1,1 @@
+error: validate.go:6:6: Listing is marked to validate and already has a Validate method of its own

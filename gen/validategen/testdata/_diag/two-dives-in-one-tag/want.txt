@@ -1,0 +1,1 @@
+error: validate.go:5:2: cannot check Listing.Tags, because a second dive, and one list of elements is all this reads

@@ -1,0 +1,2 @@
+//mizu:validate
+package broken
