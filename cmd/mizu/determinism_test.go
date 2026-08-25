@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-mizu/mizu/gen"
+	"github.com/go-mizu/mizu/gen/bindgen"
 	"github.com/go-mizu/mizu/gen/commandgen"
 	"github.com/go-mizu/mizu/gen/configgen"
 )
@@ -52,6 +53,7 @@ func TestTheGeneratorsWriteTheSameBytesInAnyOrder(t *testing.T) {
 		testdata string
 		generate func(...*gen.Package) ([]gen.File, error)
 	}{
+		{"bind", binds, bindgen.Generate},
 		{"command", commands, commandgen.Generate},
 		{"config", configs, configgen.Generate},
 	} {

@@ -43,6 +43,10 @@ var jsonRuns = map[string]func(t *testing.T) []string{
 		scratch(t, commands)
 		return []string{"--check", "./..."}
 	},
+	"gen:bind": func(t *testing.T) []string {
+		scratch(t, binds)
+		return []string{"--check", "./..."}
+	},
 	"gen:command": func(t *testing.T) []string {
 		scratch(t, commands)
 		return []string{"--check", "./..."}

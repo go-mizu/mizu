@@ -1,0 +1,1 @@
+error: bind.go:7:2: Profile.Avatar is a web.Upload, and an upload binds to a *web.Upload

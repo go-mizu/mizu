@@ -1,0 +1,3 @@
+error: bind.go:5:2: Listing.Done is a chan int, and nothing turns a string into one
+
+error: bind.go:6:2: Listing.Ratio is a complex128, and nothing turns a string into one

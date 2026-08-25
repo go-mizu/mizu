@@ -52,6 +52,7 @@ func scratch(tb testing.TB, testdata string) string {
 }
 
 const (
+	binds    = "gen/bindgen/testdata"
 	commands = "gen/commandgen/testdata"
 	configs  = "gen/configgen/testdata"
 )
@@ -455,8 +456,9 @@ func TestGenSpecs(t *testing.T) {
 	}{
 		{&Gen{}, "gen", "Run every generator over the packages"},
 		{&Gen{only: "agents"}, "gen:agents", generators[0].desc},
-		{&Gen{only: "command"}, "gen:command", generators[1].desc},
-		{&Gen{only: "config"}, "gen:config", generators[2].desc},
+		{&Gen{only: "bind"}, "gen:bind", generators[1].desc},
+		{&Gen{only: "command"}, "gen:command", generators[2].desc},
+		{&Gen{only: "config"}, "gen:config", generators[3].desc},
 	}
 	for _, tt := range tests {
 		spec := tt.cmd.Spec()

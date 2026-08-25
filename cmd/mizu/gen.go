@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-mizu/mizu/console"
 	"github.com/go-mizu/mizu/gen"
+	"github.com/go-mizu/mizu/gen/bindgen"
 	"github.com/go-mizu/mizu/gen/commandgen"
 	"github.com/go-mizu/mizu/gen/configgen"
 )
@@ -33,6 +34,7 @@ type generator struct {
 
 var generators = []generator{
 	{"agents", "Write AGENTS.md, what an agent reads before it edits anything", agents},
+	{"bind", "Write the BindRequest methods for the structs marked //mizu:bind", fromPackages(bindgen.Generate)},
 	{"command", "Write the Spec methods for the structs marked //mizu:command", fromPackages(commandgen.Generate)},
 	{"config", "Write the decoder for the struct marked //mizu:config", fromPackages(configgen.Generate)},
 }

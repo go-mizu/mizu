@@ -1,0 +1,1 @@
+error: bind.go:7:2: Profile.Avatar is an upload and is tagged to arrive somewhere other than a form, and a file arrives in a form and nowhere else

@@ -1,0 +1,1 @@
+error: bind.go:5:2: Listing.Tags is a []chan int, and nothing turns a string into one

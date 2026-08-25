@@ -18,6 +18,7 @@ Install it with go install:
 	mizu lint          report the mistakes the compiler cannot
 	mizu gen           write what the markers in the project ask for
 	mizu gen:agents    write AGENTS.md, what an agent reads before it edits
+	mizu gen:bind      write the BindRequest methods for the //mizu:bind structs
 	mizu gen:command   write the Spec methods for the //mizu:command structs
 	mizu gen:config    write the decoder for the //mizu:config struct
 	mizu doctor        check the project and the environment
@@ -74,10 +75,18 @@ skipped stages included, so a failure localises without reading any output.
 	mizu gen --check     report what is out of date and write nothing
 	mizu gen ./app/...   only these packages
 
-A generator is driven by a marker comment on a declaration, //mizu:command or
-//mizu:config, and writes a file next to the one the marker is in. Nothing is
-generated from a registry of types held somewhere else, so a declaration and
-the code written from it move together.
+A generator is driven by a marker comment on a declaration, //mizu:bind,
+//mizu:command or //mizu:config, and writes a file next to the one the marker
+is in. Nothing is generated from a registry of types held somewhere else, so a
+declaration and the code written from it move together.
+
+	mizu gen:bind
+
+writes a BindRequest method for every struct marked //mizu:bind. web.Bind calls
+that method when the type has one and falls back to reflection when it does
+not, so a marker is a change to the struct and to nothing else. What it buys is
+the query string and the form body: a generated binder reads them a pair at a
+time instead of asking net/http for a map of every name the request carries.
 
 --check is what CI runs. It exits non-zero and names the first file that would
 have changed, since a generated file that disagrees with its source is a build

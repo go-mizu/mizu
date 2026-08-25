@@ -1,0 +1,1 @@
+error: bind.go:3:1: "// mizu:bind" has a space after the slashes, which makes it a comment rather than a marker; write "//mizu:bind"
