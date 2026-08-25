@@ -262,6 +262,13 @@ jobs:
   # file is about macos-13, which GitHub retired, and it is still the reason the
   # test matrix has no darwin/amd64 row: one job that has to finish is worth
   # paying a queue for, and five are not.
+  #
+  # Which makes this the job that is on darwin/amd64, so the last step is not
+  # about determinism at all. M0's first acceptance criterion asks that the
+  # project mizu new writes builds and runs on Linux and macOS on both
+  # architectures, and three of those four come from the matrix at the top.
+  # This is the fourth, and it is one step on a job that is already here rather
+  # than the fifth macOS job the comment above turned down.
   determinism:
     name: Generator determinism (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -292,6 +299,10 @@ jobs:
         env:
           GOMAXPROCS: "8"
         run: go run ./cmd/mizu gen --check ./...
+
+      - name: A new project builds and runs here too
+        if: matrix.os == 'macos-15-intel'
+        run: go test -count=1 -run 'TestTheProject|TestGenIsCleanOnAFreshProject' ./cmd/mizu/
 
   # tools/milestonebot is a nested module, so `go test ./...` at the root does
   # not reach it. It runs the label file through its own validator, which is
