@@ -26,6 +26,10 @@ go run ./cmd/mizu verify   # gen, fmt, vet, build, test, doctor, in that order
 
 `check` is what you run while you are working and `verify` is what you run before you push.
 `verify` takes about a minute on this repository, most of it the test suite, and it fails on the first stage that fails with the diagnostics from that stage rather than a wall of output.
+On a project `mizu new` wrote this morning it takes under a second, and a test holds it to ten.
+
+CI runs `go run ./cmd/mizu verify` in a job of its own, so the answer you get before you push is the answer the merge waits for, and a stage added to `verify` is a stage CI runs without anybody editing a workflow.
+The other jobs are the part `verify` does not do: four platforms, the race detector, coverage, the nested modules, and the cross compiles.
 
 The repository tooling and the benchmarks live in modules of their own, so neither is in `go test ./...` at the root:
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/go-mizu/mizu/console"
 	"github.com/go-mizu/mizu/console/consoletest"
@@ -399,6 +400,62 @@ func TestVerifyIsWiredUp(t *testing.T) {
 		if code := newApp().Start(t.Context(), nil, out, errOut, argv); code != console.CodeUsage {
 			t.Errorf("%v exited %d, want %d", argv, code, console.CodeUsage)
 		}
+	}
+}
+
+// budget is what verify has on a project somebody made this morning.
+//
+// M0's eleventh acceptance criterion sets it, and the number matters more than
+// it looks: a command nobody waits for is a command people stop running, and
+// the whole point of verify is that it is one thing to run rather than six
+// things to remember.
+const budget = 10 * time.Second
+
+func TestVerifyFinishesQuicklyOnASmallProject(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the go command builds the project before the clock starts")
+	}
+	dir := place(t, "hello")
+	runNew(t, []string{dir, "--preset=cli"}).AssertSuccess()
+	resolve(t, dir)
+	t.Chdir(dir)
+
+	// The toolkit is compiled before the clock starts. What the budget is
+	// about is what verify costs between two edits, and somebody making two
+	// edits has a build cache. A cold one is a number about the go command.
+	gocmd(t, dir, "build", "./...")
+
+	began := time.Now()
+	out, errOut, code := start(t, "verify")
+	took := time.Since(began)
+
+	if code != console.CodeOK {
+		t.Fatalf("verify exited %d\n%s%s", code, out, errOut)
+	}
+	if took > budget {
+		t.Errorf("verify took %s on a project with two Go files in it, and the budget is %s:\n%s", took.Round(time.Millisecond), budget, out)
+	}
+	t.Logf("verify took %s", took.Round(time.Millisecond))
+}
+
+// The same criterion asks that verify is what CI runs verbatim.
+//
+// The reason is that two answers disagreeing is two answers, and the one that
+// stops being run is the local one. So CI runs the command rather than a list
+// of steps that resemble it, and a stage added to verify is a stage CI runs
+// without anybody editing a workflow.
+//
+// This reads the workflow back for the same reason fuzz_test.go does: the
+// failure it prevents is a file nobody looked at again.
+func TestCIRunsVerifyAndNotSomethingLikeIt(t *testing.T) {
+	path := filepath.Join(root(t), ".github", "workflows", "test.yml")
+	workflow, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = "run: go run ./cmd/mizu verify"
+	if !strings.Contains(string(workflow), line) {
+		t.Errorf("no job in .github/workflows/test.yml runs verify, so what CI checks and what you check before you push are two different things.\nAdd a step whose command is exactly:\n          %s", line)
 	}
 }
 

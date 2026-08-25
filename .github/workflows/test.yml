@@ -64,6 +64,33 @@ jobs:
           files: ${{ runner.temp }}/coverage.out
           fail_ci_if_error: false
 
+  # mizu verify is the answer a contributor gets before they push, and it is
+  # worth something only if it is the answer the merge waits for. Two answers
+  # that disagree are two answers, and the one that stops being run is the
+  # local one.
+  #
+  # So this job runs the command rather than a list of steps that resemble it.
+  # A stage added to verify is a stage CI runs, without anybody editing this
+  # file, and cmd/mizu/verify_test.go reads this file back to check that the
+  # command is still here.
+  #
+  # It does not replace the jobs below. verify runs the short tests on one
+  # platform, and the matrix above runs all of them on four with the race
+  # detector. What this job protects is that the two never diverge on the part
+  # they share.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.27"
+
+      - name: Everything that has to pass before a change is finished
+        run: go run ./cmd/mizu verify
+
   # Formatting and vet run once. There is no reason to pay for them five times,
   # and neither one is going to disagree across operating systems.
   lint:
