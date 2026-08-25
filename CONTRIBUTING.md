@@ -172,6 +172,12 @@ Both presets answer `version` and `--version`, and the HTTP one answers them on 
 **Errors name the thing that went wrong and what to do about it.**
 An error message is documentation, reviewed as documentation, and a message somebody had to read three times is a bug in the message.
 
+**Every message has a golden-file entry, and adding one without an entry fails the build.**
+A message lives in `testdata/diag` beside the code that prints it, or `testdata/_diag` where the input has to be a package that does not compile.
+Each entry is a directory holding an input that is deliberately broken and the report mizu produces for it, so changing a message changes a file and the change arrives in a pull request as user-facing text.
+`diagtest.Run` checks that what the corpus holds still reads the way it was reviewed, and `diagtest.Cover` reads the package's own source and fails on a message the corpus does not hold.
+Write the case, run the package's tests with `-update`, and read what it wrote.
+
 **A behaviour without a test does not exist.**
 New behaviour comes with a test that fails without the change.
 `go test -race ./...` passes.

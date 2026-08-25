@@ -348,8 +348,10 @@ type Second struct {
 
 	want := read(t, filepath.Join(dir, "app", "config_gen.go"))
 	err := runGen(t, "./...").AssertFailure()
-	if !strings.Contains(err.Error(), "configtest/app") {
-		t.Errorf("the error is %q, want it to name the package", err)
+	for _, s := range []string{"second.go:4:6", "Second", "Config"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("the error is %q, want it to mention %q", err, s)
+		}
 	}
 	if got := read(t, filepath.Join(dir, "app", "config_gen.go")); got != want {
 		t.Error("a run that failed still wrote a file")

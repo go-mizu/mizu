@@ -48,4 +48,24 @@
 // broken inputs where nothing broke is a corpus that has stopped testing
 // anything, and the usual cause is that the input drifted rather than that the
 // message got better.
+//
+// # What [Cover] checks
+//
+// Run says that the messages the corpus holds still read the way they were
+// reviewed. It says nothing about the messages the corpus does not hold, and
+// those are the ones worth worrying about: the tests pass, the golden files
+// look complete, and the message nobody has read is the one somebody gets.
+//
+// Cover is the other half. It reads the package's own source, finds every
+// message it can print, and requires the corpus to hold a line that matches
+// each one:
+//
+//	func TestEveryMessageHasAnEntry(t *testing.T) {
+//		diagtest.Cover(t, "testdata/diag", ".")
+//	}
+//
+// Adding a message to a package that runs Cover fails that package's tests
+// until there is a case whose input produces it. That is the point. The cost of
+// the entry is a directory and a golden file, and what it buys is that no
+// message reaches somebody without having been read by somebody first.
 package diagtest

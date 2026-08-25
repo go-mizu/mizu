@@ -1,0 +1,1 @@
+error: commands.go:24:2: Tags is Tags, a list type of its own, and the field has to be declared as []string for the value to point at it

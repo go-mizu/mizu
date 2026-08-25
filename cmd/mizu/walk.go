@@ -13,6 +13,12 @@ import (
 // own, vendor is a copy of other people's code, and testdata is a fixture. What
 // is in any of them is not this project's own, and walking them is most of the
 // time a walk of the project would take.
+//
+// A directory whose name starts with an underscore is skipped for the same
+// reason the go command skips one: ./... does not match it, go build does not
+// compile it, and go test does not run it. A tool that describes the project
+// has to agree with the tool that builds it, or AGENTS.md lists packages that
+// nothing in the module can import.
 var skipped = []string{"node_modules", "testdata", "vendor"}
 
 // projectFiles yields every ordinary file in the project, by its path from the
@@ -31,7 +37,7 @@ func projectFiles(fsys fs.FS) iter.Seq[string] {
 			case err != nil:
 				return nil
 			case d.IsDir():
-				if name != "." && (strings.HasPrefix(d.Name(), ".") || slices.Contains(skipped, d.Name())) {
+				if name != "." && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_") || slices.Contains(skipped, d.Name())) {
 					return fs.SkipDir
 				}
 				return nil

@@ -191,13 +191,13 @@ func TestDoctorReportsACheckThatCouldNotRun(t *testing.T) {
 	dir := scratch(t, configs)
 	pinEndings(t, dir)
 	second := filepath.Join(dir, "app", "second.go")
-	if err := os.WriteFile(second, []byte("package app\n\n//mizu:config\ntype Second struct{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(second, []byte("package app\n\n//mizu:config\ntype Second struct {\n\tPort int\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	r := runDoctor(t, dir).AssertSuccess()
 	r.AssertOutputContains("[warning] this check could not run")
-	r.AssertOutputContains("configtest/app has 2 structs marked as configuration")
+	r.AssertOutputContains("Second is marked as configuration and so is Config, and an application has one")
 	r.AssertOutputContains("Fix: fix what stopped it and run mizu doctor again")
 }
 

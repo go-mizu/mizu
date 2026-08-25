@@ -1,0 +1,1 @@
+error: config.go:3:1: "// mizu:config" has a space after the slashes, which makes it a comment rather than a marker; write "//mizu:config"

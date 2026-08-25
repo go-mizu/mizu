@@ -1,0 +1,1 @@
+error: commands.go:22:2: Where has an arg tag of "first", and an argument is its place on the line: arg:"0" or arg:"1..."

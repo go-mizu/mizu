@@ -49,21 +49,22 @@ func Generate(pkgs ...*gen.Package) ([]gen.File, error) {
 				plans = append(plans, plan)
 			}
 		}
-		switch {
-		case len(plans) == 0:
+		if len(plans) == 0 {
 			continue
-		case len(plans) > 1:
-			errs = append(errs, fmt.Errorf("%s has %d structs marked as configuration, and an application has one",
-				p.PkgPath, len(plans)))
+		}
+		// The message points at the second struct rather than at the package,
+		// because the first one is the one that was there and the second one is
+		// the one somebody has to do something about.
+		if len(plans) > 1 {
+			for _, extra := range plans[1:] {
+				extra.errf(extra.Pos, "%s is marked as configuration and so is %s, and an application has one",
+					extra.Type, plans[0].Type)
+				errs = append(errs, extra.Errors...)
+			}
 			continue
 		}
 
-		data, err := render(plans[0])
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		files = append(files, gen.File{Path: path.Join(dirOf(p), "config_gen.go"), Data: data})
+		files = append(files, gen.File{Path: path.Join(dirOf(p), "config_gen.go"), Data: render(plans[0])})
 	}
 	return files, errors.Join(errs...)
 }
@@ -79,10 +80,10 @@ func marked(t gen.Target) bool {
 
 // render writes the file. Everything it needs is in the plan, so this is the
 // only place that knows what the output looks like.
-func render(p *Plan) ([]byte, error) {
-	if len(p.Fields) == 0 {
-		return nil, fmt.Errorf("%s has no settings in it", p.Type)
-	}
+//
+// It is only ever called with a plan that has no errors in it, which is what
+// lets it write rather than check.
+func render(p *Plan) []byte {
 	cfg := p.imps.name(configPkg)
 
 	var b strings.Builder
@@ -118,7 +119,7 @@ func render(p *Plan) ([]byte, error) {
 	writeDiff(&b, p, cfg)
 	writeRedact(&b, p)
 
-	return []byte(b.String()), nil
+	return []byte(b.String())
 }
 
 // writeImports writes the block. There is always at least the config package

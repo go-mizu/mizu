@@ -242,7 +242,10 @@ func (p *Plan) field(cmd *Command, f *types.Var, tag reflect.StructTag, docs map
 
 	value, err := p.value(f.Type(), "&c."+f.Name(), tag)
 	if err != nil {
-		p.errf(pos, "%s: %v", f.Name(), err)
+		// No colon after the name. Everything value reports carries on from
+		// it, so the two read as the one sentence the rest of this file
+		// writes: Ch is a chan int, which no console.Value reads.
+		p.errf(pos, "%s %v", f.Name(), err)
 		return
 	}
 

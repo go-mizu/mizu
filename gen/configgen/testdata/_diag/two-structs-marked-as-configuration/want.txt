@@ -1,0 +1,1 @@
+error: config.go:9:6: Other is marked as configuration and so is Config, and an application has one

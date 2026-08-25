@@ -14,13 +14,15 @@ import (
 // A Plan is everything the generator worked out about one configuration
 // struct, in the order the fields are declared.
 type Plan struct {
-	Pkg    string    // the package the struct is in
-	Type   string    // the name of the struct type
-	Source string    // the file it was declared in, relative to the module
-	Fields []Field   // one per leaf, in declaration order
-	Errors []error   // everything wrong with the struct, in the order found
-	imps   *imports  // the packages the output has to import
-	seen   []*seenAt // paths already used, for the duplicate check
+	Pkg    string         // the package the struct is in
+	Type   string         // the name of the struct type
+	Source string         // the file it was declared in, relative to the module
+	Pos    token.Position // where the struct is declared
+	Fields []Field        // one per leaf, in declaration order
+	Errors []error        // everything wrong with the struct, in the order found
+
+	imps *imports  // the packages the output has to import
+	seen []*seenAt // paths already used, for the duplicate check
 }
 
 // A Field is one leaf of the struct: something that holds a value rather than
@@ -68,18 +70,27 @@ func Analyze(t gen.Target, docs map[types.Object]string) *Plan {
 	p := &Plan{
 		Pkg:  t.Pkg.Name,
 		Type: t.Name(),
+		Pos:  t.Pos(),
 		imps: newImports(t.Pkg.Types.Path()),
 	}
 	p.imps.add(configPkg)
 
 	st, ok := structOf(t.Object)
 	if !ok {
-		p.errf(t.Pos(), "%s is marked as configuration and is not a struct", t.Name())
+		p.errf(p.Pos, "%s is marked as configuration and is not a struct", t.Name())
 		return p
 	}
 
 	w := &walker{plan: p, docs: docs, fset: t.Pkg.Fset}
-	w.walk(st, "", "", t.Pos())
+	w.walk(st, "", "", p.Pos)
+
+	// Nothing to read is reported here rather than when the file is written,
+	// because here is where the struct is and a message about a declaration
+	// says which one. A struct that went wrong somewhere else is left alone,
+	// since the reason it has no fields is already in the list.
+	if len(p.Fields) == 0 && len(p.Errors) == 0 {
+		p.errf(p.Pos, "%s has no settings in it", t.Name())
+	}
 	return p
 }
 
