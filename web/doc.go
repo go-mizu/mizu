@@ -65,6 +65,28 @@
 // by a go statement. It runs as a stage of mizu verify, so the first person to
 // write one hears about it before the tests do.
 //
+// # Middleware
+//
+// A [Middleware] is func(http.Handler) http.Handler, which is net/http's shape
+// and not one of this package's own, so middleware written for anything else
+// works here and middleware written here works anywhere.
+//
+// [Chain] puts a handler inside some, outermost first:
+//
+//	srv := web.Chain(routes, mw.RequestID(), mw.Logger(l), mw.Recover())
+//
+// [Stack] is the same with names on the layers, so that the order they run in
+// can be declared apart from the order they were added in. That matters for the
+// handful of pairs where the wrong order is wrong rather than different: a
+// session started after the middleware that reads it looks like a user who is
+// not logged in, and nothing about it looks like a bug.
+//
+// Middleware that wants to know how the request was answered calls [Record] on
+// the way in and reads the [Recorder] on the way out. There is one Recorder per
+// request and everything inside shares it, including the Ctx, so a chain of ten
+// wraps the response writer once and http.ResponseController still reaches the
+// server's writer through it.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Binding,

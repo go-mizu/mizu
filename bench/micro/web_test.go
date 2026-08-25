@@ -10,6 +10,37 @@ import (
 
 func init() {
 	register("ctx/acquire", benchCtxAcquire)
+	register("mw/chain", benchChain)
+}
+
+// benchChain is what a middleware chain costs before any of it does anything.
+//
+// Eight layers, each with a frame of its own and nothing in it, in front of a
+// handler that also does nothing. What is left in the loop is the eight indirect
+// calls in and the eight returns out, which is the floor under every chain an
+// application builds and the number to compare a middleware's own cost against.
+//
+// The stack is built once, which is where the ordering work happens, so a
+// request pays for the calls and nothing else.
+func benchChain(b *testing.B) {
+	var s web.Stack
+	for i := range 8 {
+		s.Add(string(rune('a'+i)), func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, r)
+			})
+		})
+	}
+	s.Priority("h", "g", "f", "e", "d", "c", "b", "a")
+
+	h := s.Then(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r := httptest.NewRequest("GET", "/things/7", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		h.ServeHTTP(w, r)
+	}
 }
 
 // benchCtxAcquire is what the web package adds to a request and nothing else.

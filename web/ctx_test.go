@@ -348,7 +348,7 @@ func serve(t *testing.T, r *http.Request, h Handler) *httptest.ResponseRecorder 
 func direct(t *testing.T, w http.ResponseWriter) *Ctx {
 	t.Helper()
 	c := acquire()
-	c.res.ResponseWriter = w
+	c.record(w)
 	c.r = httptest.NewRequest("GET", "/", nil)
 	t.Cleanup(func() { release(c) })
 	return c

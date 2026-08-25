@@ -28,9 +28,9 @@ var rows = []Row{
 		Time: 150 * time.Nanosecond, Allocs: 2,
 	},
 	{
-		ID: "mw/chain", Group: httpPath, Doc: "07", Since: "M1",
+		ID: "mw/chain", Group: httpPath, Doc: "07",
 		Op:   "8 middleware with no work, entry to handler",
-		Time: 400 * time.Nanosecond, Allocs: 0,
+		Time: 40 * time.Nanosecond, Allocs: 0,
 	},
 	{
 		ID: "ctx/acquire", Group: httpPath, Doc: "08",

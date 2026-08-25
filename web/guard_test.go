@@ -24,7 +24,7 @@ func TestTheCtxComesFromThePool(t *testing.T) {
 		if c.status != 0 {
 			t.Errorf("the status carried over from the last request as %d", c.status)
 		}
-		if c.res.wrote {
+		if c.res.Status() != 0 {
 			t.Error("the write flag carried over from the last request")
 		}
 		return c.Text("two")
@@ -42,7 +42,8 @@ func TestAcquireAndReleaseDoNotAllocate(t *testing.T) {
 	w := httptest.NewRecorder()
 	got := testing.AllocsPerRun(1000, func() {
 		c := acquire()
-		c.res.ResponseWriter, c.r = w, r
+		c.record(w)
+		c.r = r
 		release(c)
 	})
 	if got != 0 {
@@ -54,7 +55,8 @@ func TestAcquireAndReleaseDoNotAllocate(t *testing.T) {
 // is not being made.
 func TestLiveIsFreeInThisBuild(t *testing.T) {
 	c := acquire()
-	c.res.ResponseWriter, c.r = httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil)
+	c.record(httptest.NewRecorder())
+	c.r = httptest.NewRequest("GET", "/", nil)
 	defer release(c)
 
 	if got := testing.AllocsPerRun(1000, func() { c.live("Request") }); got != 0 {

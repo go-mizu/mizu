@@ -122,3 +122,80 @@ func ExampleFromContext() {
 	// delete on /posts/7 for 7
 	// delete outside a request
 }
+
+// Chain wraps a handler in middleware, and the order it reads in is the order
+// it runs in.
+func ExampleChain() {
+	mark := func(name string) web.Middleware {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Println("in", name)
+				next.ServeHTTP(w, r)
+				fmt.Println("out", name)
+			})
+		}
+	}
+
+	r := router.New()
+	r.Handle("GET /", web.H(func(c *web.Ctx) error { return c.Text("hello") }))
+
+	h := web.Chain(r, mark("first"), mark("second"))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+
+	// Output:
+	// in first
+	// in second
+	// out second
+	// out first
+}
+
+// A Stack is a chain whose order can be declared separately from the order
+// things were added to it, which is what middleware that has to run before
+// other middleware needs.
+func ExampleStack() {
+	mark := func(name string) web.Middleware {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Println(name)
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+
+	// The order these were added in is wrong, and nothing here has to know
+	// that: the priority list says what the right one is.
+	var s web.Stack
+	s.Add("csrf", mark("csrf"))
+	s.Use(mark("request id"))
+	s.Add("session", mark("session"))
+	s.Priority("session", "csrf")
+
+	h := s.Then(web.H(func(c *web.Ctx) error { return c.Text("hello") }))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil))
+
+	// Output:
+	// session
+	// request id
+	// csrf
+}
+
+// Record is how middleware finds out how the request was answered, without
+// wrapping the response writer itself.
+func ExampleRecord() {
+	logger := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := web.Record(w)
+			next.ServeHTTP(rec, r)
+			fmt.Println(r.Method, r.URL.Path, rec.Status(), rec.Written())
+		})
+	}
+
+	gone := web.H(func(c *web.Ctx) error {
+		return c.Status(http.StatusNotFound).Text("no such post")
+	})
+
+	web.Chain(gone, logger).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/posts/7", nil))
+
+	// Output:
+	// GET /posts/7 404 12
+}

@@ -5,51 +5,6 @@ import (
 	"net/http"
 )
 
-// respWriter is the ResponseWriter the handler is given.
-//
-// It wraps the server's so that the Ctx knows what the status was and whether
-// anything has gone out, which is what the error handler needs to decide
-// whether there is still a response to write and what an access log needs to
-// report. It is a field of the Ctx rather than a value of its own, so wrapping
-// costs no allocation.
-//
-// Unwrap is what http.ResponseController uses to reach the server's writer, so
-// flushing, hijacking and the deadline calls all still work through this.
-// ReadFrom is here for the same reason: without it, an io.Copy into the
-// response loses the fast path the server has for a file.
-type respWriter struct {
-	http.ResponseWriter
-
-	status int
-	wrote  bool
-}
-
-func (w *respWriter) WriteHeader(code int) {
-	if !w.wrote {
-		w.status, w.wrote = code, true
-	}
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *respWriter) Write(p []byte) (int, error) {
-	if !w.wrote {
-		w.status, w.wrote = http.StatusOK, true
-	}
-	return w.ResponseWriter.Write(p)
-}
-
-func (w *respWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
-func (w *respWriter) ReadFrom(r io.Reader) (int64, error) {
-	if !w.wrote {
-		w.status, w.wrote = http.StatusOK, true
-	}
-	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
-		return rf.ReadFrom(r)
-	}
-	return io.Copy(w.ResponseWriter, r)
-}
-
 // Status sets the status the next write sends, and returns the Ctx so it reads
 // in front of the write it applies to.
 //
@@ -95,7 +50,7 @@ func (c *Ctx) SetHeader(key, value string) *Ctx {
 // session package.
 func (c *Ctx) SetCookie(ck *http.Cookie) *Ctx {
 	c.live("SetCookie")
-	http.SetCookie(&c.res, ck)
+	http.SetCookie(c.res, ck)
 	return c
 }
 
@@ -111,7 +66,7 @@ func (c *Ctx) Write(p []byte) (int, error) {
 
 // head sends the status and a content type, if neither has gone yet.
 func (c *Ctx) head(contentType string) {
-	if c.res.wrote {
+	if c.res.status != 0 {
 		return
 	}
 	if contentType != "" && c.res.Header().Get("Content-Type") == "" {
@@ -126,7 +81,7 @@ func (c *Ctx) head(contentType string) {
 func (c *Ctx) Text(s string) error {
 	c.live("Text")
 	c.head("text/plain; charset=utf-8")
-	_, err := io.WriteString(&c.res, s)
+	_, err := io.WriteString(c.res, s)
 	return err
 }
 
@@ -150,7 +105,7 @@ func (c *Ctx) Bytes(contentType string, b []byte) error {
 func (c *Ctx) Stream(contentType string, r io.Reader) error {
 	c.live("Stream")
 	c.head(contentType)
-	_, err := io.Copy(&c.res, r)
+	_, err := io.Copy(c.res, r)
 	return err
 }
 
@@ -180,6 +135,6 @@ func (c *Ctx) Redirect(url string) error {
 	if c.status == 0 {
 		c.status = http.StatusSeeOther
 	}
-	http.Redirect(&c.res, c.r, url, c.status)
+	http.Redirect(c.res, c.r, url, c.status)
 	return nil
 }
