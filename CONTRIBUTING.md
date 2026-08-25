@@ -155,6 +155,11 @@ The package comment goes in `doc.go` rather than on top of whichever file the pa
 An example that can assert carries an `// Output:` comment and is run as a test.
 The ones in the fixture packages cannot, because an assertion needs a test to fail and an example has none, so they are compiled and shown rather than run, and each of those packages says so.
 
+**Every command answers `--json`.**
+The flag is global, so a new command takes it without doing anything, and a command that takes it and then prints a table for a person is worse than one that rejects it.
+`cmd/mizu/json_test.go` walks the registry, runs each command with `--json`, and fails on one whose output is not a single JSON document.
+Adding a command means adding the line to that table that says how to run it, which is the point at which somebody decides what document it writes.
+
 **Errors name the thing that went wrong and what to do about it.**
 An error message is documentation, reviewed as documentation, and a message somebody had to read three times is a bug in the message.
 
