@@ -168,6 +168,12 @@ New behaviour comes with a test that fails without the change.
 `go test -race ./...` passes.
 A performance claim comes with a benchmark, and a benchmark comes with a budget.
 
+**A parser gets a fuzz target, and the target gets an hour.**
+Anything that reads bytes somebody else wrote is fuzzed: the two key formats in `crypt`, the two password hash formats in `hash`, the TOML parser, and the pattern matcher in `str`.
+On a pull request each target runs its seed corpus, which takes a second, because nobody waits for the other version.
+The hour is nightly, in `.github/workflows/fuzz.yml`, one job per target so that each of them gets an hour rather than a share of one.
+`fuzz_test.go` at the root reads that file back and fails on a `FuzzXxx` it does not name, and the failure prints the row to add.
+
 **Generated code is checked in and deterministic.**
 `mizu gen --check` is clean, and the same input produces byte-identical output across platforms, architectures, `GOMAXPROCS` values, and input order.
 

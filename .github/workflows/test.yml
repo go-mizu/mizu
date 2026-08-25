@@ -149,49 +149,76 @@ jobs:
       - name: Test
         run: go test ./...
 
-  # Two builds of the same commit produce the same bytes, or the release is not
-  # something anybody can check.
+  # The same commit built on four different machines produces the same bytes,
+  # or the release is not something anybody can check.
   #
-  # The two builds happen in different directories on purpose. That is what
-  # -trimpath is for, and building twice in one place would pass whether or not
-  # it works. The Go module cache is left alone, since a build that only
-  # reproduces on a cold cache is not reproducible either.
-  reproducible:
-    name: Reproducible build
-    runs-on: ubuntu-latest
+  # Every row builds linux/amd64 whatever it is running on, because a binary
+  # for one target is what two people are comparing when they want to know
+  # whether the download matches the source. The host is the variable: four
+  # operating systems, two architectures, four workspace paths, and four
+  # module caches in whatever state the runner left them. A build that only
+  # reproduces on a cold cache is not reproducible either, so nothing here
+  # clears one.
+  #
+  # This is a matrix and a comparison rather than one job building twice
+  # because building twice on one machine passes whether or not -trimpath is
+  # doing anything, and a check that passes either way is not a check.
+  build:
+    name: Reproducible build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest # linux/amd64
+          - ubuntu-24.04-arm # linux/arm64
+          - macos-latest # darwin/arm64
+          - windows-latest # windows/amd64
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
           go-version: "1.27"
 
-      - name: Build once
-        run: go build -trimpath -o "$RUNNER_TEMP/mizu.1" ./cmd/mizu
+      # The output goes in the workspace rather than under RUNNER_TEMP, which
+      # is the one path in this job that is spelled differently on Windows.
+      - name: Build linux/amd64
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -trimpath -o mizu.build ./cmd/mizu
 
-      - name: Build again somewhere else
-        run: |
-          dest="$RUNNER_TEMP/elsewhere"
-          git clone --shared --no-checkout . "$dest"
-          git -C "$dest" checkout --detach "$GITHUB_SHA"
-          cd "$dest"
-          go build -trimpath -o "$RUNNER_TEMP/mizu.2" ./cmd/mizu
+      - uses: actions/upload-artifact@v5
+        with:
+          name: mizu-${{ matrix.os }}
+          path: mizu.build
+          retention-days: 1
+
+  reproducible:
+    name: Reproducible build
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: builds
 
       - name: Compare
         run: |
-          one=$(sha256sum "$RUNNER_TEMP/mizu.1" | cut -d' ' -f1)
-          two=$(sha256sum "$RUNNER_TEMP/mizu.2" | cut -d' ' -f1)
-          echo "first  $one"
-          echo "second $two"
-          if [ "$one" != "$two" ]; then
-            echo "the two builds differ, so the build is not reproducible"
+          sha256sum builds/*/mizu.build
+          if [ "$(sha256sum builds/*/mizu.build | cut -d' ' -f1 | sort -u | wc -l)" != 1 ]; then
+            echo
+            echo "the builds differ, so the same commit does not produce the same binary everywhere"
             exit 1
           fi
 
+      # The comparison is of bytes, and bytes that agree on something that does
+      # not run are not worth much.
       - name: Show what the binary says about itself
-        run: "$RUNNER_TEMP/mizu.1 version --json"
+        run: |
+          chmod +x builds/mizu-ubuntu-latest/mizu.build
+          builds/mizu-ubuntu-latest/mizu.build version --json
 
   # tools/milestonebot is a nested module, so `go test ./...` at the root does
   # not reach it. It runs the label file through its own validator, which is
