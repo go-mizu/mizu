@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"github.com/go-mizu/mizu/errs"
 	"github.com/go-mizu/mizu/router"
@@ -492,4 +493,36 @@ func ExampleR() {
 	// Output:
 	// 200 water: 12 left
 	// 410 ice is gone
+}
+
+// NotModified answers a request whose client already has the version the
+// handler was about to send. The tag and the time come off the response rather
+// than out of arguments, so the two calls above it are where the version is
+// stated, and the 304 goes out without the body ever being built.
+func ExampleCtx_NotModified() {
+	changed := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
+
+	h := web.H(func(c *web.Ctx) error {
+		c.ETag("v7").LastModified(changed).Private().CacheFor(time.Minute)
+		if c.NotModified() {
+			return nil
+		}
+		return c.Text("the seventh draft")
+	})
+
+	for _, tag := range []string{"", `"v6"`, `W/"v7"`} {
+		r := httptest.NewRequest("GET", "/posts/7", nil)
+		if tag != "" {
+			r.Header.Set("If-None-Match", tag)
+		}
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		fmt.Println(w.Code, w.Header().Get("Cache-Control"), w.Body.Len())
+	}
+
+	// Output:
+	// 200 private, max-age=60 17
+	// 200 private, max-age=60 17
+	// 304 private, max-age=60 0
 }
