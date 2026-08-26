@@ -118,6 +118,11 @@ var rows = []Row{
 		Time: 60 * time.Microsecond, Allocs: 14,
 	},
 	{
+		ID: "respond/conditional", Group: httpPath, Doc: "08",
+		Op:   "A GET with If-None-Match against a response with an ETag, answered as a 304",
+		Time: 3 * time.Microsecond, Allocs: 9,
+	},
+	{
 		ID: "respond/problem", Group: httpPath, Doc: "06", Since: "M1",
 		Op:   "RFC 9457 error body with 3 field errors",
 		Time: 3 * time.Microsecond, Allocs: 9,

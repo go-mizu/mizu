@@ -337,6 +337,46 @@
 // the same value is returned from several places or when what it looks like is
 // worth testing on its own.
 //
+// # Caching and conditional requests
+//
+// Six methods cover the headers that decide whether a response is sent at all:
+//
+//	func show(c *web.Ctx) error {
+//		p, err := posts.Find(c.Context(), c.Param("id"))
+//		if err != nil {
+//			return err
+//		}
+//		c.ETag(p.Version).LastModified(p.UpdatedAt).Private().CacheFor(time.Minute)
+//		if c.NotModified() {
+//			return nil
+//		}
+//		return web.JSON(c, p)
+//	}
+//
+// [Ctx.CacheFor], [Ctx.NoStore] and [Ctx.Private] write Cache-Control, and they
+// merge into what is on the header rather than replacing it, so the order they
+// are called in does not change where they end up and a directive some
+// middleware set survives. Two statements that do contradict each other, a
+// NoStore and a CacheFor, come down to whichever was made last.
+//
+// [Ctx.ETag] quotes the tag, so a caller passes a version and not the syntax,
+// and drops a character that would end the header early. [Ctx.LastModified]
+// writes an HTTP date. Either of them takes an empty tag or the zero time to
+// mean there is no version to state, and removes the header.
+//
+// [Ctx.NotModified] reads the tag and the date already on the response and
+// compares them against what the request asked. It writes the 304 itself and
+// returns true, and a handler that gets true returns without a body. When the
+// request carries an If-None-Match, that header decides on its own and the date
+// is not read, which is RFC 9110 section 13.2.2 and is the part hand-written
+// versions get wrong.
+//
+// [Ctx.File] and its neighbours answer conditional requests on their own, so
+// these are for a response the handler builds. The ETag middleware in
+// [github.com/go-mizu/mizu/web/mw] is the third way, and it hashes what the
+// handler wrote, which needs no cooperation and needs the work to have
+// happened.
+//
 // # What is not here yet
 //
 // Reading a request is here and so is enough writing to answer one. Storing an

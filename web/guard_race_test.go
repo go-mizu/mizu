@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/go-mizu/mizu/router"
 )
@@ -141,6 +142,12 @@ func staleCalls() []struct {
 		{"FileFS", func(c *Ctx) { c.FileFS(fstest.MapFS{}, "nothing") }},
 		{"Download", func(c *Ctx) { c.Download("a.txt", strings.NewReader("")) }},
 		{"Attachment", func(c *Ctx) { c.Attachment("nothing", "a.txt") }},
+		{"CacheFor", func(c *Ctx) { c.CacheFor(0) }},
+		{"NoStore", func(c *Ctx) { c.NoStore() }},
+		{"Private", func(c *Ctx) { c.Private() }},
+		{"ETag", func(c *Ctx) { c.ETag("v7") }},
+		{"LastModified", func(c *Ctx) { c.LastModified(time.Time{}) }},
+		{"NotModified", func(c *Ctx) { c.NotModified() }},
 		{"NoContent", func(c *Ctx) { c.NoContent() }},
 		{"Redirect", func(c *Ctx) { c.Redirect("/") }},
 	}

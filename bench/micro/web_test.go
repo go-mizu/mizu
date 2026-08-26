@@ -31,6 +31,7 @@ func init() {
 	register("bind/gen/json", benchBindGenJSON)
 	register("respond/json", benchRespondJSON)
 	register("respond/file", benchRespondFile)
+	register("respond/conditional", benchRespondConditional)
 }
 
 // page is the response the two body middleware are measured against: eight
@@ -481,6 +482,38 @@ func benchRespondFile(b *testing.B) {
 
 	h := web.H(func(c *web.Ctx) error { return c.File(path) })
 	r := httptest.NewRequest("GET", "/asset.bin", nil)
+	w := &discardWriter{header: make(http.Header)}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		clear(w.header)
+		h.ServeHTTP(w, r)
+	}
+}
+
+// benchRespondConditional is a request from a client that already has what the
+// handler was about to send.
+//
+// The If-None-Match header carries three tags with the matching one last, which
+// is what a browser holding a few versions sends and what makes the scan do some
+// work rather than matching the first thing it reads. The whole of it is header
+// parsing and header writing, so the row is a small number and the number that
+// matters is the allocation count: reading the tags allocates nothing, and a
+// change that started splitting the header into a slice would say so here.
+func benchRespondConditional(b *testing.B) {
+	changed := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
+	body := []byte(`{"id":7,"title":"water"}`)
+
+	h := web.H(func(c *web.Ctx) error {
+		c.ETag("d41d8cd98f00b204e9800998ecf8427e").LastModified(changed).CacheFor(time.Minute)
+		if c.NotModified() {
+			return nil
+		}
+		return c.Bytes("application/json", body)
+	})
+
+	r := httptest.NewRequest("GET", "/posts/7", nil)
+	r.Header.Set("If-None-Match", `W/"v6", "v7", "d41d8cd98f00b204e9800998ecf8427e"`)
 	w := &discardWriter{header: make(http.Header)}
 
 	b.ReportAllocs()
